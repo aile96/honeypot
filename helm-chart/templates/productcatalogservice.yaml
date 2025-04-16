@@ -91,12 +91,16 @@ spec:
         {{- end }}
         - name: EXTRA_LATENCY
           value: {{ .Values.productCatalogService.extraLatency }}
+        {{- if .Values.productCatalogService.readinessProbe.enabled }}
         readinessProbe:
           grpc:
             port: 3550
+        {{- end }}
+        {{- if .Values.productCatalogService.livenessProbe.enabled }}
         livenessProbe:
           grpc:
             port: 3550
+        {{- end }}
         resources:
           {{- toYaml .Values.productCatalogService.resources | nindent 10 }}
 ---

@@ -90,12 +90,16 @@ spec:
         - name: DISABLE_PROFILER
           value: "1"
         {{- end }}
+        {{- if .Values.currencyService.readinessProbe.enabled }}
         readinessProbe:
           grpc:
             port: 7000
+        {{- end }}
+        {{- if .Values.currencyService.livenessProbe.enabled }}
         livenessProbe:
           grpc:
             port: 7000
+        {{- end }}
         resources:
           {{- toYaml .Values.currencyService.resources | nindent 10 }}
 ---

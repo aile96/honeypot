@@ -85,15 +85,19 @@ spec:
           value: {{ .Values.cartDatabase.connectionString | quote }}
         resources:
           {{- toYaml .Values.cartService.resources | nindent 10 }}
+        {{- if .Values.cartService.readinessProbe.enabled }}
         readinessProbe:
           initialDelaySeconds: 15
           grpc:
             port: 7070
+        {{- end }}
+        {{- if .Values.cartService.livenessProbe.enabled }}
         livenessProbe:
           initialDelaySeconds: 15
           periodSeconds: 10
           grpc:
             port: 7070
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

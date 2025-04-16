@@ -17,13 +17,17 @@
 # Declare variables to be passed into your templates.
 
 images:
-  repository: us-central1-docker.pkg.dev/google-samples/microservices-demo
+  repository: aile96
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
 
 serviceAccounts:
   # Specifies whether service accounts should be created.
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   # Annotations to add to the service accounts.
   annotations: {}
   # Annotations to add only for the cartservice app. This allows to follow the least privilege principle where only cartservice needs to connect to external database for example via Workload Identity.
@@ -61,6 +65,10 @@ securityContext:
 
 adService:
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: adservice
   resources:
     requests:
@@ -72,6 +80,10 @@ adService:
 
 cartService:
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: cartservice
   resources:
     requests:
@@ -83,6 +95,10 @@ cartService:
 
 checkoutService:
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: checkoutservice
   resources:
     requests:
@@ -94,6 +110,10 @@ checkoutService:
 
 currencyService:
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: currencyservice
   resources:
     requests:
@@ -105,6 +125,10 @@ currencyService:
 
 emailService:
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: emailservice
   resources:
     requests:
@@ -116,6 +140,10 @@ emailService:
 
 frontend:
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: frontend
   externalService: true
   cymbalBranding: false
@@ -140,7 +168,11 @@ frontend:
       memory: 128Mi
 
 loadGenerator:
-  create: true
+  create: false
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: loadgenerator
   checkFrontendInitContainer: true
   resources:
@@ -153,6 +185,10 @@ loadGenerator:
 
 paymentService:
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: paymentservice
   resources:
     requests:
@@ -164,6 +200,10 @@ paymentService:
 
 productCatalogService:
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: productcatalogservice
   # Specifies an extra latency to any request on productcatalogservice, by default no extra latency.
   extraLatency: ""
@@ -177,6 +217,10 @@ productCatalogService:
 
 recommendationService:
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: recommendationservice
   resources:
     requests:
@@ -188,6 +232,10 @@ recommendationService:
 
 shippingService:
   create: true
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: shippingservice
   resources:
     requests:
@@ -217,4 +265,8 @@ cartDatabase:
 # https://github.com/GoogleCloudPlatform/microservices-demo/tree/main/kustomize/components/shopping-assistant
 shoppingAssistantService:
   create: false
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
   name: shoppingassistantservice

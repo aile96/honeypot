@@ -73,6 +73,7 @@ spec:
           image: {{ .Values.images.repository }}/{{ .Values.frontend.name }}:{{ .Values.images.tag | default .Chart.AppVersion }}
           ports:
           - containerPort: 8080
+          {{- if .Values.frontend.readinessProbe.enabled }}
           readinessProbe:
             initialDelaySeconds: 10
             httpGet:
@@ -81,6 +82,8 @@ spec:
               httpHeaders:
               - name: "Cookie"
                 value: "shop_session-id=x-readiness-probe"
+          {{- end }}
+          {{- if .Values.frontend.livenessProbe.enabled }}
           livenessProbe:
             initialDelaySeconds: 10
             httpGet:
@@ -89,6 +92,7 @@ spec:
               httpHeaders:
               - name: "Cookie"
                 value: "shop_session-id=x-liveness-probe"
+          {{- end }}
           env:
           - name: PORT
             value: "8080"
@@ -156,13 +160,14 @@ metadata:
   name: {{ .Values.frontend.name }}-external
   namespace: {{ .Release.Namespace }}
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector:
     app: {{ .Values.frontend.name }}
   ports:
   - name: http
     port: 80
     targetPort: 8080
+    nodePort: 31000
 {{- end }}
 {{- if .Values.networkPolicies.create }}
 ---

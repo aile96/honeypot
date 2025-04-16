@@ -72,14 +72,18 @@ spec:
         image: {{ .Values.images.repository }}/{{ .Values.recommendationService.name }}:{{ .Values.images.tag | default .Chart.AppVersion }}
         ports:
         - containerPort: 8080
+        {{- if .Values.recommendationService.readinessProbe.enabled }}
         readinessProbe:
           periodSeconds: 5
           grpc:
             port: 8080
+        {{- end }}
+        {{- if .Values.recommendationService.livenessProbe.enabled }}
         livenessProbe:
           periodSeconds: 5
           grpc:
             port: 8080
+        {{- end }}
         env:
         - name: PORT
           value: "8080"

@@ -71,12 +71,16 @@ spec:
         image: {{ .Values.images.repository }}/{{ .Values.checkoutService.name }}:{{ .Values.images.tag | default .Chart.AppVersion }}
         ports:
         - containerPort: 5050
+        {{- if .Values.checkoutService.readinessProbe.enabled }}
         readinessProbe:
           grpc:
             port: 5050
+        {{- end }}
+        {{- if .Values.checkoutService.livenessProbe.enabled }}
         livenessProbe:
           grpc:
             port: 5050
+        {{- end }}
         env:
         - name: PORT
           value: "5050"

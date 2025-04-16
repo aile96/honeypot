@@ -87,12 +87,16 @@ spec:
         - name: DISABLE_PROFILER
           value: "1"
         {{- end }}
+        {{- if .Values.paymentService.readinessProbe.enabled }}
         readinessProbe:
           grpc:
             port: 50051
+        {{- end }}
+        {{- if .Values.paymentService.livenessProbe.enabled }}
         livenessProbe:
           grpc:
             port: 50051
+        {{- end }}
         resources:
           {{- toYaml .Values.paymentService.resources | nindent 10 }}
 ---

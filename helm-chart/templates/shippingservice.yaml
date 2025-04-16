@@ -78,13 +78,17 @@ spec:
         - name: DISABLE_PROFILER
           value: "1"
         {{- end }}
+        {{- if .Values.shippingService.readinessProbe.enabled }}
         readinessProbe:
           periodSeconds: 5
           grpc:
             port: 50051
+        {{- end }}
+        {{- if .Values.shippingService.livenessProbe.enabled }}
         livenessProbe:
           grpc:
             port: 50051
+        {{- end }}
         resources:
           {{- toYaml .Values.shippingService.resources | nindent 10 }}
 ---

@@ -89,14 +89,18 @@ spec:
         - name: DISABLE_PROFILER
           value: "1"
         {{- end }}
+        {{- if .Values.emailService.readinessProbe.enabled }}
         readinessProbe:
           periodSeconds: 5
           grpc:
             port: 8080
+        {{- end }}
+        {{- if .Values.emailService.livenessProbe.enabled }}
         livenessProbe:
           periodSeconds: 5
           grpc:
             port: 8080
+        {{- end }}
         resources:
           {{- toYaml .Values.emailService.resources | nindent 10 }}
 ---

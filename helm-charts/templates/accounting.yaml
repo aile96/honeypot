@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.accounting.name }}
+  labels:
+    opentelemetry.io/name: {{ .Values.accounting.name }}
+    app.kubernetes.io/instance: {{ .Values.common.instance }}
+    app.kubernetes.io/component: {{ .Values.accounting.name }}
+    app.kubernetes.io/name: {{ .Values.accounting.name }}
+    app.kubernetes.io/version: {{ .Values.common.version }}
+    app.kubernetes.io/part-of: {{ .Values.common.instance }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      opentelemetry.io/name: {{ .Values.accounting.name }}
+  template:
+    metadata:
+      labels:
+        opentelemetry.io/name: {{ .Values.accounting.name }}
+        app.kubernetes.io/instance: {{ .Values.common.instance }}
+        app.kubernetes.io/component:  {{ .Values.accounting.name }}
+        app.kubernetes.io/name:  {{ .Values.accounting.name }}
+    spec:
+      serviceAccountName: {{ .Values.accounting.serviceAccountName }}
+      containers:
+        - name: {{ .Values.accounting.name }}
+          image: {{ .Values.accounting.image.repository }}:{{ .Values.accounting.image.tag}}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OTEL_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.labels['app.kubernetes.io/component']
+            - name: OTEL_COLLECTOR_NAME
+              value: otel-collector
+            - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+              value: cumulative
+            - name: KAFKA_ADDR
+              value: kafka:9092
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://$(OTEL_COLLECTOR_NAME):4318
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.name=$(OTEL_SERVICE_NAME),service.namespace=opentelemetry-demo,service.version=2.0.2
+          resources:
+            limits:
+              memory: 120Mi
+          volumeMounts:
+      initContainers:
+        - command:
+          - sh
+          - -c
+          - until nc -z -v -w30 kafka 9092; do echo waiting for kafka; sleep 2; done;
+          image: busybox:latest
+          name: wait-for-kafka
+      volumes:

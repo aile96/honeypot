@@ -1,0 +1,251 @@
+images:
+  repository: us-central1-docker.pkg.dev/google-samples/microservices-demo
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+serviceAccounts:
+  # Specifies whether service accounts should be created.
+  create: true
+  # Annotations to add to the service accounts.
+  annotations: {}
+  # Annotations to add only for the cartservice app. This allows to follow the least privilege principle where only cartservice needs to connect to external database for example via Workload Identity.
+  annotationsOnlyForCartservice: false
+
+networkPolicies:
+  # Specifies if the NetworkPolicies are created or not. If true, one fine granular NetworkPolicy per app is created.
+  create: false
+
+sidecars:
+  # Specifies if the Sidecars are created or not. If true, one fine granular Sidecar per app is created.
+  create: false
+
+authorizationPolicies:
+  # Specifies if the AuthorizationPolicies are created or not. If true, one fine granular AuthorizationPolicy per app is created.
+  create: false
+
+opentelemetryCollector:
+  create: false
+  name: opentelemetrycollector
+  # Specifies the project id for the otel collector. If set as "PROJECT_ID" (default value), an initContainer will automatically retrieve the project id value from the metadata server.
+  projectId: "PROJECT_ID"
+
+googleCloudOperations:
+  profiler: false
+  tracing: false
+  metrics: false
+
+seccompProfile:
+  enable: false
+  type: RuntimeDefault
+
+securityContext:
+  enable: true
+
+common:
+  instance: opentelemetry-demo
+  version: 2.0.2
+
+accounting:
+  image:
+    repository: ""
+    tag: ""
+  name: accounting
+  serviceAccountName: opentelemetry-demo
+
+ad:
+  image:
+    repository: ""
+    tag: ""
+  create: true
+  name: adservice
+  resources:
+    requests:
+      cpu: 200m
+      memory: 180Mi
+    limits:
+      cpu: 300m
+      memory: 300Mi
+
+cart:
+  image:
+    repository: ""
+    tag: ""
+  create: true
+  name: cartservice
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+checkout:
+  image:
+    repository: ""
+    tag: ""
+  create: true
+  name: checkoutservice
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+currency:
+  image:
+    repository: ""
+    tag: ""
+  create: true
+  name: currencyservice
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+email:
+  image:
+    repository: ""
+    tag: ""
+  create: true
+  name: emailservice
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+flagd-ui:
+  image:
+    repository: ""
+    tag: ""
+
+fraud-detection:
+  image:
+    repository: ""
+    tag: ""
+
+frontend:
+  image:
+    repository: ""
+    tag: ""
+  create: true
+  name: frontend
+  externalService: true
+  cymbalBranding: false
+  # One of: local, gcp, aws, azure, onprem, alibaba. When not set, defaults to "local" unless running in GKE, otherwise auto-sets to gcp.
+  platform: local
+  singleSharedSession: false
+  virtualService:
+    create: false
+    hosts:
+    - "*"
+    gateway:
+      name: asm-ingressgateway
+      namespace: asm-ingress
+      labelKey: asm
+      labelValue: ingressgateway
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+frontend-proxy:
+  image:
+    repository: ""
+    tag: ""
+
+image-provider:
+  image:
+    repository: ""
+    tag: ""
+
+kafka:
+  image:
+    repository: ""
+    tag: ""
+
+loadGenerator:
+  create: true
+  name: loadgenerator
+  checkFrontendInitContainer: true
+  resources:
+    requests:
+      cpu: 300m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+payment:
+  image:
+    repository: ""
+    tag: ""
+  create: true
+  name: paymentservice
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+product-catalog:
+  image:
+    repository: ""
+    tag: ""
+  create: true
+  name: productcatalogservice
+  # Specifies an extra latency to any request on productcatalogservice, by default no extra latency.
+  extraLatency: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+quote:
+  image:
+    repository: ""
+    tag: ""
+
+recommendation:
+  image:
+    repository: ""
+    tag: ""
+  create: true
+  name: recommendationservice
+  resources:
+    requests:
+      cpu: 100m
+      memory: 220Mi
+    limits:
+      cpu: 200m
+      memory: 450Mi
+
+shipping:
+  image:
+    repository: ""
+    tag: ""
+  create: true
+  name: shippingservice
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

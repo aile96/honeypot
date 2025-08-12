@@ -1,0 +1,19 @@
+{{- if .Values.networkPolicies.enabled }}
+
+{{- $rules := .Values.networkPolicies.rules }}
+
+{{- if kindIs "map" $rules }}
+  {{- range $ns, $policy := $rules }}
+    {{- include "np.renderFor" (dict "ns" $ns "policy" $policy "root" $) }}
+  {{- end }}
+{{- else if kindIs "slice" $rules }}
+  {{- range $i, $item := $rules }}
+    {{- $ns := (first (keys $item)) }}
+    {{- $policy := (index $item $ns) }}
+    {{- include "np.renderFor" (dict "ns" $ns "policy" $policy "root" $) }}
+  {{- end }}
+{{- else }}
+  {{- fail "networkPolicies.rules deve essere una mappa o una lista" }}
+{{- end }}
+
+{{- end }}

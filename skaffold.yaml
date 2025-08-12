@@ -6,155 +6,214 @@ build:
   local:
     push: true
     useBuildkit: true
-  insecureRegistries:
-    - "localhost:5000"
+  tagPolicy:
+    envTemplate:
+      template: "{{.IMAGE_VERSION}}"
   artifacts:
-    - image: localhost:5000/accounting
-      context: .
+#    - image: localhost:5000/accounting
+#      context: .
+#      docker:
+#        dockerfile: src/accounting/Dockerfile
+#    - image: localhost:5000/ad
+#      context: .
+#      docker:
+#        dockerfile: src/ad/Dockerfile
+#        buildArgs:
+#          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
+#          AD_PORT: "{{.AD_PORT}}"
+    - image: localhost:5000/caldera
+      context: src/caldera
       docker:
-        dockerfile: src/accounting/Dockerfile
-    - image: localhost:5000/ad
-      context: .
-      docker:
-        dockerfile: src/ad/Dockerfile
+        dockerfile: src/caldera/Dockerfile
         buildArgs:
-          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
-          AD_PORT: "{{.AD_PORT}}"
-    - image: localhost:5000/cart
-      context: .
-      docker:
-        dockerfile: src/cart/src/Dockerfile
-        buildArgs:
-          CART_PORT: "{{.CART_PORT}}"
-    - image: localhost:5000/checkout
-      context: .
-      docker:
-        dockerfile: src/checkout/Dockerfile
-        buildArgs:
-          CHECKOUT_PORT: "{{.CHECKOUT_PORT}}"
-    - image: localhost:5000/currency
-      context: .
-      docker:
-        dockerfile: src/currency/Dockerfile
-        buildArgs:
-          OPENTELEMETRY_CPP_VERSION: "{{.OPENTELEMETRY_CPP_VERSION}}"
-          CURRENCY_PORT: "{{.CURRENCY_PORT}}"
-    - image: localhost:5000/email
-      context: .
-      docker:
-        dockerfile: src/email/Dockerfile
-        buildArgs:
-          EMAIL_PORT: "{{.EMAIL_PORT}}"
-    - image: localhost:5000/flagd-ui
-      context: .
-      docker:
-        dockerfile: src/flagd-ui/Dockerfile
-    - image: localhost:5000/fraud-detection
-      context: .
-      docker:
-        dockerfile: src/fraud-detection/Dockerfile
-        buildArgs:
-          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
-    - image: localhost:5000/frontend
-      context: .
-      docker:
-        dockerfile: src/frontend/Dockerfile
-    - image: localhost:5000/frontend-proxy
-      context: .
-      docker:
-        dockerfile: src/frontend-proxy/Dockerfile
-    - image: localhost:5000/image-provider
-      context: .
-      docker:
-        dockerfile: src/image-provider/Dockerfile
-        buildArgs:
-          IMAGE_PROVIDER_PORT: "{{.IMAGE_PROVIDER_PORT}}"
-          OTEL_COLLECTOR_HOST: "{{.OTEL_COLLECTOR_HOST}}"
-          OTEL_COLLECTOR_PORT_GRPC: "{{.OTEL_COLLECTOR_PORT_GRPC}}"
-          OTEL_SERVICE_NAME: "{{.OTEL_SERVICE_NAME}}"
-    - image: localhost:5000/kafka
-      context: .
-      docker:
-        dockerfile: src/kafka/Dockerfile
-        buildArgs:
-          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
-    - image: localhost:5000/load-generator
-      context: .
-      docker:
-        dockerfile: src/load-generator/Dockerfile
-    - image: localhost:5000/payment
-      context: .
-      docker:
-        dockerfile: src/payment/Dockerfile
-        buildArgs:
-          PAYMENT_PORT: "{{.PAYMENT_PORT}}"
-    - image: localhost:5000/product-catalog
-      context: .
-      docker:
-        dockerfile: src/product-catalog/Dockerfile
-        buildArgs:
-          PRODUCT_CATALOG_PORT: "{{.PRODUCT_CATALOG_PORT}}"
-    - image: localhost:5000/quote
-      context: .
-      docker:
-        dockerfile: src/quote/Dockerfile
-        buildArgs:
-          QUOTE_PORT: "{{.QUOTE_PORT}}"
-    - image: localhost:5000/recommendation
-      context: .
-      docker:
-        dockerfile: src/recommendation/Dockerfile
-        buildArgs:
-          RECOMMENDATION_PORT: "{{.RECOMMENDATION_PORT}}"
-    - image: localhost:5000/shipping
-      context: .
-      docker:
-        dockerfile: src/shipping/Dockerfile
-        buildArgs:
-          SHIPPING_PORT: "{{.SHIPPING_PORT}}"
+          VARIANT: full
+#    - image: localhost:5000/cart
+#      context: .
+#      docker:
+#        dockerfile: src/cart/src/Dockerfile
+#        buildArgs:
+#          CART_PORT: "{{.CART_PORT}}"
+#    - image: localhost:5000/checkout
+#      context: .
+#      docker:
+#        dockerfile: src/checkout/Dockerfile
+#        buildArgs:
+#          CHECKOUT_PORT: "{{.CHECKOUT_PORT}}"
+#    - image: localhost:5000/currency
+#      context: .
+#      docker:
+#        dockerfile: src/currency/Dockerfile
+#        buildArgs:
+#          OPENTELEMETRY_CPP_VERSION: "{{.OPENTELEMETRY_CPP_VERSION}}"
+#          CURRENCY_PORT: "{{.CURRENCY_PORT}}"
+#    - image: localhost:5000/email
+#      context: .
+#      docker:
+#        dockerfile: src/email/Dockerfile
+#        buildArgs:
+#          EMAIL_PORT: "{{.EMAIL_PORT}}"
+#    - image: localhost:5000/flagd
+#      context: .
+#      docker:
+#        dockerfile: src/flagd/Dockerfile
+#    - image: localhost:5000/flagd-ui
+#      context: .
+#      docker:
+#        dockerfile: src/flagd-ui/Dockerfile
+#        buildArgs:
+#          FLAGD_UI_PORT: "{{.FLAGD_UI_PORT}}"
+#    - image: localhost:5000/fraud-detection
+#      context: .
+#      docker:
+#        dockerfile: src/fraud-detection/Dockerfile
+#        buildArgs:
+#          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
+#    - image: localhost:5000/frontend
+#      context: .
+#      docker:
+#        dockerfile: src/frontend/Dockerfile
+#    - image: localhost:5000/frontend-proxy
+#      context: .
+#      docker:
+#        dockerfile: src/frontend-proxy/Dockerfile
+#    - image: localhost:5000/image-provider
+#      context: .
+#      docker:
+#        dockerfile: src/image-provider/Dockerfile
+#        buildArgs:
+#          IMAGE_PROVIDER_PORT: "{{.IMAGE_PROVIDER_PORT}}"
+#          OTEL_COLLECTOR_HOST: "{{.OTEL_COLLECTOR_HOST}}"
+#          OTEL_COLLECTOR_PORT_GRPC: "{{.OTEL_COLLECTOR_PORT_GRPC}}"
+#          OTEL_SERVICE_NAME: "{{.OTEL_SERVICE_NAME}}"
+#    - image: localhost:5000/kafka
+#      context: .
+#      docker:
+#        dockerfile: src/kafka/Dockerfile
+#    - image: localhost:5000/load-generator
+#      context: .
+#      docker:
+#        dockerfile: src/load-generator/Dockerfile
+#    - image: localhost:5000/payment
+#      context: .
+#      docker:
+#        dockerfile: src/payment/Dockerfile
+#        buildArgs:
+#          PAYMENT_PORT: "{{.PAYMENT_PORT}}"
+#    - image: localhost:5000/product-catalog
+#      context: .
+#      docker:
+#        dockerfile: src/product-catalog/Dockerfile
+#        buildArgs:
+#          PRODUCT_CATALOG_PORT: "{{.PRODUCT_CATALOG_PORT}}"
+#    - image: localhost:5000/quote
+#      context: .
+#      docker:
+#        dockerfile: src/quote/Dockerfile
+#        buildArgs:
+#          QUOTE_PORT: "{{.QUOTE_PORT}}"
+#    - image: localhost:5000/recommendation
+#      context: .
+#      docker:
+#        dockerfile: src/recommendation/Dockerfile
+#        buildArgs:
+#          RECOMMENDATION_PORT: "{{.RECOMMENDATION_PORT}}"
+#    - image: localhost:5000/shipping
+#      context: .
+#      docker:
+#        dockerfile: src/shipping/Dockerfile
+#        buildArgs:
+#          SHIPPING_PORT: "{{.SHIPPING_PORT}}"
+#    - image: localhost:5000/valkey-cart
+#      context: .
+#      docker:
+#        dockerfile: src/valkey-cart/Dockerfile
+#    - image: localhost:5000/image-updater
+#      context: .
+#      docker:
+#        dockerfile: src/image-updater/Dockerfile
 
 deploy:
   helm:
     releases:
-      - name: honeypot
+      - name: honeypot-dmz
         chartPath: helm-charts
+        namespace: "{{.DMZ_NAMESPACE}}"
+        createNamespace: true
         setValueTemplates:
-          accounting.image.repository: "localhost:5000/accounting"
-          accounting.image.tag: "latest"
-          ad.image.repository: "localhost:5000/ad"
-          ad.image.tag: "latest"
-          cart.image.repository: "localhost:5000/cart"
-          cart.image.tag: "latest"
-          checkout.image.repository: "localhost:5000/checkout"
-          checkout.image.tag: "latest"
-          currency.image.repository: "localhost:5000/currency"
-          currency.image.tag: "latest"
-          email.image.repository: "localhost:5000/email"
-          email.image.tag: "latest"
-          flagd-ui.image.repository: "localhost:5000/flagd-ui"
-          flagd-ui.image.tag: "latest"
-          fraud-detection.image.repository: "localhost:5000/fraud-detection"
-          fraud-detection.image.tag: "latest"
-          frontend.image.repository: "localhost:5000/frontend"
-          frontend.image.tag: "latest"
-          frontend-proxy.image.repository: "localhost:5000/frontend-proxy"
-          frontend-proxy.image.tag: "latest"
-          image-provider.image.repository: "localhost:5000/image-provider"
-          image-provider.image.tag: "latest"
-          kafka.image.repository: "localhost:5000/kafka"
-          kafka.image.tag: "latest"
-          load-generator.image.repository: "localhost:5000/load-generator"
-          load-generator.image.tag: "latest"
-          payment.image.repository: "localhost:5000/payment"
-          payment.image.tag: "latest"
-          product-catalog.image.repository: "localhost:5000/product-catalog"
-          product-catalog.image.tag: "latest"
-          quote.image.repository: "localhost:5000/quote"
-          quote.image.tag: "latest"
-          recommendation.image.repository: "localhost:5000/recommendation"
-          recommendation.image.tag: "latest"
-          shipping.image.repository: "localhost:5000/shipping"
-          shipping.image.tag: "latest"
+          #Abilitations
+          components.frontend-proxy.enabled: "true"
+          components.image-provider.enabled: "true"
+          components.load-generator.enabled: "true"
+        valuesFiles:
+          - helm-charts/values.yaml
+      - name: honeypot-test
+        chartPath: helm-charts
+        namespace: "{{.TST_NAMESPACE}}"
+        createNamespace: true
+        valuesFiles:
+          - helm-charts/values.yaml
+      - name: honeypot-data
+        chartPath: helm-charts
+        namespace: "{{.DAT_NAMESPACE}}"
+        createNamespace: true
+        setValueTemplates:
+          #Abilitations
+          components.valkey-cart.enabled: "true"
+        valuesFiles:
+          - helm-charts/values.yaml
+      - name: honeypot-payment
+        chartPath: helm-charts
+        namespace: "{{.PAY_NAMESPACE}}"
+        createNamespace: true
+        setValueTemplates:
+          #Abilitations
+          components.payment.enabled: "true"
+        valuesFiles:
+          - helm-charts/values.yaml
+      - name: honeypot-mem
+        chartPath: helm-charts
+        namespace: "{{.MEM_NAMESPACE}}"
+        createNamespace: true
+        setValueTemplates:
+          #Abilitations
+          components.flagd.enabled: "true"
+          opentelemetry-collector.enabled: "true"
+          jaeger.enabled: "true"
+          prometheus.enabled: "true"
+          grafana.enabled: "true"
+          opensearch.enabled: "true"
+          imageUpdater.enabled: "true"
+          #Values
+          imageUpdater.registry.address: "{{.REGISTRY_IMG}}"
+        valuesFiles:
+          - helm-charts/values.yaml
+      - name: honeypot-app
+        chartPath: helm-charts
+        namespace: "{{.APP_NAMESPACE}}"
+        createNamespace: true
+        setValueTemplates:
+          #Abilitations
+          components.accounting.enabled: "true"
+          components.ad.enabled: "true"
+          components.cart.enabled: "true"
+          components.checkout.enabled: "true"
+          components.currency.enabled: "true"
+          components.email.enabled: "true"
+          components.fraud-detection.enabled: "true"
+          components.frontend.enabled: "true"
+          components.product-catalog.enabled: "true"
+          components.quote.enabled: "true"
+          components.recommendation.enabled: "true"
+          components.shipping.enabled: "true"
+          components.kafka.enabled: "true"
+      - name: honeypot-web
+        chartPath: helm-charts
+        namespace: "{{.WEB_NAMESPACE}}"
+        createNamespace: true
+        setValueTemplates:
+          #Abilitations
+          networkPolicies.enabled: "true"
+          caldera.enabled: "true"
         valuesFiles:
           - helm-charts/values.yaml
         skipBuildDependencies: false

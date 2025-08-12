@@ -1,13 +1,28 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+containerdConfigPatches:
+  - |
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry:5000"]
+        endpoint = ["https://registry:5000"]
+      [plugins."io.containerd.grpc.v1.cri".registry.configs."registry:5000".auth]
+        username = "testuser"
+        password = "testpassword"
+      [plugins."io.containerd.grpc.v1.cri".registry.configs."registry:5000".tls]
+        insecure_skip_verify = true
 nodes:
-    - role: control-plane
-    - role: worker
-    - role: worker
-    - role: worker
-    - role: worker
-    - role: worker
-    - role: worker
-    - role: worker
-    - role: worker
-    - role: worker
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 5000
+#    extraMounts:
+#      - hostPath: ~/registry/certs
+#        containerPath: /certs
+  - role: worker
+  - role: worker
+#  - role: worker
+#  - role: worker
+#  - role: worker
+#  - role: worker
+#  - role: worker
+#  - role: worker
+#  - role: worker

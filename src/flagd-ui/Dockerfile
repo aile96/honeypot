@@ -28,6 +28,6 @@ COPY --from=builder /app/next.config.mjs ./next.config.mjs
 
 COPY --from=builder /app/.next ./.next
 
-EXPOSE 4000
+EXPOSE ${FLAGD_UI_PORT}
 
 CMD ["npm", "start"]

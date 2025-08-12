@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: accounting
+  labels:
+    app: accounting
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: accounting
+  template:
+    metadata:
+      labels:
+        app: accounting
+    spec:
+      containers:
+      - name: accounting
+        image: ghcr.io/open-telemetry/demo-accounting:2.0.2
+        ports: []
+        envFrom:
+        - configMapRef:
+            name: demo-config

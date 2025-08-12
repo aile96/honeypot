@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: currency
+  labels:
+    app: currency
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: currency
+  template:
+    metadata:
+      labels:
+        app: currency
+    spec:
+      containers:
+      - name: currency
+        image: ghcr.io/open-telemetry/demo-currency:2.0.2
+        ports:
+        - containerPort: 7001
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 7001
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 7001
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        envFrom:
+        - configMapRef:
+            name: demo-config

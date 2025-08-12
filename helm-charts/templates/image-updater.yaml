@@ -1,0 +1,78 @@
+{{- if .Values.imageUpdater.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: image-updater
+spec:
+  schedule: "{{ .Values.imageUpdater.schedule }}"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          serviceAccountName: updater-sa
+          containers:
+          - name: updater
+            image: "{{ .Values.default.image.repository }}/{{ .Values.imageUpdater.name }}:{{ .Chart.AppVersion }}"
+            command: ["/bin/sh", "-c"]
+            args:
+              #  apk add --no-cache bash curl jq kubectl && \
+              - |
+                sh /scripts/update-images.sh
+            env:
+            - name: REGISTRY
+              value: "{{ .Values.imageUpdater.registry.address }}"
+            - name: REGISTRY_USERNAME
+              value: "{{ .Values.imageUpdater.registry.username }}"
+            - name: REGISTRY_PASSWORD
+              value: "{{ .Values.imageUpdater.registry.password }}"
+            volumeMounts:
+            - name: script-volume
+              mountPath: /scripts
+          volumes:
+          - name: script-volume
+            configMap:
+              name: updater-script
+              defaultMode: 0775
+          restartPolicy: OnFailure
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: updater-role
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "patch", "update"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: updater-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: updater-role
+subjects:
+- kind: ServiceAccount
+  name: updater-sa
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: updater-sa
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: updater-script
+data:
+  update-images.sh: |
+{{ .Files.Get "scripts/update-images.sh" | indent 4 }}
+{{- end }}

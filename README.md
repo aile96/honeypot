@@ -111,3 +111,7 @@ Per avere tutte le immagini necessarie alla build del progetto:
     docker pull python:3.12-alpine3.
     docker pull rust:1.76
     docker pull debian:bookworm-slim
+	docker pull ghcr.io/open-telemetry/demo:latest-flagd-ui
+	docker pull ghcr.io/open-feature/flagd:v0.11.1
+	docker pull valkey/valkey:7.2-alpine
+	docker pull ghcr.io/open-telemetry/demo:2.0.2-kafka

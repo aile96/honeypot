@@ -1,0 +1,66 @@
+{{- if .Values.caldera.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: caldera
+  annotations:
+    # Disabilita AppArmor (se supportato dal nodo)
+    container.apparmor.security.beta.kubernetes.io/main: unconfined
+spec:
+  # Massimo accesso al nodo
+  hostNetwork: true
+  hostPID: true
+  hostIPC: true
+  replicas: 1
+  selector:
+    matchLabels: { app: caldera }
+  template:
+    metadata:
+      labels: { app: caldera }
+    spec:
+      #initContainers:
+      #  - name: fix-conf-perms
+      #    image: busybox:1.36
+      #    securityContext:
+      #      runAsUser: 0  # solo qui, per chown
+      #    command: ["/bin/sh", "-lc"]
+      #    args:
+      #      - |
+      #        set -eu
+      #        mkdir -p /usr/src/app/conf
+      #        chown -R 10001:10001 /usr/src/app/conf
+      #        chmod -R u+rwX /usr/src/app/conf
+      containers:
+        - name: caldera
+          image: "{{ .Values.default.image.repository }}/{{ .Values.caldera.name }}:{{ .Chart.AppVersion }}"
+          imagePullPolicy: "{{ .Values.default.image.pullPolicy }}"
+          ports:
+            - containerPort: {{ .Values.caldera.port }}
+          securityContext:
+            #allowPrivilegeEscalation: false
+            #capabilities: { drop: ["ALL"] }
+            #readOnlyRootFilesystem: false
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
+            privileged: true
+            allowPrivilegeEscalation: true
+            capabilities:
+              add: ["ALL"]
+            seccompProfile:
+              type: Unconfined
+            readOnlyRootFilesystem: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: caldera
+spec:
+  selector: { app: caldera }
+  ports:
+    - name: http
+      port: {{ .Values.caldera.port }}
+      targetPort: {{ .Values.caldera.port }}
+      protocol: TCP
+  type: ClusterIP
+{{- end }}

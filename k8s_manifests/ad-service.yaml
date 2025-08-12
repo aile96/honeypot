@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ad
+  namespace: demo
+spec:
+  selector:
+    app: ad
+  ports:
+  - protocol: TCP
+    port: 9555
+    targetPort: 9555
+  type: ClusterIP

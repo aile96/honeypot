@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ad
+  labels:
+    app: ad
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ad
+  template:
+    metadata:
+      labels:
+        app: ad
+    spec:
+      containers:
+      - name: ad
+        image: ghcr.io/open-telemetry/demo-ad:2.0.2
+        ports:
+        - containerPort: 9555
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 9555
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 9555
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        envFrom:
+        - configMapRef:
+            name: demo-config

@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-detection
+  labels:
+    app: fraud-detection
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fraud-detection
+  template:
+    metadata:
+      labels:
+        app: fraud-detection
+    spec:
+      containers:
+      - name: fraud-detection
+        image: ghcr.io/open-telemetry/demo-fraud-detection:2.0.2
+        ports: []
+        envFrom:
+        - configMapRef:
+            name: demo-config

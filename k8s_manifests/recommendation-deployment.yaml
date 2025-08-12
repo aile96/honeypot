@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommendation
+  labels:
+    app: recommendation
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recommendation
+  template:
+    metadata:
+      labels:
+        app: recommendation
+    spec:
+      containers:
+      - name: recommendation
+        image: ghcr.io/open-telemetry/demo-recommendation:2.0.2
+        ports:
+        - containerPort: 9001
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 9001
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 9001
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        envFrom:
+        - configMapRef:
+            name: demo-config

@@ -15,11 +15,6 @@ spec:
           containers:
           - name: updater
             image: "{{ .Values.default.image.repository }}/{{ .Values.imageUpdater.name }}:{{ .Chart.AppVersion }}"
-            command: ["/bin/sh", "-c"]
-            args:
-              #  apk add --no-cache bash curl jq kubectl && \
-              - |
-                sh /scripts/update-images.sh
             env:
             - name: REGISTRY
               value: "{{ .Values.imageUpdater.registry.address }}"
@@ -27,14 +22,6 @@ spec:
               value: "{{ .Values.imageUpdater.registry.username }}"
             - name: REGISTRY_PASSWORD
               value: "{{ .Values.imageUpdater.registry.password }}"
-            volumeMounts:
-            - name: script-volume
-              mountPath: /scripts
-          volumes:
-          - name: script-volume
-            configMap:
-              name: updater-script
-              defaultMode: 0775
           restartPolicy: OnFailure
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -67,12 +54,4 @@ kind: ServiceAccount
 metadata:
   name: updater-sa
   namespace: {{ .Release.Namespace }}
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: updater-script
-data:
-  update-images.sh: |
-{{ .Files.Get "scripts/update-images.sh" | indent 4 }}
 {{- end }}

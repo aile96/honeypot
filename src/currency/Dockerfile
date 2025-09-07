@@ -16,7 +16,7 @@
 
 FROM alpine:3.18 AS builder
 
-RUN apk update && apk add git cmake make g++ grpc-dev protobuf-dev linux-headers
+RUN apk update && apk add git cmake make g++ grpc-dev protobuf-dev linux-headers postgresql-dev
 
 ARG OPENTELEMETRY_CPP_VERSION
 
@@ -40,7 +40,7 @@ RUN cd /currency \
 
 FROM alpine:3.18 AS release
 
-RUN apk update && apk add grpc-dev protobuf-dev
+RUN apk update && apk add grpc-dev protobuf-dev libstdc++ postgresql-libs
 COPY --from=builder /usr/local /usr/local
 
 EXPOSE ${CURRENCY_PORT}

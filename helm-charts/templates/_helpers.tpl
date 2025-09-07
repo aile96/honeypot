@@ -114,6 +114,9 @@ spec:
               kubernetes.io/metadata.name: {{ $from | quote }}
     {{- end }}
     {{- end }}
+    - from:
+        - ipBlock:
+            cidr: 172.16.0.0/12
 
   egress:
     # 1) DNS verso kube-system (CoreDNS)

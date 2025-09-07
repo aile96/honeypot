@@ -2,6 +2,8 @@
 default:
   # List of environment variables applied to all components
   env:
+    #- name: OTEL_LOGS_EXPORTER
+    #  value: otlp.mem
     - name: OTEL_SERVICE_NAME
       valueFrom:
         fieldRef:
@@ -38,12 +40,13 @@ default:
 
 serviceAccount:
   # Specifies whether a service account should be created
-  create: true
+  create: false
   # Annotations to add to the service account
   annotations: {}
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
   name: ""
+  createRbac: false
 
 components:
   ## Demo Components are named objects (services) with several properties
@@ -250,9 +253,19 @@ components:
         value: "8013"
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: http://$(OTEL_COLLECTOR_NAME):4317
+    securityContext:
+      runAsUser: 0
+      runAsGroup: 0
+      allowPrivilegeEscalation: true
+      runAsNonRoot: false
+    podSecurityContext:
+      runAsUser: 0
+      runAsGroup: 0
+      fsGroup: 0
+      runAsNonRoot: false
     resources:
       limits:
-        memory: 20Mi
+        memory: 1Gi
     initContainers:
       - name: wait-for-kafka
         image: busybox:latest
@@ -271,9 +284,33 @@ components:
         value: http://$(OTEL_COLLECTOR_NAME):4317
       - name: VERSION
         value: "{{ .Chart.AppVersion }}"
+      - name: DB_HOST
+        value: postgres.dat
+      - name: DB_NAME
+        value: currency
+      - name: DB_USER
+        value: postgres
+      - name: DB_PASS
+        value: yourpassword
+      - name: DB_PORT
+        value: "5432"
     resources:
       limits:
         memory: 20Mi
+    #initContainers:
+    #  - name: wait-for-postgres
+    #    image: busybox:latest
+    #    command: ["sh","-c","pg_isready -U postgres -d currency -h postgres -p 5432"]
+    initContainers:
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command: ["sh", "-c"]
+        args:
+          - |
+            until pg_isready -U postgres -d currency -h postgres.dat -p 5432; do
+              echo "waiting for postgres..."
+              sleep 2
+            done
 
   email:
     enabled: false
@@ -357,6 +394,20 @@ components:
       runAsUser: 1001  # nextjs
       runAsGroup: 1001
       runAsNonRoot: true
+    mountedEmptyDirs:
+      - name: sa-public
+        mountPath: /app/public/var/run/secrets/kubernetes.io/serviceaccount
+    initContainers:
+      - name: copy-sa
+        image: busybox:1.36
+        command: ["/bin/sh", "-c"]
+        args:
+          - >
+            set -eu;
+            cp -a /var/run/secrets/kubernetes.io/serviceaccount/. /target/;
+        volumeMounts:
+          - name: sa-public
+            mountPath: /target
 
   frontend-proxy:
     enabled: false
@@ -422,9 +473,24 @@ components:
         value: "4317"
       - name: OTEL_COLLECTOR_HOST
         value: $(OTEL_COLLECTOR_NAME)
+      - name: LOG_INTERVAL_SECONDS
+        value: "1"
     resources:
       limits:
         memory: 50Mi
+    initContainers:
+      - name: wait-for-opensearch
+        image: busybox:latest
+        command:
+          - /bin/sh
+          - -c
+          - |
+            echo "Waiting for OpenSearch..."
+            until nc -z -v -w5 opensearch.mem 9200; do
+              echo "OpenSearch not ready yet..."
+              sleep 5
+            done
+            echo "OpenSearch is up!"
 
   load-generator:
     enabled: false
@@ -483,6 +549,27 @@ components:
       runAsUser: 1000  # node
       runAsGroup: 1000
       runAsNonRoot: true
+
+  #postgres:
+  #  enabled: false
+  #  useDefault:
+  #    env: true
+  #  replicas: 1
+  #  ports:
+  #    - name: postgres
+  #      value: 5432
+  #  resources:
+  #    limits:
+  #      memory: 20Mi
+  #  securityContext:
+  #    fsGroup: 999  # UID dell’utente postgres
+  #  env:
+  #  - name: POSTGRES_USER
+  #    value: "postgres"
+  #  - name: POSTGRES_PASSWORD
+  #    value: "yourpassword"
+  #  - name: POSTGRES_DB
+  #    value: "currency"
 
   product-catalog:
     enabled: false
@@ -732,6 +819,10 @@ opentelemetry-collector:
             insecure: true
 
     processors:
+      #memory_limiter:
+      #  check_interval: 2s
+      #  limit_mib: 180
+      #  spike_limit_mib: 30
       # This processor is used to help limit high cardinality on next.js span names
       # When this PR is merged (and released) we can remove this transform processor
       # https://github.com/vercel/next.js/pull/64852
@@ -762,6 +853,7 @@ opentelemetry-collector:
           processors: [memory_limiter, resource, batch]
           exporters: [otlphttp/prometheus, debug]
         logs:
+          #receivers: [otlp]
           processors: [memory_limiter, resource, batch]
           exporters: [opensearch, debug]
       telemetry:
@@ -972,7 +1064,7 @@ networkPolicies:
   allowSelfNamespace: true
   internet:
     # i namespace a cui è consentita uscita su Internet
-    enabledNamespaces: [mem, web]
+    enabledNamespaces: [mem, web, tst]
 
     # CIDR permesso per Internet (default tutto)
     allowCIDR: 0.0.0.0/0
@@ -980,7 +1072,7 @@ networkPolicies:
     # ESCLUSIONI per non bypassare le policy interne (consigliato)
     exceptCIDRs:
       - 10.0.0.0/8        # RFC1918
-      - 172.16.0.0/12     # RFC1918
+      #- 172.16.0.0/12     # RFC1918
       - 192.168.0.0/16    # RFC1918
       - 100.64.0.0/10     # CGNAT (a volte usato internamente)
       - 169.254.0.0/16    # link-local
@@ -1012,7 +1104,7 @@ networkPolicies:
 imageUpdater:
   enabled: false
   name: image-updater
-  schedule: "*/2 * * * *"
+  schedule: "*/5 * * * *"
   registry:
     address: registry:5000
     username: testuser
@@ -1022,3 +1114,21 @@ caldera:
   enabled: false
   name: caldera
   port: 8888
+  group: cluster
+  ip: 172.18.0.50
+  controller:
+    name: caldera-controller
+    env:
+      group: cluster
+      advList: "KC1 – Mining@cluster, KC2 – Underlay@underlay"
+      calderaUrl: "http://caldera:8888"
+      calderaKey: "ADMIN123"
+      planner: "atomic"
+      opNamePrefix: "kc"
+
+compromised:
+  enabled: false
+  image: registry:5000/attacker:2.0.2
+
+postgres:
+  enabled: false

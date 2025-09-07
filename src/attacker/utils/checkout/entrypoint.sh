@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+
+# genera un file temporaneo sicuro in /tmp
+OUT=$(mktemp -p /tmp envoy.XXXX.yaml)
+
+envsubst '${LISTEN_PORT} ${APP_PORT} ${SHADOW_ADDR} ${SHADOW_PORT}' \
+  < /etc/envoy/envoy.yaml.tpl > "$OUT"
+
+export CHECKOUT_PORT="${APP_PORT}"
+
+/usr/src/app/checkout & APP_PID=$!
+/usr/local/bin/envoy -c "$OUT" --log-level info & ENVOY_PID=$!
+
+wait -n "$APP_PID" "$ENVOY_PID"
+kill "$APP_PID" "$ENVOY_PID" 2>/dev/null || true
+wait || true

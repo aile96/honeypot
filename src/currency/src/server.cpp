@@ -22,6 +22,44 @@
 #include <grpcpp/server_context.h>
 #include <grpcpp/impl/codegen/string_ref.h>
 
+#include "opentelemetry/common/key_value_iterable_view.h"
+#include <string>
+#include <unordered_map>
+#include <map>
+#include <libpq-fe.h>
+
+// Connessione globale inizializzata all'avvio
+PGconn *db_conn;
+
+void init_db_connection() {
+    const std::string db_host = getenv("DB_HOST");
+    const std::string db_name = getenv("DB_NAME");
+    const std::string db_user = getenv("DB_USER");
+    const std::string db_pass = getenv("DB_PASS");
+    const std::string db_port = getenv("DB_PORT");
+
+    std::string conn_str = "host=" + db_host +
+                           " port=" + db_port +
+                           " dbname=" + db_name +
+                           " user=" + db_user +
+                           " password=" + db_pass +
+                           " connect_timeout=5";
+    std::cerr << "[currency] Connecting to "
+              << db_host << ":" << db_port
+              << " db=" << db_name << " user=" << db_user << std::endl;
+
+    db_conn = PQconnectdb(conn_str.c_str());
+
+    if (PQstatus(db_conn) != CONNECTION_OK) {
+        std::cerr << "Connection to DB failed: " << PQerrorMessage(db_conn) << std::endl;
+        PQfinish(db_conn);
+        std::exit(1);
+    } else {
+      std::cerr << "Connection to DB OK" << std::endl;
+    }
+}
+
+
 using namespace std;
 
 using oteldemo::Empty;
@@ -40,49 +78,40 @@ using namespace opentelemetry::trace;
 using namespace opentelemetry::baggage;
 namespace context = opentelemetry::context;
 
+namespace common  = opentelemetry::common;
+
 namespace metrics_api = opentelemetry::metrics;
 namespace nostd       = opentelemetry::nostd;
 
 namespace
 {
-  std::unordered_map<std::string, double> currency_conversion
-  {
-    {"EUR", 1.0},
-    {"USD", 1.1305},
-    {"JPY", 126.40},
-    {"BGN", 1.9558},
-    {"CZK", 25.592},
-    {"DKK", 7.4609},
-    {"GBP", 0.85970},
-    {"HUF", 315.51},
-    {"PLN", 4.2996},
-    {"RON", 4.7463},
-    {"SEK", 10.5375},
-    {"CHF", 1.1360},
-    {"ISK", 136.80},
-    {"NOK", 9.8040},
-    {"HRK", 7.4210},
-    {"RUB", 74.4208},
-    {"TRY", 6.1247},
-    {"AUD", 1.6072},
-    {"BRL", 4.2682},
-    {"CAD", 1.5128},
-    {"CNY", 7.5857},
-    {"HKD", 8.8743},
-    {"IDR", 15999.40},
-    {"ILS", 4.0875},
-    {"INR", 79.4320},
-    {"KRW", 1275.05},
-    {"MXN", 21.7999},
-    {"MYR", 4.6289},
-    {"NZD", 1.6679},
-    {"PHP", 59.083},
-    {"SGD", 1.5349},
-    {"THB", 36.012},
-    {"ZAR", 16.0583},
-  };
+  std::unordered_map<std::string, double> currency_conversion;
 
-  std::string version = std::getenv("VERSION"); 
+  void update_currency_conversion() {
+     if (!db_conn || PQstatus(db_conn) != CONNECTION_OK) {
+          std::cerr << "DB connection not ready; attempting reconnect..." << std::endl;
+          init_db_connection();
+      }
+      PGresult* res = PQexec(db_conn, "SELECT code, rate FROM currency_rates");
+  
+      if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+          std::cerr << "Query failed: " << PQerrorMessage(db_conn) << std::endl;
+          PQclear(res);
+          return;
+      }
+    
+      currency_conversion.clear();
+      int rows = PQntuples(res);
+      for (int i = 0; i < rows; i++) {
+          std::string code = PQgetvalue(res, i, 0);
+          double rate = std::stod(PQgetvalue(res, i, 1));
+          currency_conversion[code] = rate;
+      }
+    
+      PQclear(res);
+  }
+
+  std::string version = getenv("VERSION");
   std::string name{ "currency" };
 
   nostd::unique_ptr<metrics_api::Counter<uint64_t>> currency_counter;
@@ -127,6 +156,7 @@ class CurrencyService final : public oteldemo::CurrencyService::Service
 
     span->AddEvent("Processing supported currencies request");
 
+    update_currency_conversion();
     for (auto &code : currency_conversion) {
       response->add_currency_codes(code.first);
     }
@@ -266,9 +296,16 @@ int main(int argc, char **argv) {
   initTracer();
   initMeter();
   initLogger();
+  init_db_connection();
   currency_counter = initIntCounter("app.currency", version);
   logger = getLogger(name);
   RunServer(port);
+
+  // clean shutdown
+  if (db_conn) {
+    PQfinish(db_conn);
+    db_conn = nullptr;
+  }
 
   return 0;
 }

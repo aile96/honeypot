@@ -21,12 +21,25 @@ build:
 #        buildArgs:
 #          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
 #          AD_PORT: "{{.AD_PORT}}"
-    - image: localhost:5000/caldera
-      context: src/caldera
-      docker:
-        dockerfile: src/caldera/Dockerfile
-        buildArgs:
-          VARIANT: full
+#    - image: localhost:5000/attacker
+#      context: src/attacker
+#      docker:
+#        dockerfile: src/attacker/Dockerfile
+#    - image: localhost:5000/caldera
+#      context: src/caldera
+#      docker:
+#        dockerfile: src/caldera/Dockerfile
+#        buildArgs:
+#          VARIANT: full
+#    - image: localhost:5000/caldera-controller
+#      context: src/caldera-controller
+#      docker:
+#        dockerfile: src/caldera-controller/Dockerfile
+#        buildArgs:
+#          DEFAULT_GROUP: "cluster"
+#          DEFAULT_ADV_NAME: "KC0 – Prova"
+#          DEFAULT_CALDERA_URL: "http://localhost:8888"
+#          UID: "10001"
 #    - image: localhost:5000/cart
 #      context: .
 #      docker:
@@ -85,6 +98,10 @@ build:
 #          OTEL_COLLECTOR_HOST: "{{.OTEL_COLLECTOR_HOST}}"
 #          OTEL_COLLECTOR_PORT_GRPC: "{{.OTEL_COLLECTOR_PORT_GRPC}}"
 #          OTEL_SERVICE_NAME: "{{.OTEL_SERVICE_NAME}}"
+#    - image: localhost:5000/image-updater
+#      context: src/image-updater
+#      docker:
+#        dockerfile: src/image-updater/Dockerfile
 #    - image: localhost:5000/kafka
 #      context: .
 #      docker:
@@ -99,6 +116,10 @@ build:
 #        dockerfile: src/payment/Dockerfile
 #        buildArgs:
 #          PAYMENT_PORT: "{{.PAYMENT_PORT}}"
+#    - image: localhost:5000/postgres
+#      context: src/postgres-currency
+#      docker:
+#        dockerfile: src/postgres-currency/Dockerfile
 #    - image: localhost:5000/product-catalog
 #      context: .
 #      docker:
@@ -127,29 +148,33 @@ build:
 #      context: .
 #      docker:
 #        dockerfile: src/valkey-cart/Dockerfile
-#    - image: localhost:5000/image-updater
-#      context: .
-#      docker:
-#        dockerfile: src/image-updater/Dockerfile
-
 deploy:
   helm:
     releases:
+      - name: honeypot-test
+        chartPath: helm-charts
+        namespace: "{{.TST_NAMESPACE}}"
+        createNamespace: true
+        setValueTemplates:
+          #Abilitations
+          compromised.enabled: "true"
+          serviceAccount.create: "true"
+          #Values
+          serviceAccount.name: "acc-tst"
+        valuesFiles:
+          - helm-charts/values.yaml
       - name: honeypot-dmz
         chartPath: helm-charts
         namespace: "{{.DMZ_NAMESPACE}}"
         createNamespace: true
         setValueTemplates:
           #Abilitations
+          serviceAccount.create: "true"
           components.frontend-proxy.enabled: "true"
           components.image-provider.enabled: "true"
-          components.load-generator.enabled: "true"
-        valuesFiles:
-          - helm-charts/values.yaml
-      - name: honeypot-test
-        chartPath: helm-charts
-        namespace: "{{.TST_NAMESPACE}}"
-        createNamespace: true
+          #Values
+          serviceAccount.name: "acc-dmz"
+          serviceAccount.role.name: "role-dmz"
         valuesFiles:
           - helm-charts/values.yaml
       - name: honeypot-data
@@ -158,7 +183,11 @@ deploy:
         createNamespace: true
         setValueTemplates:
           #Abilitations
+          serviceAccount.create: "true"
           components.valkey-cart.enabled: "true"
+          postgres.enabled: "true"
+          #Values
+          serviceAccount.name: "acc-dat"
         valuesFiles:
           - helm-charts/values.yaml
       - name: honeypot-payment
@@ -167,7 +196,10 @@ deploy:
         createNamespace: true
         setValueTemplates:
           #Abilitations
+          serviceAccount.create: "true"
           components.payment.enabled: "true"
+          #Values
+          serviceAccount.name: "acc-pay"
         valuesFiles:
           - helm-charts/values.yaml
       - name: honeypot-mem
@@ -176,6 +208,7 @@ deploy:
         createNamespace: true
         setValueTemplates:
           #Abilitations
+          serviceAccount.create: "true"
           components.flagd.enabled: "true"
           opentelemetry-collector.enabled: "true"
           jaeger.enabled: "true"
@@ -185,6 +218,7 @@ deploy:
           imageUpdater.enabled: "true"
           #Values
           imageUpdater.registry.address: "{{.REGISTRY_IMG}}"
+          serviceAccount.name: "acc-mem"
         valuesFiles:
           - helm-charts/values.yaml
       - name: honeypot-app
@@ -193,6 +227,7 @@ deploy:
         createNamespace: true
         setValueTemplates:
           #Abilitations
+          serviceAccount.create: "true"
           components.accounting.enabled: "true"
           components.ad.enabled: "true"
           components.cart.enabled: "true"
@@ -206,20 +241,32 @@ deploy:
           components.recommendation.enabled: "true"
           components.shipping.enabled: "true"
           components.kafka.enabled: "true"
+          #Values
+          serviceAccount.name: "acc-app"
       - name: honeypot-web
         chartPath: helm-charts
         namespace: "{{.WEB_NAMESPACE}}"
         createNamespace: true
         setValueTemplates:
           #Abilitations
+          serviceAccount.create: "true"
+          serviceAccount.createRbac: "true"
           networkPolicies.enabled: "true"
+          components.load-generator.enabled: "true"
           caldera.enabled: "true"
+          #Values
+          serviceAccount.name: "acc-web"
+          caldera.ip: "{{.CALDERA_IP}}"
         valuesFiles:
           - helm-charts/values.yaml
-        skipBuildDependencies: false
-
 portForward:
   - resourceType: service
-    resourceName: honeypot-service
-    port: 80
+    resourceName: frontend-proxy
+    namespace: "{{.DMZ_NAMESPACE}}"
+    port: 8080
     localPort: 8080
+  - resourceType: service
+    resourceName: caldera-proxy
+    namespace: "{{.WEB_NAMESPACE}}"
+    port: 8888
+    localPort: 8888

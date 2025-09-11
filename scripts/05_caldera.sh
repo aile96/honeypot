@@ -17,7 +17,8 @@ else
   log "Avvio del Docker $CALDERA_ATTACKER ..."
   docker run -d --name $CALDERA_ATTACKER --network kind \
     -v /var/run/docker.sock:/var/run/docker.sock \
-    localhost:5000/attacker:2.0.2
+    --privileged \
+    registry:5000/attacker:2.0.2
 fi
 
 docker cp corp-proxy.crt "$CALDERA_ATTACKER":/usr/local/share/ca-certificates/corp-proxy.crt
@@ -42,7 +43,7 @@ if docker ps -a --format '{{.Names}}' | grep -q "^$CALDERA_SERVER$"; then
 else
   log "Avvio del Docker $CALDERA_SERVER ..."
   docker run -d --name $CALDERA_SERVER --network kind \
-    --ip "$CALDERA_IP" localhost:5000/caldera:2.0.2
+    --ip "$CALDERA_IP" registry:5000/caldera:2.0.2
 fi
 
 if docker network inspect kind | grep -q "\"Name\": \"$CALDERA_SERVER\""; then

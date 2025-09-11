@@ -25,7 +25,6 @@ export const NavBar = styled.nav`
 
 export const Container = styled.div`
   display: flex;
-  justify-content: space-between;
   align-items: center;
   width: 100%;
   height: 100%;
@@ -34,6 +33,28 @@ export const Container = styled.div`
   ${({ theme }) => theme.breakpoints.desktop} {
     padding: 25px 100px;
   }
+`;
+
+/* Nuove colonne */
+export const Left = styled.div`
+  flex: 1;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+`;
+
+export const Center = styled.div`
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+`;
+
+export const Right = styled.div`
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
 `;
 
 export const NavBarBrand = styled(Link)`

@@ -10,28 +10,32 @@ build:
     envTemplate:
       template: "{{.IMAGE_VERSION}}"
   artifacts:
-#    - image: localhost:5000/accounting
+#    - image: registry:5000/accounting
 #      context: .
 #      docker:
 #        dockerfile: src/accounting/Dockerfile
-#    - image: localhost:5000/ad
+#    - image: registry:5000/ad
 #      context: .
 #      docker:
 #        dockerfile: src/ad/Dockerfile
 #        buildArgs:
 #          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
 #          AD_PORT: "{{.AD_PORT}}"
-#    - image: localhost:5000/attacker
+#    - image: registry:5000/attacker
 #      context: src/attacker
 #      docker:
 #        dockerfile: src/attacker/Dockerfile
-#    - image: localhost:5000/caldera
+#    - image: registry:5000/auth
+#      context: src/auth
+#      docker:
+#        dockerfile: src/auth/Dockerfile
+#    - image: registry:5000/caldera
 #      context: src/caldera
 #      docker:
 #        dockerfile: src/caldera/Dockerfile
 #        buildArgs:
 #          VARIANT: full
-#    - image: localhost:5000/caldera-controller
+#    - image: registry:5000/caldera-controller
 #      context: src/caldera-controller
 #      docker:
 #        dockerfile: src/caldera-controller/Dockerfile
@@ -40,56 +44,60 @@ build:
 #          DEFAULT_ADV_NAME: "KC0 – Prova"
 #          DEFAULT_CALDERA_URL: "http://localhost:8888"
 #          UID: "10001"
-#    - image: localhost:5000/cart
+#    - image: registry:5000/cart
 #      context: .
 #      docker:
 #        dockerfile: src/cart/src/Dockerfile
 #        buildArgs:
 #          CART_PORT: "{{.CART_PORT}}"
-#    - image: localhost:5000/checkout
+#    - image: registry:5000/checkout
 #      context: .
 #      docker:
 #        dockerfile: src/checkout/Dockerfile
 #        buildArgs:
 #          CHECKOUT_PORT: "{{.CHECKOUT_PORT}}"
-#    - image: localhost:5000/currency
+#    - image: registry:5000/controller
+#      context: src/controller
+#      docker:
+#        dockerfile: src/controller/Dockerfile
+#    - image: registry:5000/currency
 #      context: .
 #      docker:
 #        dockerfile: src/currency/Dockerfile
 #        buildArgs:
 #          OPENTELEMETRY_CPP_VERSION: "{{.OPENTELEMETRY_CPP_VERSION}}"
 #          CURRENCY_PORT: "{{.CURRENCY_PORT}}"
-#    - image: localhost:5000/email
+#    - image: registry:5000/email
 #      context: .
 #      docker:
 #        dockerfile: src/email/Dockerfile
 #        buildArgs:
 #          EMAIL_PORT: "{{.EMAIL_PORT}}"
-#    - image: localhost:5000/flagd
+#    - image: registry:5000/flagd
 #      context: .
 #      docker:
 #        dockerfile: src/flagd/Dockerfile
-#    - image: localhost:5000/flagd-ui
+#    - image: registry:5000/flagd-ui
 #      context: .
 #      docker:
 #        dockerfile: src/flagd-ui/Dockerfile
 #        buildArgs:
 #          FLAGD_UI_PORT: "{{.FLAGD_UI_PORT}}"
-#    - image: localhost:5000/fraud-detection
+#    - image: registry:5000/fraud-detection
 #      context: .
 #      docker:
 #        dockerfile: src/fraud-detection/Dockerfile
 #        buildArgs:
 #          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
-#    - image: localhost:5000/frontend
+#    - image: registry:5000/frontend
 #      context: .
 #      docker:
 #        dockerfile: src/frontend/Dockerfile
-#    - image: localhost:5000/frontend-proxy
+#    - image: registry:5000/frontend-proxy
 #      context: .
 #      docker:
 #        dockerfile: src/frontend-proxy/Dockerfile
-#    - image: localhost:5000/image-provider
+#    - image: registry:5000/image-provider
 #      context: .
 #      docker:
 #        dockerfile: src/image-provider/Dockerfile
@@ -98,53 +106,65 @@ build:
 #          OTEL_COLLECTOR_HOST: "{{.OTEL_COLLECTOR_HOST}}"
 #          OTEL_COLLECTOR_PORT_GRPC: "{{.OTEL_COLLECTOR_PORT_GRPC}}"
 #          OTEL_SERVICE_NAME: "{{.OTEL_SERVICE_NAME}}"
-#    - image: localhost:5000/image-updater
+#    - image: registry:5000/image-updater
 #      context: src/image-updater
 #      docker:
 #        dockerfile: src/image-updater/Dockerfile
-#    - image: localhost:5000/kafka
+#    - image: registry:5000/kafka
 #      context: .
 #      docker:
 #        dockerfile: src/kafka/Dockerfile
-#    - image: localhost:5000/load-generator
+#    - image: registry:5000/load-generator
 #      context: .
 #      docker:
 #        dockerfile: src/load-generator/Dockerfile
-#    - image: localhost:5000/payment
+#    - image: registry:5000/payment
 #      context: .
 #      docker:
 #        dockerfile: src/payment/Dockerfile
 #        buildArgs:
 #          PAYMENT_PORT: "{{.PAYMENT_PORT}}"
-#    - image: localhost:5000/postgres
+#    - image: registry:5000/postgres
 #      context: src/postgres-currency
 #      docker:
 #        dockerfile: src/postgres-currency/Dockerfile
-#    - image: localhost:5000/product-catalog
+#    - image: registry:5000/postgres-auth
+#      context: src/postgres-auth
+#      docker:
+#        dockerfile: src/postgres-auth/Dockerfile
+#    - image: registry:5000/product-catalog
 #      context: .
 #      docker:
 #        dockerfile: src/product-catalog/Dockerfile
 #        buildArgs:
 #          PRODUCT_CATALOG_PORT: "{{.PRODUCT_CATALOG_PORT}}"
-#    - image: localhost:5000/quote
+#    - image: registry:5000/quote
 #      context: .
 #      docker:
 #        dockerfile: src/quote/Dockerfile
 #        buildArgs:
 #          QUOTE_PORT: "{{.QUOTE_PORT}}"
-#    - image: localhost:5000/recommendation
+#    - image: registry:5000/recommendation
 #      context: .
 #      docker:
 #        dockerfile: src/recommendation/Dockerfile
 #        buildArgs:
 #          RECOMMENDATION_PORT: "{{.RECOMMENDATION_PORT}}"
-#    - image: localhost:5000/shipping
+#    - image: registry:5000/shipping
 #      context: .
 #      docker:
 #        dockerfile: src/shipping/Dockerfile
 #        buildArgs:
 #          SHIPPING_PORT: "{{.SHIPPING_PORT}}"
-#    - image: localhost:5000/valkey-cart
+    - image: registry:5000/sidecar-enc
+      context: src/sidecar-enc
+      docker:
+        dockerfile: src/sidecar-enc/Dockerfile
+#    - image: registry:5000/sidecar-mal
+#      context: src/sidecar-mal
+#      docker:
+#        dockerfile: src/sidecar-mal/Dockerfile
+#    - image: registry:5000/valkey-cart
 #      context: .
 #      docker:
 #        dockerfile: src/valkey-cart/Dockerfile
@@ -157,7 +177,7 @@ deploy:
         createNamespace: true
         setValueTemplates:
           #Abilitations
-          compromised.enabled: "true"
+          components.test-image.enabled: "true"
           serviceAccount.create: "true"
           #Values
           serviceAccount.name: "acc-tst"
@@ -172,6 +192,7 @@ deploy:
           serviceAccount.create: "true"
           components.frontend-proxy.enabled: "true"
           components.image-provider.enabled: "true"
+          components.traffic-controller.enabled: "true"
           #Values
           serviceAccount.name: "acc-dmz"
           serviceAccount.role.name: "role-dmz"
@@ -230,6 +251,7 @@ deploy:
           serviceAccount.create: "true"
           components.accounting.enabled: "true"
           components.ad.enabled: "true"
+          components.auth.enabled: "true"
           components.cart.enabled: "true"
           components.checkout.enabled: "true"
           components.currency.enabled: "true"
@@ -251,7 +273,7 @@ deploy:
           #Abilitations
           serviceAccount.create: "true"
           serviceAccount.createRbac: "true"
-          networkPolicies.enabled: "true"
+          #networkPolicies.enabled: "true"
           components.load-generator.enabled: "true"
           caldera.enabled: "true"
           #Values

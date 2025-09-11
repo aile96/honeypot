@@ -197,6 +197,35 @@ components:
       limits:
         memory: 300Mi
 
+  auth:
+    enabled: false
+    useDefault:
+      env: false
+    service:
+      port: 8080
+    env:
+      - name: DATABASE_URL
+        value: "postgresql+psycopg://testuser:testpassword@postgres-auth.dat:5432/usersdb"
+      - name: JWT_EXP_MINUTES
+        value: "60"
+      - name: JWT_ALG
+        value: "HS256"
+      - name: JWT_SECRET
+        value: "CHANGEME_SUPER_SECRET"
+    resources:
+      limits:
+        memory: 500Mi
+    initContainers:
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command: ["sh", "-c"]
+        args:
+          - |
+            until pg_isready -U testuser -d usersdb -h postgres-auth.dat -p 5432; do
+              echo "waiting for postgres..."
+              sleep 2
+            done
+
   cart:
     enabled: false
     useDefault:
@@ -240,7 +269,7 @@ components:
       - name: EMAIL_ADDR
         value: http://email:8080
       - name: PAYMENT_ADDR
-        value: payment.pay:8080
+        value: "http://localhost:18080" #payment.pay:8080
       - name: PRODUCT_CATALOG_ADDR
         value: product-catalog:8080
       - name: SHIPPING_ADDR
@@ -270,6 +299,48 @@ components:
       - name: wait-for-kafka
         image: busybox:latest
         command: ["sh", "-c", "until nc -z -v -w30 kafka 9092; do echo waiting for kafka; sleep 2; done;"]
+    sidecarContainers:
+      # INGRESS: verifica token + decifra in ingresso, cifra in uscita
+      - name: crypto-ingress
+        imageOverride:
+          repository: "registry:5000/sidecar-enc"
+        ports:
+          - name: ingress
+            value: 8081          # verrà esposto anche dal Service (usato da frontend)
+        env:
+          - name: MODE
+            value: ingress
+          - name: LISTEN_ADDR
+            value: ":8081"
+          - name: UPSTREAM_URL
+            value: "http://localhost:8080"   # inoltra all’app locale
+          - name: FLAGD_HOST
+            value: "flagd"
+          - name: FLAGD_PORT
+            value: "8013"
+          - name: FLAG_KEY
+            value: "crypto-word"
+          - name: HEADER_NAME
+            value: "X-Auth-Token"
+      # EGRESS: cifra le chiamate di checkout verso payment
+      - name: crypto-egress
+        imageOverride:
+          repository: "registry:5000/sidecar-enc"
+        env:
+          - name: MODE
+            value: egress
+          - name: LISTEN_ADDR
+            value: ":18080"
+          - name: UPSTREAM_URL
+            value: "http://payment:8081"     # proxy ingress di payment
+          - name: FLAGD_HOST
+            value: "flagd"
+          - name: FLAGD_PORT
+            value: "8013"
+          - name: FLAG_KEY
+            value: "crypto-word"
+          - name: HEADER_NAME
+            value: "X-Auth-Token"
 
   currency:
     enabled: false
@@ -297,10 +368,6 @@ components:
     resources:
       limits:
         memory: 20Mi
-    #initContainers:
-    #  - name: wait-for-postgres
-    #    image: busybox:latest
-    #    command: ["sh","-c","pg_isready -U postgres -d currency -h postgres -p 5432"]
     initContainers:
       - name: wait-for-postgres
         image: postgres:15-alpine
@@ -366,7 +433,7 @@ components:
       - name: CART_ADDR
         value: cart:8080
       - name: CHECKOUT_ADDR
-        value: checkout:8080
+        value: "http://localhost:18080" #checkout:8080
       - name: CURRENCY_ADDR
         value: currency:8080
       - name: PRODUCT_CATALOG_ADDR
@@ -375,6 +442,8 @@ components:
         value: recommendation:8080
       - name: SHIPPING_ADDR
         value: shipping:8080
+      - name: AUTH_BASE_URL
+        value: "http://auth:8080"
       - name: FLAGD_HOST
         value: flagd.mem
       - name: FLAGD_PORT
@@ -408,12 +477,33 @@ components:
         volumeMounts:
           - name: sa-public
             mountPath: /target
+    sidecarContainers:
+      # EGRESS: cifra le richieste del frontend verso checkout
+      - name: crypto-egress
+        imageOverride:
+          repository: "registry:5000/sidecar-enc"
+        env:
+          - name: MODE
+            value: egress
+          - name: LISTEN_ADDR
+            value: ":18080"
+          - name: UPSTREAM_URL
+            value: "http://checkout:8081"   # parla al proxy ingress di checkout
+          - name: FLAGD_HOST
+            value: "flagd.mem"
+          - name: FLAGD_PORT
+            value: "8013"
+          - name: FLAG_KEY
+            value: "crypto-word"
+          - name: HEADER_NAME
+            value: "X-Auth-Token"
 
   frontend-proxy:
     enabled: false
     useDefault:
       env: true
     service:
+      type: LoadBalancer
       port: 8080
     env:
       - name: ENVOY_PORT
@@ -478,19 +568,6 @@ components:
     resources:
       limits:
         memory: 50Mi
-    initContainers:
-      - name: wait-for-opensearch
-        image: busybox:latest
-        command:
-          - /bin/sh
-          - -c
-          - |
-            echo "Waiting for OpenSearch..."
-            until nc -z -v -w5 opensearch.mem 9200; do
-              echo "OpenSearch not ready yet..."
-              sleep 5
-            done
-            echo "OpenSearch is up!"
 
   load-generator:
     enabled: false
@@ -549,27 +626,29 @@ components:
       runAsUser: 1000  # node
       runAsGroup: 1000
       runAsNonRoot: true
-
-  #postgres:
-  #  enabled: false
-  #  useDefault:
-  #    env: true
-  #  replicas: 1
-  #  ports:
-  #    - name: postgres
-  #      value: 5432
-  #  resources:
-  #    limits:
-  #      memory: 20Mi
-  #  securityContext:
-  #    fsGroup: 999  # UID dell’utente postgres
-  #  env:
-  #  - name: POSTGRES_USER
-  #    value: "postgres"
-  #  - name: POSTGRES_PASSWORD
-  #    value: "yourpassword"
-  #  - name: POSTGRES_DB
-  #    value: "currency"
+    sidecarContainers:
+      # INGRESS: front-end per il servizio payment
+      - name: crypto-ingress
+        imageOverride:
+          repository: "registry:5000/sidecar-enc"
+        ports:
+          - name: ingress
+            value: 8081          # verrà esposto anche dal Service (usato da checkout)
+        env:
+          - name: MODE
+            value: ingress
+          - name: LISTEN_ADDR
+            value: ":8081"
+          - name: UPSTREAM_URL
+            value: "http://localhost:8080"
+          - name: FLAGD_HOST
+            value: "flagd"
+          - name: FLAGD_PORT
+            value: "8013"
+          - name: FLAG_KEY
+            value: "crypto-word"
+          - name: HEADER_NAME
+            value: "X-Auth-Token"
 
   product-catalog:
     enabled: false
@@ -745,6 +824,82 @@ components:
       runAsUser: 1000  # appuser
       runAsGroup: 1000
       runAsNonRoot: true
+
+  test-image:
+    enabled: false
+    useDefault:
+      env: false
+    replicas: 1
+    imageOverride:
+      repository: malicious:5000/attacker
+    env:
+      - name: CALDERA_URL
+        value: "http://caldera.web:8888"
+      - name: GROUP
+        value: cluster
+
+  traffic-controller:
+    enabled: false
+    useDefault:
+      env: true
+    replicas: 1
+    resources:
+      limits:
+        memory: 20Mi
+    securityContext:
+      runAsUser: 999
+      runAsGroup: 1000
+      runAsNonRoot: true
+    imageOverride:
+      repository: "registry:5000/controller"
+    env:
+      - name: IMAGE_PROVIDER_PORT
+        value: "8081"
+      - name: OTEL_COLLECTOR_PORT_HTTP
+        value: "4318"
+      - name: OTEL_COLLECTOR_HOST
+        value: "otel-collector.mem"
+      - name: LOG_INTERVAL_SECONDS
+        value: "5"
+      - name: OTEL_SERVICE_NAME
+        value: "traffic-controller"
+      - name: LOG_SEVERITY_TEXT
+        value: "info"
+      - name: SCRIPT_NAME
+        value: "synthetic-log.sh"
+    initContainers:
+      - name: wait-for-opensearch
+        image: busybox:latest
+        command:
+          - /bin/sh
+          - -c
+          - |
+            echo "Waiting for OpenSearch..."
+            until nc -z -v -w5 opensearch.mem 9200; do
+              echo "OpenSearch not ready yet..."
+              sleep 5
+            done
+            echo "OpenSearch is up!"
+      - name: wait-for-otel-collector
+        image: curlimages/curl:8.8.0
+        env:
+          - name: OTEL_COLLECTOR_HOST
+            value: otel-collector.mem
+          - name: OTEL_COLLECTOR_PORT_HTTP
+            value: "4318"
+        command:
+          - /bin/sh
+          - -c
+          - |
+            echo "Waiting for otel-collector..."
+            until curl -s -o /dev/null -w "%{http_code}" \
+              -X POST -H 'Content-Type: application/x-protobuf' \
+              "http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}/v1/logs" \
+              | grep -q "200"; do
+              echo "otel-collector not ready yet..."
+              sleep 5
+            done
+            echo "otel-collector is up!"
 
   valkey-cart:
     enabled: false
@@ -1125,10 +1280,6 @@ caldera:
       calderaKey: "ADMIN123"
       planner: "atomic"
       opNamePrefix: "kc"
-
-compromised:
-  enabled: false
-  image: registry:5000/attacker:2.0.2
 
 postgres:
   enabled: false

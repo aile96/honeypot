@@ -12,7 +12,7 @@ WORDLIST="${WORDLIST:-kubernetes kube-dns coredns api apiserver etcd prometheus 
 logstash fluentd fluent-bit rabbitmq kafka zookeeper nats redis mysql mariadb postgres postgresql mongo mongodb minio registry harbor \
 jenkins gitlab argocd tekton keycloak vault consul ingress-nginx traefik istiod istio-pilot istio-ingress webhook dashboard metrics-server \
 kube-state-metrics opensearch valkey-cart}"
-COMMON_NS="${EXTRA_NAMESPACES:-default kube-system kube-public monitoring logging observability dev data test qa stage staging prod production \
+COMMON_NS="${EXTRA_NAMESPACES:-default kube-system kube-public monitoring logging observability app dev data test qa stage staging prod production \
 ingress-nginx cert-manager mem dat}"
 
 # build lista namespace (dedup includendo quello corrente)
@@ -49,4 +49,4 @@ head -n1 "$OUT_FILE" > "$tmp"
 tail -n +2 "$OUT_FILE" | sort -u >> "$tmp" || true
 mv "$tmp" "$OUT_FILE"
 
-[ "$(wc -l < "$OUT_FILE")" -gt 1 ] && echo "[+] Results -> $OUT_FILE" || echo "[-] No DNS hits"
+[ "$(wc -l < "$OUT_FILE")" -gt 1 ] && cat "$OUT_FILE" || echo "No DNS hits"

@@ -4,7 +4,7 @@ set -eu
 
 OTEL_COLLECTOR_HOST="${OTEL_COLLECTOR_HOST:-otel-collector.mem}"
 OTEL_COLLECTOR_PORT_HTTP="${OTEL_COLLECTOR_PORT_HTTP:-4318}"
-OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-image-provider}"
+OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-traffic-controller}"
 LOG_INTERVAL_SECONDS="${LOG_INTERVAL_SECONDS:-5}"
 LOG_SEVERITY_TEXT="${LOG_SEVERITY_TEXT:-Info}"
 LOG_SEVERITY_NUMBER="${LOG_SEVERITY_NUMBER:-9}"
@@ -104,9 +104,4 @@ while true; do
   sleep "${LOG_INTERVAL_SECONDS}"
 done
 
-echo "Starting nginx..."
-envsubst '$OTEL_COLLECTOR_HOST $IMAGE_PROVIDER_PORT $OTEL_COLLECTOR_PORT_GRPC $OTEL_SERVICE_NAME' \
-    < /nginx.conf.template > /etc/nginx/nginx.conf
-
-cat /etc/nginx/nginx.conf
-exec nginx -g 'daemon off;'
+echo "Done"

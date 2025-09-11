@@ -23,12 +23,11 @@ while IFS= read -r line; do
 done < "$ENV_FILE"
 
 #bash "${PROJECT_ROOT}/scripts/00_install_deps.sh"
-bash "${PROJECT_ROOT}/scripts/01_kind_cluster.sh" "$CLUSTER_NAME" "$NUM_WORKERS" "$REGISTRY_NAME" "$REGISTRY_PORT" "$REGISTRY_USER" "$REGISTRY_PASS"
-bash "${PROJECT_ROOT}/scripts/02_helm_repos.sh" "$CILIUM_HELM_VERSION" "$KUBE_SYSTEM_NS" "$NUM_WORKERS"
-#bash "${PROJECT_ROOT}/scripts/03_credentials_tls.sh" "$HTPASSWD_PATH" "$REGISTRY_USER" "$REGISTRY_PASS" "$CERT_CRT_PATH" "$CERT_KEY_PATH" "$REGISTRY_CN"
-#bash "${PROJECT_ROOT}/scripts/04_registry.sh" "$PROJECT_ROOT" "$REGISTRY_NAME" "$REGISTRY_PORT"
-#bash "${PROJECT_ROOT}/scripts/05_skaffold_build.sh" "$ENV_FILE"
-#bash "${PROJECT_ROOT}/scripts/06_caldera.sh" "$CALDERA_SERVER" "$CALDERA_ATTACKER" "$CALDERA_IP"
-#bash "${PROJECT_ROOT}/scripts/07_skaffold_deploy.sh" "$ENV_FILE"
+bash "${PROJECT_ROOT}/scripts/01_kind_cluster.sh" "$CLUSTER_NAME" "$NUM_WORKERS" "$REGISTRY_NAME" "$REGISTRY_PORT" "$REGISTRY_USER" "$REGISTRY_PASS" "$REGISTRY_MALICIOUS_NAME" "$CILIUM_HELM_VERSION" "$KUBE_SYSTEM_NS"
+bash "${PROJECT_ROOT}/scripts/02_credentials_tls.sh" "$HTPASSWD_PATH" "$REGISTRY_USER" "$REGISTRY_PASS" "$CERT_CRT_PATH" "$CERT_KEY_PATH" "$REGISTRY_CN"
+bash "${PROJECT_ROOT}/scripts/03_registry.sh" "$PROJECT_ROOT" "$REGISTRY_NAME" "$REGISTRY_PORT"
+bash "${PROJECT_ROOT}/scripts/04_skaffold_build.sh" "$ENV_FILE"
+bash "${PROJECT_ROOT}/scripts/05_caldera.sh" "$CALDERA_SERVER" "$CALDERA_ATTACKER" "$CALDERA_IP"
+bash "${PROJECT_ROOT}/scripts/06_skaffold_deploy.sh" "$ENV_FILE"
 
 log "Pipeline completata."

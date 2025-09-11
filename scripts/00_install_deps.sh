@@ -5,6 +5,16 @@ set -euo pipefail
 # Supports: Ubuntu/Debian, RHEL/CentOS/Fedora, Arch, macOS (Homebrew).
 # Installs/ensures: docker, kind, kubectl, helm, htpasswd, openssl, skaffold, jq, curl, sed, awk, grep
 
+declare -A HELM_REPOS=(
+  ["open-telemetry"]="https://open-telemetry.github.io/opentelemetry-helm-charts"
+  ["jaegertracing"]="https://jaegertracing.github.io/helm-charts"
+  ["prometheus-community"]="https://prometheus-community.github.io/helm-charts"
+  ["grafana"]="https://grafana.github.io/helm-charts"
+  ["opensearch"]="https://opensearch-project.github.io/helm-charts"
+  ["cilium"]="https://helm.cilium.io/"
+  ["metallb"]="https://metallb.github.io/metallb"
+)
+
 need_cmd(){ command -v "$1" >/dev/null 2>&1; }
 
 detect_platform() {
@@ -201,6 +211,20 @@ main() {
   if [ "$PLATFORM" = "darwin" ]; then
     warn "Su macOS potrebbe servirti Docker Desktop: 'brew install --cask docker' e avvialo manualmente."
   fi
+
+  log "Aggiunta dei repo Helm necessari al progetto"
+
+  for repo in "${!HELM_REPOS[@]}"; do
+    if helm repo list | grep -q "$repo"; then
+      warn "Helm repo \"$repo\" già presente."
+    else
+      log "Aggiunta repo Helm: $repo"
+      helm repo add "$repo" "${HELM_REPOS[$repo]}"
+    fi
+  done
+
+  log "Aggiornamento dei repo Helm..."
+  helm repo update
   
   log "Installazione dipendenze completata ✅"
 }

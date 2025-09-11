@@ -1,0 +1,112 @@
+[
+  {
+    "username": "alice",
+    "password": "p@ss",
+    "email": "alice.smith@example.com",
+    "address": "123 Maple Street",
+    "zip": "10001",
+    "city": "New York",
+    "state": "NY",
+    "country": "USA",
+    "phone": "+1 212-555-1234"
+  },
+  {
+    "username": "bob",
+    "password": "secret",
+    "email": "bob.johnson@example.com",
+    "address": "456 Oak Avenue",
+    "zip": "90001",
+    "city": "Los Angeles",
+    "state": "CA",
+    "country": "USA",
+    "phone": "+1 323-555-5678"
+  },
+  {
+    "username": "carol",
+    "password": "changeme",
+    "email": "carol.williams@example.com",
+    "address": "789 Pine Road",
+    "zip": "60601",
+    "city": "Chicago",
+    "state": "IL",
+    "country": "USA",
+    "phone": "+1 312-555-9012"
+  },
+  {
+    "username": "david",
+    "password": "welcome123",
+    "email": "david.brown@example.com",
+    "address": "321 Elm Street",
+    "zip": "73301",
+    "city": "Austin",
+    "state": "TX",
+    "country": "USA",
+    "phone": "+1 512-555-3456"
+  },
+  {
+    "username": "eva",
+    "password": "qwerty!",
+    "email": "eva.davis@example.com",
+    "address": "654 Cedar Lane",
+    "zip": "98101",
+    "city": "Seattle",
+    "state": "WA",
+    "country": "USA",
+    "phone": "+1 206-555-7890"
+  },
+  {
+    "username": "frank",
+    "password": "letmein",
+    "email": "frank.miller@example.com",
+    "address": "987 Birch Drive",
+    "zip": "19103",
+    "city": "Philadelphia",
+    "state": "PA",
+    "country": "USA",
+    "phone": "+1 215-555-4321"
+  },
+  {
+    "username": "grace",
+    "password": "sunshine",
+    "email": "grace.wilson@example.com",
+    "address": "246 Spruce Court",
+    "zip": "30301",
+    "city": "Atlanta",
+    "state": "GA",
+    "country": "USA",
+    "phone": "+1 404-555-6789"
+  },
+  {
+    "username": "henry",
+    "password": "password1",
+    "email": "henry.moore@example.com",
+    "address": "135 Willow Avenue",
+    "zip": "85001",
+    "city": "Phoenix",
+    "state": "AZ",
+    "country": "USA",
+    "phone": "+1 602-555-2468"
+  },
+  {
+    "username": "isabel",
+    "password": "iloveyou",
+    "email": "isabel.taylor@example.com",
+    "address": "579 Aspen Street",
+    "zip": "80201",
+    "city": "Denver",
+    "state": "CO",
+    "country": "USA",
+    "phone": "+1 303-555-1357"
+  },
+  {
+    "username": "jack",
+    "password": "hunter2",
+    "email": "jack.anderson@example.com",
+    "address": "864 Redwood Blvd",
+    "zip": "94102",
+    "city": "San Francisco",
+    "state": "CA",
+    "country": "USA",
+    "phone": "+1 415-555-9753"
+  }
+]

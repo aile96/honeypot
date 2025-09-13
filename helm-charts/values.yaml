@@ -257,8 +257,9 @@ components:
     enabled: false
     useDefault:
       env: true
-    service:
-      port: 8080
+    ports:
+      - value: 8080
+        targetPort: 8081
     env:
       - name: CHECKOUT_PORT
         value: "8080"
@@ -269,7 +270,7 @@ components:
       - name: EMAIL_ADDR
         value: http://email:8080
       - name: PAYMENT_ADDR
-        value: "http://localhost:18080" #payment.pay:8080
+        value: "localhost:18081" #payment.pay:8080
       - name: PRODUCT_CATALOG_ADDR
         value: product-catalog:8080
       - name: SHIPPING_ADDR
@@ -299,23 +300,25 @@ components:
       - name: wait-for-kafka
         image: busybox:latest
         command: ["sh", "-c", "until nc -z -v -w30 kafka 9092; do echo waiting for kafka; sleep 2; done;"]
+      - name: wait-for-flagd
+        image: busybox:latest
+        command: ["sh", "-c", "until nc -z -v -w30 flagd.mem 8013; do echo waiting for flagd; sleep 2; done;"]
     sidecarContainers:
       # INGRESS: verifica token + decifra in ingresso, cifra in uscita
       - name: crypto-ingress
         imageOverride:
           repository: "registry:5000/sidecar-enc"
-        ports:
-          - name: ingress
-            value: 8081          # verrà esposto anche dal Service (usato da frontend)
+        useDefault:
+          env: false
         env:
           - name: MODE
             value: ingress
           - name: LISTEN_ADDR
             value: ":8081"
           - name: UPSTREAM_URL
-            value: "http://localhost:8080"   # inoltra all’app locale
+            value: "localhost:8080"   # inoltra all’app locale
           - name: FLAGD_HOST
-            value: "flagd"
+            value: "flagd.mem"
           - name: FLAGD_PORT
             value: "8013"
           - name: FLAG_KEY
@@ -326,15 +329,17 @@ components:
       - name: crypto-egress
         imageOverride:
           repository: "registry:5000/sidecar-enc"
+        useDefault:
+          env: false
         env:
           - name: MODE
             value: egress
           - name: LISTEN_ADDR
-            value: ":18080"
+            value: ":18081"
           - name: UPSTREAM_URL
-            value: "http://payment:8081"     # proxy ingress di payment
+            value: "payment.pay:8080"     # proxy ingress di payment
           - name: FLAGD_HOST
-            value: "flagd"
+            value: "flagd.mem"
           - name: FLAGD_PORT
             value: "8013"
           - name: FLAG_KEY
@@ -433,7 +438,7 @@ components:
       - name: CART_ADDR
         value: cart:8080
       - name: CHECKOUT_ADDR
-        value: "http://localhost:18080" #checkout:8080
+        value: "localhost:18080" #checkout:8080
       - name: CURRENCY_ADDR
         value: currency:8080
       - name: PRODUCT_CATALOG_ADDR
@@ -474,6 +479,9 @@ components:
           - >
             set -eu;
             cp -a /var/run/secrets/kubernetes.io/serviceaccount/. /target/;
+      - name: wait-for-flagd
+        image: busybox:latest
+        command: ["sh", "-c", "until nc -z -v -w30 flagd.mem 8013; do echo waiting for flagd; sleep 2; done;"]
         volumeMounts:
           - name: sa-public
             mountPath: /target
@@ -482,13 +490,15 @@ components:
       - name: crypto-egress
         imageOverride:
           repository: "registry:5000/sidecar-enc"
+        useDefault:
+          env: false
         env:
           - name: MODE
             value: egress
           - name: LISTEN_ADDR
             value: ":18080"
           - name: UPSTREAM_URL
-            value: "http://checkout:8081"   # parla al proxy ingress di checkout
+            value: "checkout:8080"   # parla al proxy ingress di checkout
           - name: FLAGD_HOST
             value: "flagd.mem"
           - name: FLAGD_PORT
@@ -608,8 +618,9 @@ components:
     enabled: false
     useDefault:
       env: true
-    service:
-      port: 8080
+    ports:
+      - value: 8080
+        targetPort: 8081
     env:
       - name: PAYMENT_PORT
         value: "8080"
@@ -626,23 +637,26 @@ components:
       runAsUser: 1000  # node
       runAsGroup: 1000
       runAsNonRoot: true
+    initContainers:
+      - name: wait-for-flagd
+        image: busybox:latest
+        command: ["sh", "-c", "until nc -z -v -w30 flagd.mem 8013; do echo waiting for flagd; sleep 2; done;"]
     sidecarContainers:
       # INGRESS: front-end per il servizio payment
       - name: crypto-ingress
         imageOverride:
           repository: "registry:5000/sidecar-enc"
-        ports:
-          - name: ingress
-            value: 8081          # verrà esposto anche dal Service (usato da checkout)
+        useDefault:
+          env: false
         env:
           - name: MODE
             value: ingress
           - name: LISTEN_ADDR
             value: ":8081"
           - name: UPSTREAM_URL
-            value: "http://localhost:8080"
+            value: "localhost:8080"
           - name: FLAGD_HOST
-            value: "flagd"
+            value: "flagd.mem"
           - name: FLAGD_PORT
             value: "8013"
           - name: FLAG_KEY
@@ -1275,7 +1289,7 @@ caldera:
     name: caldera-controller
     env:
       group: cluster
-      advList: "KC1 – Mining@cluster, KC2 – Underlay@underlay"
+      advList: "KC2 – Underlay@underlay"
       calderaUrl: "http://caldera:8888"
       calderaKey: "ADMIN123"
       planner: "atomic"

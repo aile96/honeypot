@@ -7,11 +7,13 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -22,12 +24,15 @@ import (
 
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	of "github.com/open-feature/go-sdk/openfeature"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 const (
-	headerAuth       = "X-Auth-Token"
-	headerEncrypted  = "X-Encrypted"
-	headerOrigCT     = "X-Orig-Content-Type"
+	headerAuth      = "X-Auth-Token"
+	headerEncrypted = "X-Encrypted"
+	headerOrigCT    = "X-Orig-Content-Type"
+
 	defaultFlagKey   = "crypto-word"
 	defaultHeaderKey = headerAuth
 )
@@ -140,21 +145,42 @@ func newProxy() (*proxy, error) {
 	if up == "" {
 		return nil, fmt.Errorf("UPSTREAM_URL required")
 	}
+
+	if !strings.Contains(up, "://") {
+	    up = "http://" + up
+	}
+
 	u, err := url.Parse(up)
 	if err != nil {
 		return nil, fmt.Errorf("invalid UPSTREAM_URL: %w", err)
 	}
 
-	// flagd client via OpenFeature
+	// flagd provider (gRPC 8013 di default)
 	flagdHost := mustEnv("FLAGD_HOST", "flagd")
-	flagdPort := uint16(getenvInt("FLAGD_PORT", 8013)) // default eval port
+	flagdPort := uint16(getenvInt("FLAGD_PORT", 8013))
 	provider, err := flagd.NewProvider(flagd.WithHost(flagdHost), flagd.WithPort(flagdPort))
 	if err != nil {
 		return nil, fmt.Errorf("flagd provider: %w", err)
 	}
-	if err := of.SetProviderAndWait(provider); err != nil {
-		return nil, fmt.Errorf("openfeature set provider: %w", err)
+
+	// retry esponenziale per inizializzare OpenFeature (flagd potrebbe non essere pronto)
+	var lastErr error
+	for i, d := range []time.Duration{0, time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second} {
+		if d > 0 {
+			time.Sleep(d)
+		}
+		if err := of.SetProviderAndWait(provider); err != nil {
+			lastErr = err
+			log.Printf("[crypto-proxy] openfeature provider not ready (attempt %d): %v", i+1, err)
+			continue
+		}
+		lastErr = nil
+		break
 	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("openfeature set provider (after retries): %w", lastErr)
+	}
+
 	client := of.NewClient("crypto-proxy")
 
 	return &proxy{
@@ -189,40 +215,54 @@ func readAllAndClose(rc io.ReadCloser) ([]byte, error) {
 	return io.ReadAll(rc)
 }
 
+func isGRPCContentType(ct string) bool {
+	return strings.HasPrefix(strings.ToLower(ct), "application/grpc")
+}
+
 func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 	rp := httputil.NewSingleHostReverseProxy(p.upstreamURL)
 
-	// Evita gzip upstream quando manipoliamo i body.
+	// --- Abilita HTTP/2 (h2c) verso l'upstream: necessario per app gRPC in chiaro
+	rp.Transport = &http2.Transport{
+		AllowHTTP: true,
+		DialTLS: func(network, addr string, _ *tls.Config) (net.Conn, error) {
+			// HTTP/2 in chiaro (h2c)
+			return net.Dial(network, addr)
+		},
+	}
+
+	// Director: prepara la richiesta per l'upstream
 	rp.Director = func(r *http.Request) {
 		// Base URL/host rewrite
 		r.URL.Scheme = p.upstreamURL.Scheme
 		r.URL.Host = p.upstreamURL.Host
-		// Lascia il path così com'è; opzionalmente potresti fare prefix.
 
-		// No content encoding upstream (gestiamo noi)
+		// Evita compressione upstream quando manipoliamo i body
 		r.Header.Del("Accept-Encoding")
 
 		ctx := r.Context()
 		word := p.currentWord(ctx)
 		transparent := strings.TrimSpace(word) == ""
 
+		// gRPC detection (non manipolare i frame, ma possiamo aggiungere header/metadata)
+		isGRPC := isGRPCContentType(r.Header.Get("Content-Type"))
+
 		if p.mode == "egress" {
 			if transparent {
-				// niente token, niente cifratura
+				// pass-through totale
 				return
 			}
-			// Aggiungi token
+			// Aggiungi token sempre quando la parola è impostata (anche per gRPC)
 			r.Header.Set(p.headerKey, word)
 
-			// Se c'è un body (POST/PUT/PATCH), cifra
-			if r.Body != nil && (r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch) {
+			// Per i metodi con body, cifra SOLO se non gRPC
+			if !isGRPC && r.Body != nil && (r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch) {
 				origCT := r.Header.Get("Content-Type")
 				body, _ := readAllAndClose(r.Body)
 				enc, err := encrypt(word, body)
 				if err != nil {
-					// fallback: meglio mandare 502 dopo nel ErrorHandler
-					r.Body = io.NopCloser(bytes.NewReader([]byte{}))
-					r.ContentLength = 0
+					// segna errore: verrà gestito dall'ErrorHandler/ModifyResponse
+					r.Header.Set("X-Crypto-BadEncrypt", "1")
 					return
 				}
 				r.Header.Set(headerOrigCT, origCT)
@@ -235,24 +275,24 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 			return
 		}
 
-		// INGRESS: decifra prima di inoltrare all'app locale (upstream)
+		// INGRESS: verifica token se parola attiva; decifra SOLO se marcato X-Encrypted
 		if transparent {
-			// rimuovi eventuali header residui per sicurezza
+			// pulizia difensiva
 			r.Header.Del(headerEncrypted)
 			r.Header.Del(p.headerKey)
 			r.Header.Del(headerOrigCT)
 			return
 		}
 
-		// verifica token
+		// verifica token (anche per gRPC)
 		if r.Header.Get(p.headerKey) != word {
-			// “short-circuit”: scriviamo 401 senza chiamare upstream
-			// (usiamo un marker nel context e gestiamo in ErrorHandler)
+			// segnala 401 senza chiamare upstream
 			r.Header.Set("X-Crypto-Unauthorized", "1")
 			return
 		}
 
-		if r.Header.Get(headerEncrypted) == "1" && r.Body != nil {
+		// Se la richiesta arriva cifrata (non gRPC), decifra
+		if !isGRPC && r.Header.Get(headerEncrypted) == "1" && r.Body != nil {
 			origCT := r.Header.Get(headerOrigCT)
 			body, _ := readAllAndClose(r.Body)
 			pt, err := decrypt(word, body)
@@ -273,17 +313,22 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 			r.Header.Del(headerEncrypted)
 			r.Header.Del(headerOrigCT)
 			r.Header.Del(p.headerKey)
+		} else {
+			// non cifrata: rimuovi marker che non servono all'app
+			r.Header.Del(headerEncrypted)
+			r.Header.Del(headerOrigCT)
+			r.Header.Del(p.headerKey)
 		}
 	}
 
-	// Manipola la risposta
+	// Manipola la risposta dall'upstream
 	rp.ModifyResponse = func(resp *http.Response) error {
 		req := resp.Request
 		ctx := req.Context()
 		word := p.currentWord(ctx)
 		transparent := strings.TrimSpace(word) == ""
 
-		// Se richiesta marcata come 401/decifrazione errata prima, restituiamo noi errore
+		// gestione segnali di errore impostati dal Director
 		if req.Header.Get("X-Crypto-Unauthorized") == "1" {
 			resp.StatusCode = http.StatusUnauthorized
 			resp.Header = make(http.Header)
@@ -298,6 +343,16 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 			resp.ContentLength = int64(len("bad encrypted payload"))
 			return nil
 		}
+		if req.Header.Get("X-Crypto-BadEncrypt") == "1" {
+			resp.StatusCode = http.StatusBadGateway
+			resp.Header = make(http.Header)
+			resp.Body = io.NopCloser(bytes.NewBufferString("proxy encryption error"))
+			resp.ContentLength = int64(len("proxy encryption error"))
+			return nil
+		}
+
+		// gRPC detection dal request (più affidabile)
+		isGRPC := isGRPCContentType(req.Header.Get("Content-Type"))
 
 		if p.mode == "egress" {
 			// decifra le response cifrate provenienti dal proxy ingress remoto
@@ -325,11 +380,10 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 			return nil
 		}
 
-		// INGRESS: cifra la risposta verso il chiamante (egress remoto)
-		if transparent {
+		// INGRESS: cifra la risposta verso il chiamante SOLO se non gRPC e parola attiva
+		if transparent || isGRPC {
 			return nil
 		}
-		// cifra solo se il request aveva token valido (già verificato a monte)
 		body, _ := readAllAndClose(resp.Body)
 		enc, err := encrypt(word, body)
 		if err != nil {
@@ -345,14 +399,19 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 		return nil
 	}
 
-	// Se il Director ha marcato la request come da rifiutare, qui rispondiamo noi
+	// ErrorHandler per i casi in cui il Director ha settato marker ma non c'è ModifyResponse
 	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("[crypto-proxy] proxy error -> upstream %s: %v", p.upstreamURL.String(), err)
 		if r != nil && r.Header.Get("X-Crypto-Unauthorized") == "1" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		if r != nil && r.Header.Get("X-Crypto-BadDecrypt") == "1" {
 			http.Error(w, "bad encrypted payload", http.StatusBadRequest)
+			return
+		}
+		if r != nil && r.Header.Get("X-Crypto-BadEncrypt") == "1" {
+			http.Error(w, "proxy encryption error", http.StatusBadGateway)
 			return
 		}
 		http.Error(w, "proxy error", http.StatusBadGateway)
@@ -363,9 +422,13 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 
 func (p *proxy) serve() error {
 	rp := p.buildReverseProxy()
+
+	// Abilita HTTP/2 cleartext (h2c) lato server per supportare client gRPC senza TLS
+	h2cHandler := h2c.NewHandler(rp, &http2.Server{})
+
 	server := &http.Server{
 		Addr:              p.listenAddr,
-		Handler:           rp,
+		Handler:           h2cHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Printf("[crypto-proxy] mode=%s listen=%s upstream=%s flagKey=%s",

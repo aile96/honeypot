@@ -24,6 +24,12 @@ static_resources:
                 route:
                   cluster: app_service
           http_filters:
+          - name: envoy.filters.http.dynamic_forward_proxy
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+              dns_cache_config:
+                name: dfp_cache
+                dns_lookup_family: V4_ONLY
           - name: envoy.filters.http.lua
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
@@ -48,18 +54,18 @@ static_resources:
                 address: 127.0.0.1
                 port_value: ${APP_PORT}
 
-  - name: shadow_cluster
+  # Cluster che usa la cache DNS del DFP:
+  - name: dynamic_forward_proxy_cluster
     connect_timeout: 1s
-    type: logical_dns
-    load_assignment:
-      cluster_name: shadow_cluster
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: ${SHADOW_ADDR}
-                port_value: ${SHADOW_PORT}
+    lb_policy: CLUSTER_PROVIDED
+    cluster_type:
+      name: envoy.clusters.dynamic_forward_proxy
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+        dns_cache_config:
+          name: dfp_cache
+          dns_lookup_family: V4_ONLY
+          
 admin:
   access_log_path: /dev/null
   address:

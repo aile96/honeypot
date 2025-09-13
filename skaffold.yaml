@@ -21,10 +21,10 @@ build:
 #        buildArgs:
 #          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
 #          AD_PORT: "{{.AD_PORT}}"
-#    - image: registry:5000/attacker
-#      context: src/attacker
-#      docker:
-#        dockerfile: src/attacker/Dockerfile
+    - image: registry:5000/attacker
+      context: src/attacker
+      docker:
+        dockerfile: src/attacker/Dockerfile
 #    - image: registry:5000/auth
 #      context: src/auth
 #      docker:
@@ -156,10 +156,10 @@ build:
 #        dockerfile: src/shipping/Dockerfile
 #        buildArgs:
 #          SHIPPING_PORT: "{{.SHIPPING_PORT}}"
-    - image: registry:5000/sidecar-enc
-      context: src/sidecar-enc
-      docker:
-        dockerfile: src/sidecar-enc/Dockerfile
+#    - image: registry:5000/sidecar-enc
+#      context: src/sidecar-enc
+#      docker:
+#        dockerfile: src/sidecar-enc/Dockerfile
 #    - image: registry:5000/sidecar-mal
 #      context: src/sidecar-mal
 #      docker:

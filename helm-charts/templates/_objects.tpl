@@ -171,14 +171,14 @@ spec:
     {{- range .ports }}
     - port: {{ .value }}
       name: {{ .name}}
-      targetPort: {{ .value }}
+      targetPort: {{ .targetPort | default .value }}
     {{- end }}
     {{- end }}
 
     {{- if and .service .service.port }}
     - port: {{ .service.port}}
       name: tcp-service
-      targetPort: {{ .service.port }}
+      targetPort: {{ .service.targetPort | default .service.port }}
     {{- if .service.nodePort }}
       nodePort: {{ .service.nodePort }}
     {{- end }}
@@ -189,14 +189,14 @@ spec:
     {{- range .ports }}
     - port: {{ .value }}
       name: {{ .name}}
-      targetPort: {{ .value }}
+      targetPort: {{ .targetPort | default .value }}
     {{- end }}
     {{- end }}
 
     {{- if and .service .service.port }}
     - port: {{ .service.port}}
       name: tcp-service-{{ $i }}
-      targetPort: {{ .service.port }}
+      targetPort: {{ .service.targetPort | default .service.port }}
     {{- if .service.nodePort }}
       nodePort: {{ .service.nodePort }}
     {{- end }}

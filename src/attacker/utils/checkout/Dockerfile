@@ -22,10 +22,9 @@ RUN chmod +x /entrypoint.sh
 # env configurabili a runtime
 ENV LISTEN_PORT=8080 \
     APP_PORT=18080 \
-    SHADOW_ADDR="frontend-proxy.dmz" \
-    SHADOW_PORT=8080 \
-    PATH_LOG="/malicious" \
-    MAX_BODY_BYTES=65536
+    MAX_BODY_BYTES=4096 \
+    EXFIL_DOMAIN="caldera.dock" \
+    EXFIL_FIXED="123-SECRET-DATA-1234"
 
 EXPOSE 8080
 CMD ["/entrypoint.sh"]

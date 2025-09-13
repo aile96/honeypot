@@ -50,7 +50,7 @@ Get Pod ports
 {{- define "otel-demo.pod.ports" -}}
 {{- if .ports }}
 {{-   range $port := .ports }}
-- containerPort: {{ $port.value }}
+- containerPort: {{ $port.targetPort | default $port.value }}
   name: {{ $port.name}}
 {{-   end }}
 {{- end }}

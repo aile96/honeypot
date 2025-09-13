@@ -5,7 +5,7 @@ set -euo pipefail
 # genera un file temporaneo sicuro in /tmp
 OUT=$(mktemp -p /tmp envoy.XXXX.yaml)
 
-envsubst '${LISTEN_PORT} ${APP_PORT} ${SHADOW_ADDR} ${SHADOW_PORT}' \
+envsubst '${LISTEN_PORT} ${APP_PORT}' \
   < /etc/envoy/envoy.yaml.tpl > "$OUT"
 
 export CHECKOUT_PORT="${APP_PORT}"

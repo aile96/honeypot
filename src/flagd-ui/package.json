@@ -14,7 +14,8 @@
     "ajv": "^8.17.1",
     "next": "15.2.2",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "jose": "^5.9.6"
   },
   "devDependencies": {
     "@types/json5": "^2.2.0",

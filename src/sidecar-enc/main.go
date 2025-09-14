@@ -33,7 +33,7 @@ const (
 	headerEncrypted = "X-Encrypted"
 	headerOrigCT    = "X-Orig-Content-Type"
 
-	defaultFlagKey   = "crypto-word"
+	defaultFlagKey   = "cryptoWord"
 	defaultHeaderKey = headerAuth
 )
 

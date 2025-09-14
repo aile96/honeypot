@@ -21,10 +21,10 @@ build:
 #        buildArgs:
 #          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
 #          AD_PORT: "{{.AD_PORT}}"
-    - image: registry:5000/attacker
-      context: src/attacker
-      docker:
-        dockerfile: src/attacker/Dockerfile
+#    - image: registry:5000/attacker
+#      context: src/attacker
+#      docker:
+#        dockerfile: src/attacker/Dockerfile
 #    - image: registry:5000/auth
 #      context: src/auth
 #      docker:
@@ -77,12 +77,12 @@ build:
 #      context: .
 #      docker:
 #        dockerfile: src/flagd/Dockerfile
-#    - image: registry:5000/flagd-ui
-#      context: .
-#      docker:
-#        dockerfile: src/flagd-ui/Dockerfile
-#        buildArgs:
-#          FLAGD_UI_PORT: "{{.FLAGD_UI_PORT}}"
+    - image: registry:5000/flagd-ui
+      context: .
+      docker:
+        dockerfile: src/flagd-ui/Dockerfile
+        buildArgs:
+          FLAGD_UI_PORT: "{{.FLAGD_UI_PORT}}"
 #    - image: registry:5000/fraud-detection
 #      context: .
 #      docker:

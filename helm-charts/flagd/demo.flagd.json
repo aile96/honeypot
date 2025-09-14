@@ -106,12 +106,12 @@
       },
       "defaultVariant": "off"
     },
-    "crypto-word": {
+    "cryptoWord": {
       "description": "secret key for the sensitive comunication between microservices",
       "state": "ENABLED",
       "variants": {
         "empty": "",
-        "key": "skibidiboppi"
+        "key": "superIperSecret!!"
       },
       "defaultVariant": "key"
     }

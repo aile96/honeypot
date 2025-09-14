@@ -227,6 +227,22 @@ data:
   {{- .data | toYaml | nindent 2}}
 {{- end}}
 {{- end}}
+{{- range .configMaps }}
+{{- if .data }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .name | lower }}
+  {{- if .namespace }}
+  namespace: {{ .namespace }}
+  {{- end }}
+  labels:
+        {{- include "otel-demo.labels" $ | nindent 4 }}
+data:
+  {{- .data | toYaml | nindent 2}}
+{{- end}}
+{{- end}}
 {{- end}}
 
 {{/*

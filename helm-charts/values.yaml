@@ -322,7 +322,7 @@ components:
           - name: FLAGD_PORT
             value: "8013"
           - name: FLAG_KEY
-            value: "crypto-word"
+            value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
       # EGRESS: cifra le chiamate di checkout verso payment
@@ -343,7 +343,7 @@ components:
           - name: FLAGD_PORT
             value: "8013"
           - name: FLAG_KEY
-            value: "crypto-word"
+            value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
 
@@ -504,7 +504,7 @@ components:
           - name: FLAGD_PORT
             value: "8013"
           - name: FLAG_KEY
-            value: "crypto-word"
+            value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
 
@@ -660,7 +660,7 @@ components:
           - name: FLAGD_PORT
             value: "8013"
           - name: FLAG_KEY
-            value: "crypto-word"
+            value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
 
@@ -779,6 +779,11 @@ components:
       - "8016"
       - "--uri"
       - "file:./etc/flagd/demo.flagd.json"
+    configMaps:
+      - name: flagd-credentials-ui
+        data:
+          FLAGD_UI_USER: "admin"
+          FLAGD_UI_PASS: "elia"
     mountedEmptyDirs:
       - name: config-rw
         mountPath: /etc/flagd
@@ -794,6 +799,16 @@ components:
             value: otel
           - name: OTEL_EXPORTER_OTLP_ENDPOINT
             value: http://$(OTEL_COLLECTOR_NAME):4318
+          - name: FLAGD_UI_USER
+            valueFrom:
+              configMapKeyRef:
+                name: flagd-credentials-ui
+                key: FLAGD_UI_USER
+          - name: FLAGD_UI_PASS
+            valueFrom:
+              configMapKeyRef:
+                name: flagd-credentials-ui
+                key: FLAGD_UI_PASS
         resources:
           limits:
             memory: 100Mi

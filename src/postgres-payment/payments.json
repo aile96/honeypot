@@ -1,0 +1,82 @@
+[
+  {
+    "user_id": "1",
+    "card_holder_name": "Alice Smith",
+    "card_number": "4111111111111111",
+    "exp_month": 12,
+    "exp_year": 2030,
+    "cvv": "123"
+  },
+  {
+    "user_id": "2",
+    "card_holder_name": "Bob Johnson",
+    "card_number": "5555555555554444",
+    "exp_month": 7,
+    "exp_year": 2029,
+    "cvv": "456"
+  },
+  {
+    "user_id": "3",
+    "card_holder_name": "Carol Williams",
+    "card_number": "378282246310005",
+    "exp_month": 3,
+    "exp_year": 2031,
+    "cvv": "1234"
+  },
+  {
+    "user_id": "4",
+    "card_holder_name": "David Brown",
+    "card_number": "6011111111111117",
+    "exp_month": 11,
+    "exp_year": 2028,
+    "cvv": "321"
+  },
+  {
+    "user_id": "5",
+    "card_holder_name": "Eva Davis",
+    "card_number": "4000056655665556",
+    "exp_month": 6,
+    "exp_year": 2032,
+    "cvv": "777"
+  },
+  {
+    "user_id": "6",
+    "card_holder_name": "Frank Miller",
+    "card_number": "5105105105105100",
+    "exp_month": 1,
+    "exp_year": 2030,
+    "cvv": "999"
+  },
+  {
+    "user_id": "7",
+    "card_holder_name": "Grace Wilson",
+    "card_number": "6011000990139424",
+    "exp_month": 5,
+    "exp_year": 2029,
+    "cvv": "555"
+  },
+  {
+    "user_id": "8",
+    "card_holder_name": "Henry Moore",
+    "card_number": "3530111333300000",
+    "exp_month": 10,
+    "exp_year": 2031,
+    "cvv": "314"
+  },
+  {
+    "user_id": "9",
+    "card_holder_name": "Isabel Taylor",
+    "card_number": "4111111111111111",
+    "exp_month": 2,
+    "exp_year": 2033,
+    "cvv": "042"
+  },
+  {
+    "user_id": "10",
+    "card_holder_name": "Jack Anderson",
+    "card_number": "5555555555554444",
+    "exp_month": 9,
+    "exp_year": 2030,
+    "cvv": "876"
+  }
+]

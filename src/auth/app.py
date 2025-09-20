@@ -7,9 +7,27 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, Integer, String, create_engine, select
 from sqlalchemy.orm import declarative_base, Session
+from sqlalchemy.engine import URL
 
 # ---- Config ----
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg://testuser:testpass@postgres:5432/usersdb")
+def get_database_url():
+    # Se esiste già DATABASE_URL lo uso così com'è
+    if os.getenv("DATABASE_URL"):
+        return os.getenv("DATABASE_URL")
+
+    # Altrimenti compongo l'URL dai singoli pezzi
+    return URL.create(
+        drivername=os.getenv("DB_DRIVER", "postgresql+psycopg"),
+        username=os.getenv("DB_USER", "testuser"),
+        password=os.getenv("DB_PASS", "testpass"),
+        host=os.getenv("DB_HOST", "postgres"),
+        port=int(os.getenv("DB_PORT", "5432")),
+        database=os.getenv("DB_NAME", "usersdb"),
+        # opzionale: query param, es. sslmode=require
+        # query=dict(item.split("=", 1) for item in os.getenv("DB_QUERY", "").split("&") if item)
+    )
+DATABASE_URL = get_database_url()
+
 JWT_SECRET = os.getenv("JWT_SECRET", "CHANGEME_SUPER_SECRET")
 JWT_ALG = os.getenv("JWT_ALG", "HS256")
 JWT_EXP_MINUTES = int(os.getenv("JWT_EXP_MINUTES", "60"))

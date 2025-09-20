@@ -1,9 +1,8 @@
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    jq \
-    coreutils \
+    curl jq \
+    coreutils nano \
     && rm -rf /var/lib/apt/lists/*
 
 # Evita bytecode e buffer per log immediati

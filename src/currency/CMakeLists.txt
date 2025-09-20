@@ -23,6 +23,13 @@ add_dependencies(currency demo-proto)
 # Include the generated headers
 target_include_directories(currency PRIVATE
   "${GENERATED_PROTOBUF_PATH}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party"
+)
+
+target_sources(currency PRIVATE
+  src/flagd_client.cpp
+  src/file_mirror_http.cpp
 )
 
 # Link everything (keeps your existing OTel targets)

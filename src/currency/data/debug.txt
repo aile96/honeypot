@@ -1,0 +1,63 @@
+[2025-09-15 10:00:01] DEBUG CurrencyService - Loading configuration: provider=ECB, refreshInterval=60s
+[2025-09-15 10:00:01] DEBUG CurrencyService - Initialized HTTP client with timeout=5s
+[2025-09-15 10:00:01] DEBUG CurrencyService - Bound gRPC server on port 8080
+[2025-09-15 10:00:01] DEBUG CurrencyService - Fetching initial exchange rates from provider
+[2025-09-15 10:00:02] DEBUG CurrencyService - Received 32 currency pairs
+[2025-09-15 10:00:02] DEBUG CurrencyService - Rates cached in memory successfully
+[2025-09-15 10:00:05] DEBUG CurrencyService - Request context id=abc123 received at 10:00:05
+[2025-09-15 10:00:05] DEBUG CurrencyService - Converting USD -> EUR, input=100.00
+[2025-09-15 10:00:05] DEBUG CurrencyService - Rate used: 0.9234
+[2025-09-15 10:00:05] DEBUG CurrencyService - Result=92.34 EUR
+[2025-09-15 10:00:09] DEBUG CurrencyService - Request context id=def456 received at 10:00:09
+[2025-09-15 10:00:09] DEBUG CurrencyService - Converting EUR -> USD, input=50.00
+[2025-09-15 10:00:09] DEBUG CurrencyService - Rate used: 1.0824
+[2025-09-15 10:00:09] DEBUG CurrencyService - Result=54.12 USD
+[2025-09-15 10:00:14] DEBUG CurrencyService - Unknown currency requested: ABC
+[2025-09-15 10:00:14] DEBUG CurrencyService - Returning error=400 to client
+[2025-09-15 10:00:20] DEBUG CurrencyService - Request context id=ghi789 received at 10:00:20
+[2025-09-15 10:00:20] DEBUG CurrencyService - Converting JPY -> EUR, input=10000.00
+[2025-09-15 10:00:20] DEBUG CurrencyService - Rate used: 0.006842
+[2025-09-15 10:00:20] DEBUG CurrencyService - Result=68.42 EUR
+[2025-09-15 10:00:25] DEBUG CurrencyService - Fetching updated rates from provider ECB
+[2025-09-15 10:00:25] DEBUG CurrencyService - Response code=200, payload size=5KB
+[2025-09-15 10:00:25] DEBUG CurrencyService - Updated 32 exchange rates in cache
+[2025-09-15 10:00:30] DEBUG CurrencyService - Request context id=jkl321 received at 10:00:30
+[2025-09-15 10:00:30] DEBUG CurrencyService - Converting GBP -> USD, input=75.00
+[2025-09-15 10:00:30] DEBUG CurrencyService - Rate used: 1.2428
+[2025-09-15 10:00:30] DEBUG CurrencyService - Result=93.21 USD
+[2025-09-15 10:00:35] DEBUG CurrencyService - Error contacting provider: timeout after 5s
+[2025-09-15 10:00:36] DEBUG CurrencyService - Retrying provider request (attempt=2)
+[2025-09-15 10:00:38] DEBUG CurrencyService - Provider responded successfully on retry
+[2025-09-15 10:00:45] DEBUG CurrencyService - Request context id=mno654 received at 10:00:45
+[2025-09-15 10:00:45] DEBUG CurrencyService - Converting CAD -> EUR, input=200.00
+[2025-09-15 10:00:45] DEBUG CurrencyService - Rate used: 0.6725
+[2025-09-15 10:00:45] DEBUG CurrencyService - Result=134.50 EUR
+[2025-09-15 10:00:50] DEBUG CurrencyService - Request context id=pqr987 received at 10:00:50
+[2025-09-15 10:00:50] DEBUG CurrencyService - Converting EUR -> CHF, input=300.00
+[2025-09-15 10:00:50] DEBUG CurrencyService - Rate used: 1.042
+[2025-09-15 10:00:50] DEBUG CurrencyService - Result=312.60 CHF
+[2025-09-15 10:00:55] DEBUG CurrencyService - Request context id=stu654 received at 10:00:55
+[2025-09-15 10:00:55] DEBUG CurrencyService - Converting USD -> INR, input=20.00
+[2025-09-15 10:00:55] DEBUG CurrencyService - Rate used: 83.0
+[2025-09-15 10:00:55] DEBUG CurrencyService - Result=1660.00 INR
+[2025-09-15 10:01:00] DEBUG CurrencyService - Cache age=65s, triggering forced refresh
+[2025-09-15 10:01:00] DEBUG CurrencyService - Provider responded with updated rates
+[2025-09-15 10:01:10] DEBUG CurrencyService - Request context id=vwx111 received at 10:01:10
+[2025-09-15 10:01:10] DEBUG CurrencyService - Converting EUR -> GBP, input=120.00
+[2025-09-15 10:01:10] DEBUG CurrencyService - Rate used: 0.86
+[2025-09-15 10:01:10] DEBUG CurrencyService - Result=103.20 GBP
+[2025-09-15 10:01:15] DEBUG CurrencyService - Running health check against provider endpoint
+[2025-09-15 10:01:15] DEBUG CurrencyService - Health check passed
+[2025-09-15 10:01:20] DEBUG CurrencyService - Request context id=yzx222 received at 10:01:20
+[2025-09-15 10:01:20] DEBUG CurrencyService - Converting AUD -> USD, input=45.00
+[2025-09-15 10:01:20] DEBUG CurrencyService - Rate used: 0.66
+[2025-09-15 10:01:20] DEBUG CurrencyService - Result=29.70 USD
+[2025-09-15 10:01:25] DEBUG CurrencyService - Request context id=abc333 received at 10:01:25
+[2025-09-15 10:01:25] DEBUG CurrencyService - Converting EUR -> JPY, input=15.00
+[2025-09-15 10:01:25] DEBUG CurrencyService - Rate used: 146.33
+[2025-09-15 10:01:25] DEBUG CurrencyService - Result=2195.00 JPY
+[2025-09-15 10:01:30] DEBUG CurrencyService - Shutdown requested by signal SIGTERM
+[2025-09-15 10:01:30] DEBUG CurrencyService - Stopping gRPC server
+[2025-09-15 10:01:31] DEBUG CurrencyService - Closing open connections
+[2025-09-15 10:01:31] DEBUG CurrencyService - Flushing metrics and cleaning resources
+[2025-09-15 10:01:31] DEBUG CurrencyService - Shutdown completed successfully

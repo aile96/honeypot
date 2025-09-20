@@ -245,6 +245,24 @@ data:
 {{- end}}
 {{- end}}
 
+{{- define "otel-demo.secret" }}
+{{- range .secrets }}
+{{- if .data }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .name | lower }}
+  {{- if .namespace }}
+  namespace: {{ .namespace }}
+  {{- end }}
+type: Opaque
+stringData:
+  {{- .data | toYaml | nindent 2}}
+{{- end}}
+{{- end}}
+{{- end}}
+
 {{/*
 Demo component Ingress template
 */}}

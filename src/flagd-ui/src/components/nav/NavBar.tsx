@@ -32,14 +32,8 @@ export default function NavBar() {
     };
   }, []);
 
-  const currentFrom = (() => {
-    // converte il pathname (senza basePath) nel percorso reale con /feature
-    if (!pathname || pathname === "/") return "/feature";
-    return pathname.startsWith("/feature") ? pathname : `/feature${pathname}`;
-  })();
-
   const goToLogin = () => {
-    window.location.href = (pathname.startsWith("/feature/login") || pathname.startsWith("/login")) ? `/feature/login` : `/feature/login?from=${encodeURIComponent(currentFrom)}`;
+    window.location.href = `/feature/login`;
   };
 
   const doLogout = async () => {

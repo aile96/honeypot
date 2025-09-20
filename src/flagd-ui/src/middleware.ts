@@ -26,6 +26,8 @@ const isApiPath = (p: string) =>
   p.startsWith("/api/");
 
 export async function middleware(req: NextRequest) {
+  const url = req.nextUrl;
+  const base = url.basePath || "";
   const { pathname, search } = req.nextUrl;
   const token = req.cookies.get("flagdui_jwt")?.value;
   
@@ -33,7 +35,7 @@ export async function middleware(req: NextRequest) {
     if(pathname.startsWith(`/login`) && token) {
       try {
         await jwtVerify(token, secret, { algorithms: ["HS256"] });
-        return NextResponse.redirect("/");
+        return NextResponse.redirect(new URL(base || "/", req.url));
       } catch {return NextResponse.next();}
     }
     return NextResponse.next();

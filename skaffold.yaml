@@ -21,20 +21,20 @@ build:
 #        buildArgs:
 #          OTEL_JAVA_AGENT_VERSION: "{{.OTEL_JAVA_AGENT_VERSION}}"
 #          AD_PORT: "{{.AD_PORT}}"
-#    - image: registry:5000/attacker
-#      context: src/attacker
-#      docker:
-#        dockerfile: src/attacker/Dockerfile
+    - image: registry:5000/attacker
+      context: src/attacker
+      docker:
+        dockerfile: src/attacker/Dockerfile
 #    - image: registry:5000/auth
 #      context: src/auth
 #      docker:
 #        dockerfile: src/auth/Dockerfile
-#    - image: registry:5000/caldera
-#      context: src/caldera
-#      docker:
-#        dockerfile: src/caldera/Dockerfile
-#        buildArgs:
-#          VARIANT: full
+    - image: registry:5000/caldera
+      context: src/caldera
+      docker:
+        dockerfile: src/caldera/Dockerfile
+        buildArgs:
+          VARIANT: full
 #    - image: registry:5000/caldera-controller
 #      context: src/caldera-controller
 #      docker:
@@ -67,6 +67,7 @@ build:
 #        buildArgs:
 #          OPENTELEMETRY_CPP_VERSION: "{{.OPENTELEMETRY_CPP_VERSION}}"
 #          CURRENCY_PORT: "{{.CURRENCY_PORT}}"
+#          EXPOSE_HTTP_PORT: "{{.CURRENCY_MIRROR_PORT}}"
 #    - image: registry:5000/email
 #      context: .
 #      docker:
@@ -77,12 +78,12 @@ build:
 #      context: .
 #      docker:
 #        dockerfile: src/flagd/Dockerfile
-    - image: registry:5000/flagd-ui
-      context: .
-      docker:
-        dockerfile: src/flagd-ui/Dockerfile
-        buildArgs:
-          FLAGD_UI_PORT: "{{.FLAGD_UI_PORT}}"
+#    - image: registry:5000/flagd-ui
+#      context: .
+#      docker:
+#        dockerfile: src/flagd-ui/Dockerfile
+#        buildArgs:
+#          FLAGD_UI_PORT: "{{.FLAGD_UI_PORT}}"
 #    - image: registry:5000/fraud-detection
 #      context: .
 #      docker:
@@ -132,6 +133,10 @@ build:
 #      context: src/postgres-auth
 #      docker:
 #        dockerfile: src/postgres-auth/Dockerfile
+#    - image: registry:5000/postgres-payment
+#      context: src/postgres-payment
+#      docker:
+#        dockerfile: src/postgres-payment/Dockerfile
 #    - image: registry:5000/product-catalog
 #      context: .
 #      docker:
@@ -168,6 +173,10 @@ build:
 #      context: .
 #      docker:
 #        dockerfile: src/valkey-cart/Dockerfile
+#    - image: registry:5000/traffic-translator
+#      context: src/traffic-translator
+#      docker:
+#        dockerfile: src/traffic-translator/Dockerfile
 deploy:
   helm:
     releases:
@@ -192,7 +201,6 @@ deploy:
           serviceAccount.create: "true"
           components.frontend-proxy.enabled: "true"
           components.image-provider.enabled: "true"
-          components.traffic-controller.enabled: "true"
           #Values
           serviceAccount.name: "acc-dmz"
           serviceAccount.role.name: "role-dmz"
@@ -237,6 +245,7 @@ deploy:
           grafana.enabled: "true"
           opensearch.enabled: "true"
           imageUpdater.enabled: "true"
+          components.traffic-controller.enabled: "true"
           #Values
           imageUpdater.registry.address: "{{.REGISTRY_IMG}}"
           serviceAccount.name: "acc-mem"

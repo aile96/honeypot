@@ -45,7 +45,7 @@ def main():
     # Dopo lo script, resta in idle senza fare nulla
     print(f"Controller in idle (exit code script: {code})…")
     while True:
-        time.sleep(30)
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()

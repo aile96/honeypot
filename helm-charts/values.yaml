@@ -204,8 +204,16 @@ components:
     service:
       port: 8080
     env:
-      - name: DATABASE_URL
-        value: "postgresql+psycopg://testuser:testpassword@postgres-auth.dat:5432/usersdb"
+      - name: DB_HOST
+        value: "postgres-auth.dat"
+      - name: DB_NAME
+        value: "usersdb"
+      - name: DB_USER
+        value: "testuser"
+      - name: DB_PASS
+        value: "testpassword"
+      - name: DB_PORT
+        value: "5432"
       - name: JWT_EXP_MINUTES
         value: "60"
       - name: JWT_ALG
@@ -304,7 +312,6 @@ components:
         image: busybox:latest
         command: ["sh", "-c", "until nc -z -v -w30 flagd.mem 8013; do echo waiting for flagd; sleep 2; done;"]
     sidecarContainers:
-      # INGRESS: verifica token + decifra in ingresso, cifra in uscita
       - name: crypto-ingress
         imageOverride:
           repository: "registry:5000/sidecar-enc"
@@ -325,7 +332,6 @@ components:
             value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
-      # EGRESS: cifra le chiamate di checkout verso payment
       - name: crypto-egress
         imageOverride:
           repository: "registry:5000/sidecar-enc"
@@ -351,11 +357,16 @@ components:
     enabled: false
     useDefault:
       env: true
-    service:
-      port: 8080
+    ports:
+      - name: "grpc"
+        value: 8080
+      - name: "http"
+        value: 8081
     env:
       - name: CURRENCY_PORT
         value: "8080"
+      - name: EXPOSE_HTTP_PORT
+        value: "8081"
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: http://$(OTEL_COLLECTOR_NAME):4317
       - name: VERSION
@@ -365,9 +376,15 @@ components:
       - name: DB_NAME
         value: currency
       - name: DB_USER
-        value: postgres
+        valueFrom:
+          secretKeyRef:
+            name: dbcurrency-creds
+            key: username
       - name: DB_PASS
-        value: yourpassword
+        valueFrom:
+          secretKeyRef:
+            name: dbcurrency-creds
+            key: password
       - name: DB_PORT
         value: "5432"
     resources:
@@ -383,6 +400,11 @@ components:
               echo "waiting for postgres..."
               sleep 2
             done
+    secrets:
+      - name: dbcurrency-creds
+        data:
+          username: "postgres"
+          password: "yourpassword"
 
   email:
     enabled: false
@@ -486,7 +508,6 @@ components:
           - name: sa-public
             mountPath: /target
     sidecarContainers:
-      # EGRESS: cifra le richieste del frontend verso checkout
       - name: crypto-egress
         imageOverride:
           repository: "registry:5000/sidecar-enc"
@@ -630,6 +651,16 @@ components:
         value: "8013"
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: http://$(OTEL_COLLECTOR_NAME):4317
+      - name: PGHOST
+        value: postgres-payment.dat
+      - name: PGPORT
+        value: "5432"
+      - name: PGDATABASE
+        value: payments
+      - name: PGUSER
+        value: payments_rw
+      - name: PGPASSWORD
+        value: payments_rw_pwd
     resources:
       limits:
         memory: 120Mi
@@ -641,8 +672,16 @@ components:
       - name: wait-for-flagd
         image: busybox:latest
         command: ["sh", "-c", "until nc -z -v -w30 flagd.mem 8013; do echo waiting for flagd; sleep 2; done;"]
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command: ["sh", "-c"]
+        args:
+          - |
+            until pg_isready -U payments_rw -d payments -h postgres-payment.dat -p 5432; do
+              echo "waiting for postgres..."
+              sleep 2
+            done
     sidecarContainers:
-      # INGRESS: front-end per il servizio payment
       - name: crypto-ingress
         imageOverride:
           repository: "registry:5000/sidecar-enc"
@@ -881,13 +920,11 @@ components:
       runAsNonRoot: true
     imageOverride:
       repository: "registry:5000/controller"
+    ports:
+      - value: 8080
     env:
-      - name: IMAGE_PROVIDER_PORT
-        value: "8081"
-      - name: OTEL_COLLECTOR_PORT_HTTP
-        value: "4318"
-      - name: OTEL_COLLECTOR_HOST
-        value: "otel-collector.mem"
+      - name: OPENSEARCH_URL
+        value: "http://opensearch:9200"
       - name: LOG_INTERVAL_SECONDS
         value: "5"
       - name: OTEL_SERVICE_NAME
@@ -909,26 +946,28 @@ components:
               sleep 5
             done
             echo "OpenSearch is up!"
-      - name: wait-for-otel-collector
-        image: curlimages/curl:8.8.0
+    sidecarContainers:
+      - name: traffic-translator
+        imageOverride:
+          repository: "registry:5000/traffic-translator"
+        useDefault:
+          env: false
         env:
-          - name: OTEL_COLLECTOR_HOST
-            value: otel-collector.mem
-          - name: OTEL_COLLECTOR_PORT_HTTP
-            value: "4318"
-        command:
-          - /bin/sh
-          - -c
-          - |
-            echo "Waiting for otel-collector..."
-            until curl -s -o /dev/null -w "%{http_code}" \
-              -X POST -H 'Content-Type: application/x-protobuf' \
-              "http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}/v1/logs" \
-              | grep -q "200"; do
-              echo "otel-collector not ready yet..."
-              sleep 5
-            done
-            echo "otel-collector is up!"
+        - name: DEFAULT_PLAINTEXT
+          value: "true"
+        - name: DEFAULT_TIMEOUT_S
+          value: "10"
+        resources:
+          requests: { cpu: 50m, memory: 64Mi }
+          limits:   { cpu: 200m, memory: 256Mi }
+        readinessProbe:
+          httpGet: { path: /healthz, port: http }
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        livenessProbe:
+          httpGet: { path: /healthz, port: http }
+          initialDelaySeconds: 5
+          periodSeconds: 10
 
   valkey-cart:
     enabled: false
@@ -1304,7 +1343,7 @@ caldera:
     name: caldera-controller
     env:
       group: cluster
-      advList: "KC2 – Underlay@underlay"
+      advList: "KC1 – Image@cluster, KC2 – WiFi@underlay, KC3 – FlagATT@underlay"
       calderaUrl: "http://caldera:8888"
       calderaKey: "ADMIN123"
       planner: "atomic"

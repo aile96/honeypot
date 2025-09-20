@@ -114,6 +114,15 @@
         "key": "superIperSecret!!"
       },
       "defaultVariant": "key"
+    },
+    "exposedPath": {
+      "description": "secret key for the sensitive comunication between microservices",
+      "state": "ENABLED",
+      "variants": {
+        "log": "/tmp/log.txt",
+        "debug": "/tmp/debug.txt"
+      },
+      "defaultVariant": "log"
     }
   }
 }

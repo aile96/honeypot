@@ -123,6 +123,13 @@ containerdConfigPatches:
         insecure_skip_verify = true
 nodes:
   - role: control-plane
+    kubeadmConfigPatches:
+    - |
+      apiVersion: kubeadm.k8s.io/v1beta3
+      kind: ClusterConfiguration
+      apiServer:
+        extraArgs:
+          anonymous-auth: "true"
     extraPortMappings:
       - containerPort: ${REGISTRY_PORT}
     extraMounts:

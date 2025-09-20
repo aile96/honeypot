@@ -1,0 +1,31 @@
+[2025-09-15 10:00:01] INFO  CurrencyService - Starting currency conversion microservice
+[2025-09-15 10:00:01] INFO  CurrencyService - Listening on port 8080
+[2025-09-15 10:00:05] INFO  CurrencyService - Conversion request received: USD -> EUR, amount=100.00
+[2025-09-15 10:00:05] INFO  CurrencyService - Conversion result: 92.34 EUR
+[2025-09-15 10:00:09] INFO  CurrencyService - Conversion request received: EUR -> USD, amount=50.00
+[2025-09-15 10:00:09] INFO  CurrencyService - Conversion result: 54.12 USD
+[2025-09-15 10:00:14] WARN  CurrencyService - Unknown currency requested: ABC
+[2025-09-15 10:00:20] INFO  CurrencyService - Conversion request received: JPY -> EUR, amount=10000.00
+[2025-09-15 10:00:20] INFO  CurrencyService - Conversion result: 68.42 EUR
+[2025-09-15 10:00:25] INFO  CurrencyService - Rates refreshed successfully from provider ECB
+[2025-09-15 10:00:30] INFO  CurrencyService - Conversion request received: GBP -> USD, amount=75.00
+[2025-09-15 10:00:30] INFO  CurrencyService - Conversion result: 93.21 USD
+[2025-09-15 10:00:35] ERROR CurrencyService - Provider timeout while fetching rates
+[2025-09-15 10:00:36] INFO  CurrencyService - Retrying provider connection...
+[2025-09-15 10:00:38] INFO  CurrencyService - Provider reconnected successfully
+[2025-09-15 10:00:45] INFO  CurrencyService - Conversion request received: CAD -> EUR, amount=200.00
+[2025-09-15 10:00:45] INFO  CurrencyService - Conversion result: 134.50 EUR
+[2025-09-15 10:00:50] INFO  CurrencyService - Conversion request received: EUR -> CHF, amount=300.00
+[2025-09-15 10:00:50] INFO  CurrencyService - Conversion result: 312.60 CHF
+[2025-09-15 10:00:55] INFO  CurrencyService - Conversion request received: USD -> INR, amount=20.00
+[2025-09-15 10:00:55] INFO  CurrencyService - Conversion result: 1660.00 INR
+[2025-09-15 10:01:00] WARN  CurrencyService - Conversion precision degraded due to missing rate updates
+[2025-09-15 10:01:10] INFO  CurrencyService - Conversion request received: EUR -> GBP, amount=120.00
+[2025-09-15 10:01:10] INFO  CurrencyService - Conversion result: 103.20 GBP
+[2025-09-15 10:01:15] INFO  CurrencyService - Health check passed
+[2025-09-15 10:01:20] INFO  CurrencyService - Conversion request received: AUD -> USD, amount=45.00
+[2025-09-15 10:01:20] INFO  CurrencyService - Conversion result: 29.70 USD
+[2025-09-15 10:01:25] INFO  CurrencyService - Conversion request received: EUR -> JPY, amount=15.00
+[2025-09-15 10:01:25] INFO  CurrencyService - Conversion result: 2195.00 JPY
+[2025-09-15 10:01:30] INFO  CurrencyService - Graceful shutdown initiated
+[2025-09-15 10:01:31] INFO  CurrencyService - Shutdown completed successfully

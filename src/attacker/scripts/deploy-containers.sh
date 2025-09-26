@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 # Percorsi standard montati nel Pod
 TOKEN_PATH="/token"

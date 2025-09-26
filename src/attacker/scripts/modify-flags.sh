@@ -2,15 +2,15 @@
 set -euo pipefail
 
 # ===== Config =====
-API_SERVER="${1:-https://kind-cluster-control-plane:6443}"
-FNPROTO="${2:-/tmp/demo.proto}"
-FNCREDS="${3:-/tmp/credentials}"
-COOKIEJAR="${4:-/tmp/flagd_ui_cookies.txt}"
-NAMESPACE="${5:-mem}"
-SERVICE="${6:-flagd}"
-PORT="${7:-4000}"
-TARGET_FLAG1="${8:-cryptoWord}"
-TARGET_FLAG2="${9:-exposedPath}"
+API_SERVER="${API_SERVER:-https://kind-cluster-control-plane:6443}"
+FNPROTO="${FNPROTO:-/tmp/demo.proto}"
+FNCREDS="${FNCREDS:-/tmp/credentials}"
+COOKIEJAR="${COOKIEJAR:-/tmp/flagd_ui_cookies.txt}"
+NAMESPACE="${NAMESPACE:-mem}"
+SERVICE="${SERVICE:-flagd}"
+PORT="${PORT:-4000}"
+TARGET_FLAG1="${TARGET_FLAG1:-cryptoWord}"
+TARGET_FLAG2="${TARGET_FLAG2:-exposedPath}"
 
 PROXY_UI="$API_SERVER/api/v1/namespaces/$NAMESPACE/services/$SERVICE:$PORT/proxy"
 FILE_CONFIG="/tmp/flagd-config"

@@ -1,0 +1,108 @@
+default:
+  image:
+    repository: registry:5000
+    version: "2.0.2"
+    pullPolicy: IfNotPresent
+
+networkPolicies:
+  enabled: false
+  allowKubeAPIServer: true
+  defaultDeny: true
+  allowSameNamespace: true
+  podSelector: {}
+  internet:
+    mode: world        # "world" (consigliato) oppure "cidr"
+    egressCidrs: []    # usati solo con mode: cidr
+    ingressCidrs: []   # usati solo con mode: cidr
+    exceptCidrs:       # utile se mode: cidr (escludi CIDR del cluster)
+      - "10.96.0.0/12"   # Service CIDR (esempio)
+      - "10.244.0.0/16"  # Pod CIDR (esempio)
+  rules:
+    dmz:
+      name: "dmz"
+      ingress: "app, mem, tst, kube-system"
+      egress:  "app, mem, tst, kube-system"
+      allowInternetEgress: true
+      allowInternetIngress: true
+    pay:
+      name: "pay"
+      ingress: "app, dat, mem, kube-system"
+      egress:  "app, dat, mem, kube-system"
+      allowInternetEgress: false
+      allowInternetIngress: false
+    app:
+      name: "app"
+      ingress: "dat, dmz, mem, pay, kube-system"
+      egress:  "dat, dmz, mem, pay, kube-system"
+      allowInternetEgress: false
+      allowInternetIngress: false
+    dat:
+      name: "dat"
+      ingress: "app, mem, pay, kube-system"
+      egress:  "app, mem, pay, kube-system"
+      allowInternetEgress: false
+      allowInternetIngress: false
+    mem:
+      name: "mem"
+      ingress: "app, dat, dmz, pay, tst, kube-system"
+      egress:  "app, dat, dmz, pay, tst, kube-system"
+      allowInternetEgress: true # grafana deve prendere qualcosa da grafana.com
+      allowInternetIngress: false
+    tst:
+      name: "tst"
+      ingress: "dmz, mem, kube-system"
+      egress:  "dmz, mem, kube-system"
+      allowInternetEgress: true
+      allowInternetIngress: false
+
+imageUpdater:
+  enabled: false
+  name: image-updater
+  namespace: "mem"
+  schedule: "*/5 * * * *"
+  image: ""
+  registry:
+    address: registry:5000
+    username: testuser
+    password: testpassword
+
+caldera:
+  enabled: false
+  namespace: "dmz"
+  host: "caldera.dock"
+  port: 8888
+
+postgres:
+  enabled: false
+  namespace: "dat"
+
+config:
+  enabled: false
+  configmaps:
+    flagd-credentials-ui:
+      namespace: "mem"
+      data: 
+        FLAGD_UI_USER: "admin" 
+        FLAGD_UI_PASS: "elia" 
+    proto:
+      namespace: "dat"
+      dataFromFile: "files/demo.proto"
+    product-catalog-products:
+      namespace: "app"
+      dataFromFile: "files/products.json"
+    flagd-config:
+      namespace: "mem"
+      dataFromFile: "files/demo.flagd.json"
+  secrets: 
+    dbcurrency-creds:
+      namespace: "app"
+      data: 
+        username: "postgres" 
+        password: "yourpassword"
+
+RBAC:
+  enabled: false
+
+namespaces:
+  enabled: false
+  list: "app, tst, dmz, dat, pay, mem"

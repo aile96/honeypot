@@ -1,19 +1,15 @@
-{{- if .Values.serviceAccount.create -}}
+{{- if .Values.RBAC.enabled -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  {{- $_ := set . "serviceAccount" .Values.serviceAccount }}
-  name: {{ include "otel-demo.serviceAccountName" . }}
-  labels:
-    {{- include "otel-demo.labels" . | nindent 4 }}
-  {{- if .Values.serviceAccount.annotations }}
-  annotations:
-    {{- range $key, $value := .Values.serviceAccount.annotations }}
-    {{- printf "%s: %s" $key (tpl $value $ | quote) | nindent 4 }}
-    {{- end }}
-  {{- end }}
-{{- end }}
-{{- if .Values.serviceAccount.createRbac -}}
+  name: acc-mem
+  namespace: mem
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: acc-app
+  namespace: app
 ---
 # Inizio permessi traffic controller
 apiVersion: rbac.authorization.k8s.io/v1

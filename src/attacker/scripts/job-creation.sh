@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # ===== Config =====
-API_SERVER="${1:-https://kind-cluster-control-plane:6443}"
-NS="${2:-app}"
-SECRET="${3:-dbcurrency-creds}"
+API_SERVER="${API_SERVER:-https://kind-cluster-control-plane:6443}"
+NS="${NS:-app}"
+SECRET="${SECRET:-dbcurrency-creds}"
 JOB_NAME="insert-currency-rate-$(date +%Y%m%d%H%M%S)"
 PGHOST="postgres.dat.svc.cluster.local"
 PGPORT="5432"

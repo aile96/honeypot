@@ -1,0 +1,201 @@
+{{- if .Values.networkPolicies.enabled -}}
+{{- $root := . -}}
+
+{{- range $key, $cfg := .Values.networkPolicies.rules -}}
+{{- $ns := (default $key $cfg.name) | trim -}}
+{{- $allowWorldEgress := (default false $cfg.allowInternetEgress) -}}
+{{- $allowWorldIngress := (default false $cfg.allowInternetIngress) -}}
+
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ printf "%s-allow" $ns | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $ns }}
+spec:
+  # Selettore dei pod di DESTINAZIONE
+  {{- if $root.Values.networkPolicies.podSelector }}
+  endpointSelector: {{ toYaml $root.Values.networkPolicies.podSelector | nindent 4 }}
+  {{- else }}
+  endpointSelector: {}
+  {{- end }}
+
+  {{/* ---------- INGRESS ---------- */}}
+  {{- $ingList := splitList "," (default "" $cfg.ingress) -}}
+  {{- $ingPeers := list -}}
+  {{- range $ingList -}}
+    {{- $p := trim . -}}
+    {{- if $p -}}
+      {{- $ingPeers = append $ingPeers $p -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $hasIngressCidrs := (and (hasKey $root.Values.networkPolicies "internet") ($root.Values.networkPolicies.internet.ingressCidrs)) -}}
+  {{- if or (gt (len $ingPeers) 0) $hasIngressCidrs $root.Values.networkPolicies.allowSameNamespace $allowWorldIngress }}
+  ingress:
+    - {{/* fromEndpoints (namespace peers) + same-namespace */}}
+      {{- if or (gt (len $ingPeers) 0) $root.Values.networkPolicies.allowSameNamespace }}
+      fromEndpoints:
+        {{- range $ingPeers }}
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": {{ . | quote }}
+        {{- end }}
+        {{- if $root.Values.networkPolicies.allowSameNamespace }}
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": {{ $ns | quote }}
+        {{- end }}
+      {{- end }}
+      {{- if $root.Values.networkPolicies.allowKubeAPIServer }}
+      fromServices:
+        - k8sService:
+            namespace: default
+            serviceName: kubernetes
+      {{- end }}
+      {{/* --- Internet per-namespace (ingress) --- */}}
+      {{- if $allowWorldIngress }}
+        {{- $mode := (default "world" $root.Values.networkPolicies.internet.mode) -}}
+        {{- if eq $mode "world" }}
+      fromEntities:
+        - world
+        {{- else if eq $mode "cidr" }}
+          {{- with $root.Values.networkPolicies.internet }}
+            {{- with .ingressCidrs }}
+              {{- if gt (len .) 0 }}
+      fromCIDR:
+                {{- range . }}
+        - {{ . | quote }}
+                {{- end }}
+              {{- end }}
+              {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
+              {{- if and (gt (len .) 0) $except }}
+      fromCIDRSet:
+        - cidr: "0.0.0.0/0"
+          except:
+                  {{- range $ex := $except }}
+            - {{ $ex | quote }}
+                  {{- end }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+        {{- else }}
+      # mode sconosciuta: non emetto aperture Internet ingress
+        {{- end }}
+      {{- end }}
+
+      {{/* --- (Facoltativo) Internet globale legacy (se presente a livello globale e non abilitato per-namespace) --- */}}
+      {{- with $root.Values.networkPolicies.internet }}
+        {{- with .ingressCidrs }}
+          {{- if and (gt (len .) 0) (not $allowWorldIngress) }}
+      fromCIDR:
+            {{- range . }}
+        - {{ . | quote }}
+            {{- end }}
+          {{- end }}
+          {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
+          {{- if and (gt (len .) 0) $except (not $allowWorldIngress) }}
+      fromCIDRSet:
+        - cidr: "0.0.0.0/0"
+          except:
+            {{- range $ex := $except }}
+            - {{ $ex | quote }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+  {{- end }}
+
+  {{/* ---------- EGRESS ---------- */}}
+  {{- $egList := splitList "," (default "" $cfg.egress) -}}
+  {{- $egPeers := list -}}
+  {{- range $egList -}}
+    {{- $p := trim . -}}
+    {{- if $p -}}
+      {{- $egPeers = append $egPeers $p -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $hasEgressCidrs := (and (hasKey $root.Values.networkPolicies "internet") ($root.Values.networkPolicies.internet.egressCidrs)) -}}
+  {{- if or (gt (len $egPeers) 0) $hasEgressCidrs $root.Values.networkPolicies.allowSameNamespace $allowWorldEgress }}
+  egress:
+    - {{/* toEndpoints (namespace peers) + same-namespace */}}
+      {{- if or (gt (len $egPeers) 0) $root.Values.networkPolicies.allowSameNamespace }}
+      toEndpoints:
+        {{- range $egPeers }}
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": {{ . | quote }}
+        {{- end }}
+        {{- if $root.Values.networkPolicies.allowSameNamespace }}
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": {{ $ns | quote }}
+        {{- end }}
+      {{- end }}
+      {{- if $root.Values.networkPolicies.allowKubeAPIServer }}
+      toServices:
+        - k8sService:
+            namespace: default
+            serviceName: kubernetes
+      {{- end }}
+      {{/* --- Internet per-namespace (egress) --- */}}
+      {{- if $allowWorldEgress }}
+        {{- $mode := (default "world" $root.Values.networkPolicies.internet.mode) -}}
+        {{- if eq $mode "world" }}
+      toEntities:
+        - world
+        {{- else if eq $mode "cidr" }}
+          {{- with $root.Values.networkPolicies.internet }}
+            {{- with .egressCidrs }}
+              {{- if gt (len .) 0 }}
+      toCIDR:
+                {{- range . }}
+        - {{ . | quote }}
+                {{- end }}
+              {{- end }}
+              {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
+              {{- if and (gt (len .) 0) $except }}
+      toCIDRSet:
+        - cidr: "0.0.0.0/0"
+          except:
+                  {{- range $ex := $except }}
+            - {{ $ex | quote }}
+                  {{- end }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+        {{- else }}
+      # mode sconosciuta: non emetto aperture Internet egress
+        {{- end }}
+      {{- end }}
+
+      {{/* --- (Facoltativo) Internet globale legacy (se presente a livello globale e non abilitato per-namespace) --- */}}
+      {{- with $root.Values.networkPolicies.internet }}
+        {{- with .egressCidrs }}
+          {{- if and (gt (len .) 0) (not $allowWorldEgress) }}
+      toCIDR:
+            {{- range . }}
+        - {{ . | quote }}
+            {{- end }}
+          {{- end }}
+          {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
+          {{- if and (gt (len .) 0) $except (not $allowWorldEgress) }}
+      toCIDRSet:
+        - cidr: "0.0.0.0/0"
+          except:
+            {{- range $ex := $except }}
+            - {{ $ex | quote }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+  {{- end }}
+{{- if $root.Values.networkPolicies.defaultDeny }}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ printf "%s-default-deny" $ns | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $ns }}
+spec:
+  endpointSelector: {}
+  # Nessuna sezione ingress/egress => default deny per i pod selezionati
+{{- end }}
+
+{{- end }}{{/* range rules */}}
+{{- end }}{{/* if enabled */}}

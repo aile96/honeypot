@@ -17,9 +17,10 @@ while IFS= read -r line; do
 done < "$ENV_FILE"
 
 remove_registry_hosts() {
-  local host="registry"
-  local hosts="/etc/hosts"
+  local host="${1:-registry}"         # 1° arg: host da rimuovere (default: registry)
+  local hosts="${2:-/etc/hosts}"      # 2° arg opzionale: path al file hosts (default: /etc/hosts)
 
+  # Controlla se esiste almeno un'entry contenente l'host come token intero
   if ! grep -Eq "^[[:space:]]*[0-9a-fA-F:.]+[[:space:]]+.*\b${host}\b" "$hosts"; then
     echo "Nessuna entry '${host}' trovata in ${hosts}"
     return 0
@@ -29,11 +30,11 @@ remove_registry_hosts() {
   local tmp
   tmp="$(mktemp)"
 
-  # Copia di backup
+  # Backup
   sudo cp "$hosts" "${hosts}.bak.$(date +%s)"
 
-  # Rimuove il token 'registry' preservando eventuali altri alias sulla stessa riga
-  awk -v host="registry" '
+  # Rimuove il token $host preservando eventuali altri alias sulla stessa riga
+  awk -v host="$host" '
     /^[[:space:]]*#/ { print; next }             # lascia i commenti
     NF == 0 { print; next }                       # lascia le righe vuote
     {
@@ -50,10 +51,12 @@ remove_registry_hosts() {
   sudo install -m 0644 "$tmp" "$hosts"
   rm -f "$tmp"
 
-  echo "Rimosso '${host}' da ${hosts}..."
+  echo "Rimosso '${host}' da ${hosts}."
 }
 
+
 kind delete cluster --name $CLUSTER_NAME
-docker container rm -f $CALDERA_SERVER $CALDERA_ATTACKER
-#remove_registry_hosts
-#docker container rm -f $REGISTRY_NAME
+#docker ps --filter "network=kind" --format '{{.ID}} {{.Names}}' | grep -v $REGISTRY_NAME | awk '{print $1}'
+docker rm -f $(docker ps --filter "network=kind" --format '{{.ID}} {{.Names}}' | grep -v $REGISTRY_NAME | awk '{print $1}') || echo "Rete kind non esiste"
+docker rm -f $(docker ps -q --filter "network=${BRIDGE_NET}") && docker network rm $BRIDGE_NET || echo "Rete $BRIDGE_NET non esiste"
+#remove_registry_hosts $REGISTRY_NAME

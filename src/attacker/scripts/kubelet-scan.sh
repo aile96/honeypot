@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # Kubelet HTTP probe (authorized testing only) - POSIX sh
 # Usage:
 #   ./kubelet_probe_http.sh <ip_file> <out_dir>

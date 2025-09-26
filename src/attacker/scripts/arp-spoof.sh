@@ -17,7 +17,8 @@ set -euo pipefail
 # - arpspoof: lanciato verso ogni worker e verso il gateway per il VIP
 # - Interfaccia: autodetect sul path verso il VIP
 
-INPUT_FILE="${1:-/tmp/iphost}"
+INPUT_FILE="${INPUT_FILE:-/tmp/iphost}"
+VIP="${LOAD_BALANCER_IP:-172.18.0.200}"
 TCPDUMP_OUT="/tmp/node_traffic"
 TCPDUMP_LOG="/tmp/tcpdump_stdout_err.log"
 
@@ -25,8 +26,6 @@ if [[ -z "${INPUT_FILE}" || ! -f "${INPUT_FILE}" ]]; then
   echo "Uso: $0 /path/to/ip-hosts.txt" >&2
   exit 1
 fi
-
-VIP=172.18.0.200
 
 # Estrai tutti gli IP (prima colonna del file) e rimuovi duplicati
 mapfile -t WORKERS < <(awk -F' - ' '{print $1}' "${INPUT_FILE}" | sort -u)

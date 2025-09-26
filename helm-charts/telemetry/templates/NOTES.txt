@@ -1,0 +1,6 @@
+=====================================================================================================================
+The following services are available at these paths after the frontend-proxy service is exposed with port forwarding:
+=====================================================================================================================
+Jaeger UI                   http://localhost:8080/jaeger/ui/
+Grafana                     http://localhost:8080/grafana/
+Opentelemetry Collector     http://localhost:8080/otlp-http/

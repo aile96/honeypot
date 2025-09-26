@@ -1,0 +1,10 @@
+{{- if .Values.namespaces.enabled }}
+{{- $list := splitList "," .Values.namespaces.list }}
+{{- range $ns := $list }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ trim $ns | quote }}
+---
+{{- end }}
+{{- end }}

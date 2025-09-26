@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 set -eu
 
 OS_ENDPOINT="${OS_ENDPOINT:-http://opensearch.mem:9200}"

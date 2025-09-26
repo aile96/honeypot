@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -eu
 
 USER="${USER:-admin administrator user test guest info root sysadmin support service manager operator developer webmaster administrator1 \

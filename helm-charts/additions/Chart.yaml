@@ -1,0 +1,9 @@
+apiVersion: v2
+type: application
+name: honeypot-additions
+version: 0.37.2
+description: helm chart of additions in honeypot
+maintainers:
+  - name: aile96
+icon: https://opentelemetry.io/img/logos/opentelemetry-logo-nav.png
+appVersion: 2.0.2

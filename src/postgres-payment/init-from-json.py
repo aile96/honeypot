@@ -42,7 +42,7 @@ with OUT.open("w", encoding="utf-8") as out:
     out.write("""\
 -- Auto-generato da init-from-json.py
 -- Schema per metodi di pagamento (ATTENZIONE: dati in chiaro, NON usare in produzione)
-CREATE TABLE IF NOT EXISTS payment_methods (
+CREATE TABLE IF NOT EXISTS payments (
   id SERIAL PRIMARY KEY,
   user_id VARCHAR(128) NOT NULL UNIQUE,
   card_holder_name TEXT NOT NULL,
@@ -63,13 +63,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_set_updated_at ON payment_methods;
+DROP TRIGGER IF EXISTS trg_set_updated_at ON payments;
 CREATE TRIGGER trg_set_updated_at
-BEFORE UPDATE ON payment_methods
+BEFORE UPDATE ON payments
 FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
 
 -- indici
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_methods_user ON payment_methods (user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_user ON payments (user_id);
 
 """)
 
@@ -114,7 +114,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_methods_user ON payment_methods (u
         cvv_lit  = esc(str(cvv))
 
         out.write(
-            "INSERT INTO payment_methods (user_id, card_holder_name, card_number, exp_month, exp_year, cvv) VALUES "
+            "INSERT INTO payments (user_id, card_holder_name, card_number, exp_month, exp_year, cvv) VALUES "
             f"('{user_id}', '{holder}', '{number}', {exp_month}, {exp_year}, '{cvv_lit}') "
             "ON CONFLICT (user_id) DO UPDATE SET "
             "card_holder_name = EXCLUDED.card_holder_name, "

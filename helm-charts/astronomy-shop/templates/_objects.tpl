@@ -7,6 +7,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .name }}
+  {{- if .namespace }}
+  namespace: {{ .namespace }}
+  {{- end }}
   labels:
     {{- include "otel-demo.labels" . | nindent 4 }}
 spec:
@@ -29,7 +32,10 @@ spec:
       imagePullSecrets:
         {{- ((.imageOverride).pullSecrets) | default .defaultValues.image.pullSecrets | toYaml | nindent 8}}
       {{- end }}
-      serviceAccountName: {{ include "otel-demo.serviceAccountName" .}}
+      serviceAccountName: {{ default "default" .serviceAccountName }}
+      {{- if .hostNetwork }}
+      hostNetwork: true
+      {{- end }}
       {{- $schedulingRules := .schedulingRules | default dict }}
       {{- if or .defaultValues.schedulingRules.nodeSelector $schedulingRules.nodeSelector}}
       nodeSelector:
@@ -85,6 +91,9 @@ spec:
               {{- if .subPath }}
               subPath: {{ .subPath }}
               {{- end }}
+          {{- end }}
+          {{- if .volumeMounts }}
+            {{- .volumeMounts | toYaml | nindent 12 }}
           {{- end }}
         {{- range .sidecarContainers }}
         {{- $sidecar := set . "name" (.name | lower)}}
@@ -166,6 +175,9 @@ metadata:
   {{- end }}
 spec:
   type: {{ $service.type | default "ClusterIP" }}
+  {{- if and (eq ($service.type | default "ClusterIP") "LoadBalancer") $service.loadBalancerIP }}
+  loadBalancerIP: {{ $service.loadBalancerIP }}
+  {{- end }}
   ports:
     {{- if .ports }}
     {{- range .ports }}
@@ -224,40 +236,6 @@ metadata:
   labels:
         {{- include "otel-demo.labels" $ | nindent 4 }}
 data:
-  {{- .data | toYaml | nindent 2}}
-{{- end}}
-{{- end}}
-{{- range .configMaps }}
-{{- if .data }}
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ .name | lower }}
-  {{- if .namespace }}
-  namespace: {{ .namespace }}
-  {{- end }}
-  labels:
-        {{- include "otel-demo.labels" $ | nindent 4 }}
-data:
-  {{- .data | toYaml | nindent 2}}
-{{- end}}
-{{- end}}
-{{- end}}
-
-{{- define "otel-demo.secret" }}
-{{- range .secrets }}
-{{- if .data }}
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ .name | lower }}
-  {{- if .namespace }}
-  namespace: {{ .namespace }}
-  {{- end }}
-type: Opaque
-stringData:
   {{- .data | toYaml | nindent 2}}
 {{- end}}
 {{- end}}

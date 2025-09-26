@@ -3,6 +3,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: image-updater
+  namespace: {{ .Values.imageUpdater.namespace }}
 spec:
   schedule: "{{ .Values.imageUpdater.schedule }}"
   jobTemplate:
@@ -14,7 +15,7 @@ spec:
           serviceAccountName: updater-sa
           containers:
           - name: updater
-            image: "{{ .Values.default.image.repository }}/{{ .Values.imageUpdater.name }}:{{ .Chart.AppVersion }}"
+            image: "{{ .Values.default.image.repository }}/{{ .Values.imageUpdater.name }}:{{ .Values.default.image.version }}"
             env:
             - name: REGISTRY
               value: "{{ .Values.imageUpdater.registry.address }}"
@@ -47,11 +48,11 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: updater-sa
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.imageUpdater.namespace }}
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: updater-sa
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.imageUpdater.namespace }}
 {{- end }}

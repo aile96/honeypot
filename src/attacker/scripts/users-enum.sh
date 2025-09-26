@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Endpoint e risorse
-ENDPOINT='https://kind-cluster-control-plane:6443/api/v1/namespaces/mem/services/traffic-controller:8080/proxy/translate'
+ENDPOINT="${API_SERVER:-https://kind-cluster-control-plane:6443}/api/v1/namespaces/mem/services/traffic-controller:8080/proxy/translate"
 TARGET='payment.pay.svc.cluster.local:8080'
 METHOD='oteldemo.PaymentService/ReceivePayment'
 PROTO_FILE='/tmp/demo.proto'

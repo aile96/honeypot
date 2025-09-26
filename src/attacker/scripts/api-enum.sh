@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # ===== Config =====
-API_SERVER="${1:-https://kind-cluster-control-plane:6443}"
-NSPROTO="${2:-app}"
-NSCREDS="${3:-mem}"
-CMNAME="${4:-flagd-credentials-ui}"
-FNPROTO="${5:-/tmp/demo.proto}"
-FNCREDS="${6:-/tmp/credentials}"
+API_SERVER="${API_SERVER:-https://kind-cluster-control-plane:6443}"
+NSPROTO="${NSPROTO:-app}"
+NSCREDS="${NSCREDS:-mem}"
+CMNAME="${CMNAME:-flagd-credentials-ui}"
+FNPROTO="${FNPROTO:-/tmp/demo.proto}"
+FNCREDS="${FNCREDS:-/tmp/credentials}"
 
 
 echo "[*] Chiedo all'API /healthz /version /apis /namespaces"

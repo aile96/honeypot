@@ -176,10 +176,10 @@ install_skaffold() {
 
 ensure_basic_tools() {
   case "$PM" in
-    apt) install_pkg_linux curl ca-certificates git jq openssl sed gawk grep ;;
-    dnf|yum) install_pkg_linux curl ca-certificates git jq openssl sed gawk grep ;;
-    pacman) install_pkg_linux curl ca-certificates git jq openssl sed gawk grep ;;
-    brew) brew install curl git jq openssl gawk grep || true ;;
+    apt) install_pkg_linux curl ca-certificates git jq openssl sed gawk grep ipcalc ;;
+    dnf|yum) install_pkg_linux curl ca-certificates git jq openssl sed gawk grep ipcalc ;;
+    pacman) install_pkg_linux curl ca-certificates git jq openssl sed gawk grep ipcalc ;;
+    brew) brew install curl git jq openssl gawk grep ipcalc || true ;;
   esac
 }
 

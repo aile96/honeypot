@@ -9,11 +9,30 @@ REGISTRY_PASS=$6
 REGISTRY_MALICIOUS_NAME=$7
 CILIUM_HELM_VERSION=$8
 KUBE_SYSTEM_NS=$9
+POOL_IP=${10}
+LABEL_NODE_ATTACKER=${11}
+LABEL_NOT_ATTACKER=${12}
+max_retries=10
+
+check_and_label() {
+  NODE=$1
+  LABEL_KEY=$2
+  LABEL_VALUE=$3
+
+  # Controllo se il nodo ha già la label con quel valore
+  CURRENT_VALUE=$(kubectl get node "$NODE" -o jsonpath="{.metadata.labels.$LABEL_KEY}")
+
+  if [ "$CURRENT_VALUE" == "$LABEL_VALUE" ]; then
+    warn "Nodo $NODE ha già label $LABEL_KEY=$LABEL_VALUE, salto."
+  else
+    log "Applico label $LABEL_KEY=$LABEL_VALUE a $NODE"
+    kubectl label node "$NODE" "$LABEL_KEY=$LABEL_VALUE" --overwrite
+  fi
+}
 
 deploy_metallb() {
   log "Controllo presenza MetalLB e pool IP..."
 
-  # Controlla se MetalLB è già installato
   if kubectl get ns metallb-system &>/dev/null; then
     if helm list -n metallb-system | grep -q metallb; then
       warn "MetalLB già installato via Helm, salto installazione."
@@ -26,38 +45,29 @@ deploy_metallb() {
     helm upgrade --install metallb metallb/metallb -n metallb-system --create-namespace
   fi
 
-  log "Aspetto che MetalLB sia pronto (controller + webhook)..."
+  log "Aspetto che MetalLB sia pronto..."
+  kubectl -n metallb-system wait --for=condition=Available deploy/metallb-controller --timeout=300s
+  kubectl -n metallb-system rollout status ds/metallb-speaker --timeout=300s
 
-  # Attendi controller Available
-  kubectl -n metallb-system wait --for=condition=Available deploy/metallb-controller --timeout=180s
-
-  # Attendi speaker (DaemonSet) che abbia almeno 1 pod Ready
-  kubectl -n metallb-system rollout status ds/metallb-speaker --timeout=180s
-
-  # Attendi che il service del webhook punti a pod pronti (endpoint popolati)
   log "Verifico endpoint del metallb-webhook-service…"
-  for i in {1..18}; do  # ~90s di retry
+  for i in {1..18}; do
     if kubectl -n metallb-system get endpoints metallb-webhook-service -o jsonpath='{.subsets[0].addresses[0].ip}' >/dev/null 2>&1; then
-      log "Webhook pronto (endpoint presenti)."
+      log "Webhook pronto."
       break
     fi
     warn "Endpoint non ancora presenti, retry $i/18…"
     sleep 5
   done
 
-  # (opzionale) fail esplicito se dopo i retry non ci sono endpoint
   if ! kubectl -n metallb-system get endpoints metallb-webhook-service -o jsonpath='{.subsets[0].addresses[0].ip}' >/dev/null 2>&1; then
-    die "metallb-webhook-service senza endpoint: controlla i pod/metallb-controller."
+    die "metallb-webhook-service senza endpoint."
   fi
-  
-  log "MetalLB pronto"
 
-  # Controlla se esiste già un IPAddressPool "default-pool"
   if kubectl get ipaddresspool -n metallb-system default-pool &>/dev/null; then
-    log "IPAddressPool 'default-pool' già esistente, nessuna creazione necessaria."
+    log "IPAddressPool 'default-pool' già esistente."
   else
     log "Creazione IPAddressPool 'default-pool'..."
-    kubectl apply -f - <<'EOF'
+    kubectl apply -f - <<EOF
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:
@@ -65,7 +75,7 @@ metadata:
   name: default-pool
 spec:
   addresses:
-  - 172.18.0.200-172.18.0.250
+  - ${POOL_IP}
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
@@ -121,6 +131,8 @@ containerdConfigPatches:
         password = "${REGISTRY_PASS}"
       [plugins."io.containerd.grpc.v1.cri".registry.configs."${REGISTRY_MALICIOUS_NAME}:${REGISTRY_PORT}".tls]
         insecure_skip_verify = true
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+        SystemdCgroup = true
 nodes:
   - role: control-plane
     kubeadmConfigPatches:
@@ -142,7 +154,7 @@ EOF
 if kind get clusters | grep -q "^$CLUSTER_NAME$"; then
   warn "Cluster \"$CLUSTER_NAME\" già esistente, nessuna creazione necessaria."
 else
-  create_kind_cluster
+  retry_func create_kind_cluster
 fi
 
 if helm status cilium -n $KUBE_SYSTEM_NS >/dev/null 2>&1; then
@@ -155,4 +167,6 @@ else
     --set operator.replicas=$NUM_WORKERS
 fi
 
-deploy_metallb
+retry_func deploy_metallb
+retry_func check_and_label "$CLUSTER_NAME-worker" group $LABEL_NODE_ATTACKER
+retry_func check_and_label "$CLUSTER_NAME-worker2" group $LABEL_NOT_ATTACKER

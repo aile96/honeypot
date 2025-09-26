@@ -25,6 +25,9 @@ build:
       context: src/attacker
       docker:
         dockerfile: src/attacker/Dockerfile
+        buildArgs:
+          SMTP_IP: "{{.SMTP_IP}}"
+          LOAD_BALANCER_IP: "{{.LOAD_BALANCER_IP}}"
 #    - image: registry:5000/auth
 #      context: src/auth
 #      docker:
@@ -39,11 +42,6 @@ build:
 #      context: src/caldera-controller
 #      docker:
 #        dockerfile: src/caldera-controller/Dockerfile
-#        buildArgs:
-#          DEFAULT_GROUP: "cluster"
-#          DEFAULT_ADV_NAME: "KC0 – Prova"
-#          DEFAULT_CALDERA_URL: "http://localhost:8888"
-#          UID: "10001"
 #    - image: registry:5000/cart
 #      context: .
 #      docker:
@@ -155,6 +153,10 @@ build:
 #        dockerfile: src/recommendation/Dockerfile
 #        buildArgs:
 #          RECOMMENDATION_PORT: "{{.RECOMMENDATION_PORT}}"
+#    - image: registry:5000/router
+#      context: .
+#      docker:
+#        dockerfile: src/router/Dockerfile
 #    - image: registry:5000/shipping
 #      context: .
 #      docker:
@@ -169,6 +171,10 @@ build:
 #      context: src/sidecar-mal
 #      docker:
 #        dockerfile: src/sidecar-mal/Dockerfile
+#    - image: registry:5000/smtp
+#      context: src/smtp
+#      docker:
+#        dockerfile: src/smtp/Dockerfile
 #    - image: registry:5000/valkey-cart
 #      context: .
 #      docker:
@@ -180,84 +186,44 @@ build:
 deploy:
   helm:
     releases:
-      - name: honeypot-test
-        chartPath: helm-charts
-        namespace: "{{.TST_NAMESPACE}}"
-        createNamespace: true
+      - name: honeypot-additions
+        chartPath: helm-charts/additions
         setValueTemplates:
-          #Abilitations
-          components.test-image.enabled: "true"
-          serviceAccount.create: "true"
-          #Values
-          serviceAccount.name: "acc-tst"
-        valuesFiles:
-          - helm-charts/values.yaml
-      - name: honeypot-dmz
-        chartPath: helm-charts
-        namespace: "{{.DMZ_NAMESPACE}}"
-        createNamespace: true
-        setValueTemplates:
-          #Abilitations
-          serviceAccount.create: "true"
-          components.frontend-proxy.enabled: "true"
-          components.image-provider.enabled: "true"
-          #Values
-          serviceAccount.name: "acc-dmz"
-          serviceAccount.role.name: "role-dmz"
-        valuesFiles:
-          - helm-charts/values.yaml
-      - name: honeypot-data
-        chartPath: helm-charts
-        namespace: "{{.DAT_NAMESPACE}}"
-        createNamespace: true
-        setValueTemplates:
-          #Abilitations
-          serviceAccount.create: "true"
-          components.valkey-cart.enabled: "true"
+        #Abilitations
+          networkPolicies.enabled: "true"
+          imageUpdater.enabled: "true"
+          caldera.enabled: "true"
           postgres.enabled: "true"
-          #Values
-          serviceAccount.name: "acc-dat"
+          config.enabled: "true"
+          RBAC.enabled: "true"
+          namespaces.enabled: "true"
+        #Values
+          imageUpdater.registry.address: "{{.REGISTRY_IMG}}"
         valuesFiles:
-          - helm-charts/values.yaml
-      - name: honeypot-payment
-        chartPath: helm-charts
-        namespace: "{{.PAY_NAMESPACE}}"
-        createNamespace: true
-        setValueTemplates:
-          #Abilitations
-          serviceAccount.create: "true"
-          components.payment.enabled: "true"
-          #Values
-          serviceAccount.name: "acc-pay"
-        valuesFiles:
-          - helm-charts/values.yaml
-      - name: honeypot-mem
-        chartPath: helm-charts
+          - helm-charts/additions/values.yaml
+      - name: honeypot-telemetry
+        chartPath: helm-charts/telemetry
         namespace: "{{.MEM_NAMESPACE}}"
-        createNamespace: true
         setValueTemplates:
-          #Abilitations
-          serviceAccount.create: "true"
-          components.flagd.enabled: "true"
+        #Abilitations
           opentelemetry-collector.enabled: "true"
           jaeger.enabled: "true"
           prometheus.enabled: "true"
           grafana.enabled: "true"
           opensearch.enabled: "true"
-          imageUpdater.enabled: "true"
-          components.traffic-controller.enabled: "true"
-          #Values
-          imageUpdater.registry.address: "{{.REGISTRY_IMG}}"
-          serviceAccount.name: "acc-mem"
         valuesFiles:
-          - helm-charts/values.yaml
-      - name: honeypot-app
-        chartPath: helm-charts
-        namespace: "{{.APP_NAMESPACE}}"
-        createNamespace: true
+          - helm-charts/telemetry/values.yaml
+      - name: honeypot-astronomy-shop
+        chartPath: helm-charts/astronomy-shop
         setValueTemplates:
-          #Abilitations
-          serviceAccount.create: "true"
+        #Abilitations
+          components.test-image.enabled: "true"
+          components.frontend-proxy.enabled: "true"
+          components.image-provider.enabled: "true"
+          components.valkey-cart.enabled: "true"
+          components.payment.enabled: "true"
+          components.flagd.enabled: "true"
+          components.traffic-controller.enabled: "true"
           components.accounting.enabled: "true"
           components.ad.enabled: "true"
           components.auth.enabled: "true"
@@ -271,25 +237,13 @@ deploy:
           components.quote.enabled: "true"
           components.recommendation.enabled: "true"
           components.shipping.enabled: "true"
+          components.smtp.enabled: "true"
           components.kafka.enabled: "true"
-          #Values
-          serviceAccount.name: "acc-app"
-      - name: honeypot-web
-        chartPath: helm-charts
-        namespace: "{{.WEB_NAMESPACE}}"
-        createNamespace: true
-        setValueTemplates:
-          #Abilitations
-          serviceAccount.create: "true"
-          serviceAccount.createRbac: "true"
-          #networkPolicies.enabled: "true"
-          components.load-generator.enabled: "true"
-          caldera.enabled: "true"
-          #Values
-          serviceAccount.name: "acc-web"
-          caldera.ip: "{{.CALDERA_IP}}"
+        #Values
+          components.frontend-proxy.service.loadBalancerIP: "{{.LOAD_BALANCER_IP}}"
+          components.smtp.service.loadBalancerIP: "{{.SMTP_IP}}"
         valuesFiles:
-          - helm-charts/values.yaml
+          - helm-charts/astronomy-shop/values.yaml
 portForward:
   - resourceType: service
     resourceName: frontend-proxy
@@ -298,6 +252,6 @@ portForward:
     localPort: 8080
   - resourceType: service
     resourceName: caldera-proxy
-    namespace: "{{.WEB_NAMESPACE}}"
+    namespace: "{{.DMZ_NAMESPACE}}"
     port: 8888
     localPort: 8888

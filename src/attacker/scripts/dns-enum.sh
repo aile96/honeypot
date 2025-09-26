@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -eu
 
 OUT_FILE="${1:-/tmp/dns-enum-results.csv}"

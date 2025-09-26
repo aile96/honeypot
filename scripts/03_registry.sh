@@ -4,6 +4,34 @@ PROJECT_ROOT=$1
 REGISTRY_NAME=$2
 REGISTRY_PORT=$3
 
+wait_container_running() {
+  local name="$1" timeout="${2:-60}"
+  local i=0
+  while [[ $i -lt $timeout ]]; do
+    if [[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" == "true" ]]; then
+      return 0
+    fi
+    sleep 1; i=$((i+1))
+  done
+  echo "Timeout: il container $name non è in stato Running entro ${timeout}s" >&2
+  return 1
+}
+
+wait_registry_ready() {
+  # Consideriamo "ready" anche HTTP 401 perché il registry con auth risponde 401 quando è UP
+  local host="$1" port="$2" timeout="${3:-60}"
+  local i=0 code=000
+  while [[ $i -lt $timeout ]]; do
+    code="$(curl -sk -o /dev/null -w '%{http_code}' "https://${host}:${port}/v2/")" || true
+    if [[ "$code" == "200" || "$code" == "401" ]]; then
+      return 0
+    fi
+    sleep 1; i=$((i+1))
+  done
+  echo "Timeout: registry ${host}:${port} non pronto (ultimo HTTP ${code})" >&2
+  return 1
+}
+
 ensure_registry_hosts() {
   local ip="127.0.0.1"
   local hosts="/etc/hosts"
@@ -44,17 +72,12 @@ else
     -e "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd" \
     -e "REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt" \
     -e "REGISTRY_HTTP_TLS_KEY=/certs/domain.key" \
-    -p ${REGISTRY_PORT}:${REGISTRY_PORT} \
+    --cap-add NET_ADMIN -p ${REGISTRY_PORT}:${REGISTRY_PORT} \
     registry:2
 fi
 
-if docker network inspect kind | grep -q "\"Name\": \"$REGISTRY_NAME\""; then
-  log "Registry già connesso alla rete kind."
-else
-  warn "Connessione del registry alla rete Kind..."
-  docker network connect kind "$REGISTRY_NAME" || true
-fi
-
+wait_container_running "$REGISTRY_NAME" 300 || exit 1
 ensure_registry_hosts
+wait_registry_ready "${REGISTRY_NAME}" "${REGISTRY_PORT}" 300 || exit 1
 log "Login a ${REGISTRY_NAME}:${REGISTRY_PORT}..."
 docker login ${REGISTRY_NAME}:${REGISTRY_PORT} -u "$REGISTRY_USER" -p "$REGISTRY_PASS"

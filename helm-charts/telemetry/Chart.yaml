@@ -1,8 +1,8 @@
 apiVersion: v2
 type: application
-name: opentelemetry-demo
+name: opentelemetry-telemetry
 version: 0.37.2
-description: opentelemetry demo helm chart
+description: opentelemetry-telemetry helm chart
 home: https://opentelemetry.io/
 sources:
   - https://github.com/open-telemetry/opentelemetry-demo

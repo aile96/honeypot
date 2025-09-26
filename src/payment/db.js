@@ -13,7 +13,7 @@ const pool = process.env.DATABASE_URL
 
 async function upsertPaymentMethod({ userId, cardHolderName, cardNumber, expMonth, expYear, cvv }) {
   const sql = `
-    INSERT INTO payment_methods (user_id, card_holder_name, card_number, exp_month, exp_year, cvv)
+    INSERT INTO payments (user_id, card_holder_name, card_number, exp_month, exp_year, cvv)
     VALUES ($1,$2,$3,$4,$5,$6)
     ON CONFLICT (user_id) DO UPDATE SET
       card_holder_name = EXCLUDED.card_holder_name,
@@ -31,7 +31,7 @@ async function upsertPaymentMethod({ userId, cardHolderName, cardNumber, expMont
 
 async function getPaymentMethod(userId) {
   const { rows } = await pool.query(
-    'SELECT * FROM payment_methods WHERE user_id = $1 LIMIT 1',
+    'SELECT * FROM payments WHERE user_id = $1 LIMIT 1',
     [userId]
   );
   return rows[0] || null;

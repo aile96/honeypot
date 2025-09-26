@@ -24,7 +24,7 @@ default:
     # Overrides the image tag whose default is the chart appVersion.
     # The service's name will be applied to the end of this value.
     tag: ""
-    pullPolicy: Always #IfNotPresent
+    pullPolicy: IfNotPresent
     pullSecrets: []
   # Default # of replicas for all components
   replicas: 1
@@ -46,7 +46,6 @@ serviceAccount:
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
   name: ""
-  createRbac: false
 
 components:
   ## Demo Components are named objects (services) with several properties
@@ -161,6 +160,7 @@ components:
 
   accounting:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     env:
@@ -178,6 +178,7 @@ components:
 
   ad:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     service:
@@ -199,6 +200,7 @@ components:
 
   auth:
     enabled: false
+    namespace: "app"
     useDefault:
       env: false
     service:
@@ -207,7 +209,7 @@ components:
       - name: DB_HOST
         value: "postgres-auth.dat"
       - name: DB_NAME
-        value: "usersdb"
+        value: "users"
       - name: DB_USER
         value: "testuser"
       - name: DB_PASS
@@ -236,6 +238,7 @@ components:
 
   cart:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     service:
@@ -263,6 +266,7 @@ components:
 
   checkout:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     ports:
@@ -355,6 +359,8 @@ components:
 
   currency:
     enabled: false
+    namespace: "app"
+    serviceAccountName: "acc-app"
     useDefault:
       env: true
     ports:
@@ -362,6 +368,15 @@ components:
         value: 8080
       - name: "http"
         value: 8081
+    schedulingRules:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+              - matchExpressions:
+                - key: group
+                  operator: In
+                  values: ["NodeAttacker"]
     env:
       - name: CURRENCY_PORT
         value: "8080"
@@ -400,14 +415,10 @@ components:
               echo "waiting for postgres..."
               sleep 2
             done
-    secrets:
-      - name: dbcurrency-creds
-        data:
-          username: "postgres"
-          password: "yourpassword"
 
   email:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     service:
@@ -425,6 +436,7 @@ components:
 
   fraud-detection:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     env:
@@ -446,6 +458,7 @@ components:
 
   frontend:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     service:
@@ -531,10 +544,12 @@ components:
 
   frontend-proxy:
     enabled: false
+    namespace: "dmz"
     useDefault:
       env: true
     service:
       type: LoadBalancer
+      loadBalancerIP: "172.18.0.200"
       port: 8080
     env:
       - name: ENVOY_PORT
@@ -563,10 +578,6 @@ components:
         value: jaeger-query.mem
       - name: JAEGER_PORT
         value: "16686"
-      - name: LOCUST_WEB_HOST
-        value: load-generator
-      - name: LOCUST_WEB_PORT
-        value: "8089"
       - name: OTEL_COLLECTOR_HOST
         value: $(OTEL_COLLECTOR_NAME)
       - name: OTEL_COLLECTOR_PORT_GRPC
@@ -583,6 +594,7 @@ components:
 
   image-provider:
     enabled: false
+    namespace: "dmz"
     useDefault:
       env: true
     service:
@@ -602,6 +614,7 @@ components:
 
   load-generator:
     enabled: false
+    namespace: "web"
     useDefault:
       env: true
     service:
@@ -637,6 +650,7 @@ components:
 
   payment:
     enabled: false
+    namespace: "pay"
     useDefault:
       env: true
     ports:
@@ -705,6 +719,7 @@ components:
 
   product-catalog:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     service:
@@ -730,6 +745,7 @@ components:
 
   quote:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     service:
@@ -751,6 +767,7 @@ components:
 
   recommendation:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     service:
@@ -776,6 +793,7 @@ components:
 
   shipping:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     service:
@@ -791,8 +809,39 @@ components:
       limits:
         memory: 20Mi
 
+  smtp:
+    enabled: false
+    namespace: "dmz"
+    hostNetwork: true
+    useDefault:
+      env: false
+    ports:
+      - name: ssh
+        value: 22
+      - name: ofrep
+        value: 25
+    schedulingRules:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+              - matchExpressions:
+                - key: group
+                  operator: In
+                  values: ["NodeAttacker"]
+    volumeMounts:
+      - name: socket
+        mountPath: /host/run/containerd/containerd.sock
+        mountPropagation: HostToContainer
+    additionalVolumes:
+      - name: socket
+        hostPath:
+          path: /run/containerd/containerd.sock
+          type: Socket
+
   flagd:
     enabled: false
+    namespace: "mem"
     useDefault:
       env: true
     replicas: 1
@@ -818,11 +867,6 @@ components:
       - "8016"
       - "--uri"
       - "file:./etc/flagd/demo.flagd.json"
-    configMaps:
-      - name: flagd-credentials-ui
-        data:
-          FLAGD_UI_USER: "admin"
-          FLAGD_UI_PASS: "elia"
     mountedEmptyDirs:
       - name: config-rw
         mountPath: /etc/flagd
@@ -870,6 +914,7 @@ components:
 
   kafka:
     enabled: false
+    namespace: "app"
     useDefault:
       env: true
     replicas: 1
@@ -895,6 +940,7 @@ components:
 
   test-image:
     enabled: false
+    namespace: "tst"
     useDefault:
       env: false
     replicas: 1
@@ -902,12 +948,14 @@ components:
       repository: malicious:5000/attacker
     env:
       - name: CALDERA_URL
-        value: "http://caldera.web:8888"
+        value: "http://caldera.dock:8888"
       - name: GROUP
         value: cluster
 
   traffic-controller:
     enabled: false
+    namespace: "mem"
+    serviceAccountName: "acc-mem"
     useDefault:
       env: true
     replicas: 1
@@ -915,13 +963,29 @@ components:
       limits:
         memory: 20Mi
     securityContext:
-      runAsUser: 999
-      runAsGroup: 1000
-      runAsNonRoot: true
+      privileged: true
     imageOverride:
       repository: "registry:5000/controller"
     ports:
       - value: 8080
+    schedulingRules:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+              - matchExpressions:
+                - key: group
+                  operator: In
+                  values: ["NodeAttacker"]
+    volumeMounts:
+      - name: hostroot
+        mountPath: /host
+        mountPropagation: HostToContainer
+    additionalVolumes:
+      - name: hostroot
+        hostPath:
+          path: /
+          type: Directory
     env:
       - name: OPENSEARCH_URL
         value: "http://opensearch:9200"
@@ -971,6 +1035,7 @@ components:
 
   valkey-cart:
     enabled: false
+    namespace: "dat"
     useDefault:
       env: true
     replicas: 1
@@ -984,370 +1049,3 @@ components:
       runAsUser: 999  # valkey
       runAsGroup: 1000
       runAsNonRoot: true
-
-opentelemetry-collector:
-  enabled: false
-  image:
-    repository: "otel/opentelemetry-collector-contrib"
-  fullnameOverride: otel-collector
-  mode: deployment
-  presets:
-    kubernetesAttributes:
-      enabled: true
-  resources:
-    limits:
-      memory: 200Mi
-  service:
-    type: ClusterIP
-  ports:
-    metrics:
-      enabled: true
-  podAnnotations:
-    prometheus.io/scrape: "true"
-    opentelemetry_community_demo: "true"
-  config:
-    receivers:
-      otlp:
-        protocols:
-          http:
-            # Since this collector needs to receive data from the web, enable cors for all origins
-            # `allowed_origins` can be refined for your deployment domain
-            cors:
-              allowed_origins:
-                - "http://*"
-                - "https://*"
-      httpcheck/frontend-proxy:
-        targets:
-          - endpoint: http://frontend-proxy.dmz:8080
-      redis:
-        endpoint: "valkey-cart:6379"
-        collection_interval: 10s
-
-    exporters:
-      ## Create an exporter to Jaeger using the standard `otlp` export format
-      otlp:
-        endpoint: jaeger-collector:4317
-        tls:
-          insecure: true
-      # Create an exporter to Prometheus (metrics)
-      otlphttp/prometheus:
-        endpoint: http://prometheus:9090/api/v1/otlp
-        tls:
-          insecure: true
-      opensearch:
-        logs_index: otel
-        http:
-          endpoint: http://opensearch:9200
-          tls:
-            insecure: true
-
-    processors:
-      #memory_limiter:
-      #  check_interval: 2s
-      #  limit_mib: 180
-      #  spike_limit_mib: 30
-      # This processor is used to help limit high cardinality on next.js span names
-      # When this PR is merged (and released) we can remove this transform processor
-      # https://github.com/vercel/next.js/pull/64852
-      transform:
-        error_mode: ignore
-        trace_statements:
-          - context: span
-            statements:
-              # could be removed when https://github.com/vercel/next.js/pull/64852 is fixed upstream
-              - replace_pattern(name, "\\?.*", "")
-              - replace_match(name, "GET /api/products/*", "GET /api/products/{productId}")
-      resource:
-        attributes:
-        - key: service.instance.id
-          from_attribute: k8s.pod.uid
-          action: insert
-
-    connectors:
-      spanmetrics: {}
-
-    service:
-      pipelines:
-        traces:
-          processors: [memory_limiter, resource, transform, batch]
-          exporters: [otlp, debug, spanmetrics]
-        metrics:
-          receivers: [httpcheck/frontend-proxy, redis, otlp, spanmetrics]
-          processors: [memory_limiter, resource, batch]
-          exporters: [otlphttp/prometheus, debug]
-        logs:
-          #receivers: [otlp]
-          processors: [memory_limiter, resource, batch]
-          exporters: [opensearch, debug]
-      telemetry:
-        metrics:
-          level: detailed
-          readers:
-            - periodic:
-                interval: 10000
-                timeout: 5000
-                exporter:
-                  otlp:
-                    protocol: grpc
-                    endpoint: otel-collector.mem.svc.cluster.local:4318
-
-jaeger:
-  enabled: false
-  fullnameOverride: jaeger
-  provisionDataStore:
-    cassandra: false
-  allInOne:
-    enabled: true
-    args:
-      - "--memory.max-traces=5000"
-      - "--query.base-path=/jaeger/ui"
-      - "--prometheus.server-url=http://prometheus:9090"
-      - "--prometheus.query.normalize-calls=true"
-      - "--prometheus.query.normalize-duration=true"
-    extraEnv:
-      - name: METRICS_STORAGE_TYPE
-        value: prometheus
-      - name: COLLECTOR_OTLP_GRPC_HOST_PORT
-        value: 0.0.0.0:4317
-      - name: COLLECTOR_OTLP_HTTP_HOST_PORT
-        value: 0.0.0.0:4318
-    resources:
-      limits:
-        memory: 400Mi
-  storage:
-    type: memory
-  agent:
-    enabled: false
-  collector:
-    enabled: false
-  query:
-    enabled: false
-
-prometheus:
-  enabled: false
-  alertmanager:
-    enabled: false
-  configmapReload:
-    prometheus:
-      enabled: false
-  kube-state-metrics:
-    enabled: false
-  prometheus-node-exporter:
-    enabled: false
-  prometheus-pushgateway:
-    enabled: false
-  server:
-    fullnameOverride: prometheus
-    extraFlags:
-      - "enable-feature=exemplar-storage"
-      - "web.enable-otlp-receiver"
-    global:
-      scrape_interval: 5s
-      scrape_timeout: 3s
-      evaluation_interval: 30s
-    tsdb:
-      out_of_order_time_window: 30m
-    prometheus.yml:
-      otlp:
-        keep_identifying_resource_attributes: true
-        # Recommended attributes to be promoted to labels.
-        promote_resource_attributes:
-          - service.instance.id
-          - service.name
-          - service.namespace
-          - cloud.availability_zone
-          - cloud.region
-          - container.name
-          - deployment.environment.name
-          - k8s.cluster.name
-          - k8s.container.name
-          - k8s.cronjob.name
-          - k8s.daemonset.name
-          - k8s.deployment.name
-          - k8s.job.name
-          - k8s.namespace.name
-          - k8s.pod.name
-          - k8s.replicaset.name
-          - k8s.statefulset.name
-    persistentVolume:
-      enabled: false
-    service:
-      servicePort: 9090
-    resources:
-      limits:
-        memory: 300Mi
-
-grafana:
-  enabled: false
-  fullnameOverride: grafana
-  testFramework:
-    enabled: false
-  grafana.ini:
-    auth:
-      disable_login_form: true
-    auth.anonymous:
-      enabled: true
-      org_name: Main Org.
-      org_role: Admin
-    server:
-      root_url: "%(protocol)s://%(domain)s:%(http_port)s/grafana"
-      serve_from_sub_path: true
-  adminPassword: admin
-  plugins:
-    - grafana-opensearch-datasource
-  datasources:
-    datasources.yaml:
-      apiVersion: 1
-      datasources:
-        - name: Prometheus
-          uid: webstore-metrics
-          type: prometheus
-          url: http://prometheus:9090
-          editable: true
-          isDefault: true
-          jsonData:
-            exemplarTraceIdDestinations:
-              - datasourceUid: webstore-traces
-                name: trace_id
-
-              - url: http://localhost:8080/jaeger/ui/trace/$${__value.raw}
-                name: trace_id
-                urlDisplayLabel: View in Jaeger UI
-
-        - name: Jaeger
-          uid: webstore-traces
-          type: jaeger
-          url: http://jaeger-query:16686/jaeger/ui
-          editable: true
-          isDefault: false
-
-        - name: OpenSearch
-          uid: webstore-logs
-          type: grafana-opensearch-datasource
-          url: http://opensearch:9200/
-          access: proxy
-          editable: true
-          isDefault: false
-          jsonData:
-            database: otel
-            flavor: opensearch
-            logLevelField: severity.text.keyword
-            logMessageField: body
-            pplEnabled: true
-            timeField: observedTimestamp
-            version: 2.18.0
-  dashboardProviders:
-    dashboardproviders.yaml:
-      apiVersion: 1
-      providers:
-        - name: 'default'
-          orgId: 1
-          folder: ''
-          type: file
-          disableDeletion: false
-          editable: true
-          options:
-            path: /var/lib/grafana/dashboards/default
-  dashboardsConfigMaps:
-    default: grafana-dashboards
-  resources:
-    limits:
-      memory: 150Mi
-
-opensearch:
-  enabled: false
-  fullnameOverride: opensearch
-  clusterName: demo-cluster
-  nodeGroup: otel-demo
-  singleNode: true
-  opensearchJavaOpts: "-Xms300m -Xmx300m"
-  persistence:
-    enabled: false
-  extraEnvs:
-    - name: "bootstrap.memory_lock"
-      value: "true"
-    - name: "DISABLE_INSTALL_DEMO_CONFIG"
-      value: "true"
-    - name: "DISABLE_SECURITY_PLUGIN"
-      value: "true"
-  resources:
-    limits:
-      memory: 1100Mi
-
-networkPolicies:
-  enabled: false
-  dns:
-    enabled: true
-    namespace: kube-system
-    # label standard dei pod CoreDNS (kops/kubeadm)
-    podSelector:
-      k8s-app: kube-dns
-    ports: [53]   # genera TCP e UDP per ciascuna porta
-  # consenti traffico tra pod nello stesso namespace
-  allowSelfNamespace: true
-  internet:
-    # i namespace a cui è consentita uscita su Internet
-    enabledNamespaces: [mem, web, tst]
-
-    # CIDR permesso per Internet (default tutto)
-    allowCIDR: 0.0.0.0/0
-
-    # ESCLUSIONI per non bypassare le policy interne (consigliato)
-    exceptCIDRs:
-      - 10.0.0.0/8        # RFC1918
-      #- 172.16.0.0/12     # RFC1918
-      - 192.168.0.0/16    # RFC1918
-      - 100.64.0.0/10     # CGNAT (a volte usato internamente)
-      - 169.254.0.0/16    # link-local
-      - 127.0.0.0/8       # loopback
-  rules:
-    app:
-      ingress: [dat, dmz, mem, pay]
-      egress:  [dat, dmz, mem, pay]
-    dat:
-      ingress: [app, mem, pay]
-      egress:  [app, mem, pay]
-    dmz:
-      ingress: [app, mem, tst, web]
-      egress:  [app, mem, tst, web]
-    mem:
-      ingress: [app, dat, dmz, pay, tst]
-      egress:  [app, dat, dmz, pay, tst]
-    pay:
-      ingress: [app, dat, mem]
-      egress:  [app, dat, mem]
-    tst:
-      ingress: [dmz, mem, web]
-      egress:  [dmz, mem, web]
-    web:
-      ingress: [dmz, tst]
-      egress:  [dmz, tst]
-
-
-imageUpdater:
-  enabled: false
-  name: image-updater
-  schedule: "*/5 * * * *"
-  registry:
-    address: registry:5000
-    username: testuser
-    password: testpassword
-
-caldera:
-  enabled: false
-  name: caldera
-  port: 8888
-  group: cluster
-  ip: 172.18.0.50
-  controller:
-    name: caldera-controller
-    env:
-      group: cluster
-      advList: "KC1 – Image@cluster, KC2 – WiFi@underlay, KC3 – FlagATT@underlay"
-      calderaUrl: "http://caldera:8888"
-      calderaKey: "ADMIN123"
-      planner: "atomic"
-      opNamePrefix: "kc"
-
-postgres:
-  enabled: false

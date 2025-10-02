@@ -1,0 +1,9 @@
+- id: 60000000-0000-0000-0000-000000000010
+  name: Registry Attack
+  description: Password enumeration to the registry server.
+  tactic: credential-access
+  technique: { attack_id: T1110.001, name: "Brute Force: Password Guessing" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC6/registry-attack.sh", timeout: 900, parsers: [], cleanup: "" } }

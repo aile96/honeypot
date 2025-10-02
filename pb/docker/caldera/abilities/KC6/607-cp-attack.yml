@@ -1,0 +1,9 @@
+- id: 60000000-0000-0000-0000-000000000007
+  name: Control Plane attack
+  description: Creation of a privileged Pod with SSH inside the control plane.
+  tactic: lateral-movement
+  technique: { attack_id: T1021.004, name: "Remote Services: SSH" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC6/cp-attack.sh", timeout: 900, parsers: [], cleanup: "" } }

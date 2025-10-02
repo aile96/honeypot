@@ -1,0 +1,171 @@
+x-build-common: &buildkit
+services:
+  # ===== Network components =====
+#  registry:
+#    container_name: ${REGISTRY_NAME}
+#    image: registry:2
+#    restart: always
+#    networks:
+#      - kind
+#    ports:
+#      - "${REGISTRY_PORT}:${REGISTRY_PORT}"
+#    environment:
+#      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+#      REGISTRY_HTTP_ADDR: "0.0.0.0:${REGISTRY_PORT}"
+#      REGISTRY_AUTH: "htpasswd"
+#      REGISTRY_AUTH_HTPASSWD_REALM: "Registry Realm"
+#      REGISTRY_AUTH_HTPASSWD_PATH: "/auth/htpasswd"
+#      REGISTRY_HTTP_TLS_CERTIFICATE: "/auth/certs/domain.crt"
+#      REGISTRY_HTTP_TLS_KEY: "/auth/certs/domain.key"
+#    volumes:
+#      - "./registry:/auth"
+#    cap_add:
+#      - NET_ADMIN
+      
+#  load-generator:
+#    image: ${REGISTRY:-registry:5000}/load-generator:${LOAD_GENERATOR_TAG:-2.0.2}
+#    build:
+#      context: ../..
+#      dockerfile: ../../src/load-generator/Dockerfile
+#    container_name: ${LOAD_GENERATOR:-load-generator}
+#    restart: unless-stopped
+#    cap_add: [ "NET_ADMIN" ]
+#    networks:
+#      bridge_net: {}
+#    hostname: ${LOAD_GENERATOR:-load-generator}
+
+#  router:
+#    image: ${REGISTRY:-registry:5000}/router:${ROUTER_TAG:-2.0.2}
+#    build:
+#      context: ../../src/router
+#      dockerfile: Dockerfile
+#    container_name: ${ROUTER_NAME:-router}
+#    restart: unless-stopped
+#    privileged: true
+#    cap_add: [ "NET_ADMIN", "NET_RAW" ]
+#    sysctls:
+#      net.ipv4.ip_forward: "1"
+#      net.ipv4.conf.all.rp_filter: "0"
+#      net.ipv4.conf.default.rp_filter: "0"
+#    environment:
+#      IFACE_A: eth0
+#      IFACE_B: eth1
+#      NAT: "0"
+#      API_SERVER: ${API_SERVER:-kind-cluster-control-plane}
+#      WORKER: ${WORKER:-kind-cluster-worker}
+#      APP_NAME: ${APP_NAME:-fantasticshop}
+#      LOAD_BALANCER_IP: ${LOAD_BALANCER_IP:-172.18.0.200}
+#    networks:
+#      kind: {}
+#      bridge_net: {}
+#    hostname: ${ROUTER_NAME:-router}
+
+  samba:
+    image: ${REGISTRY:-registry:5000}/samba:${ROUTER_TAG:-2.0.2}
+    build:
+      context: ../../src/samba
+      dockerfile: Dockerfile
+    container_name: samba-pv
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Rome
+      SAMBA_USER: k8s
+      SAMBA_PASS: password
+      SAMBA_UID: "10001"
+      SAMBA_GID: "10001"
+      SHARE_NAME: pvroot
+      SHARE_PATH: /share
+      HOSTS_ALLOW: "127. 172.18.0. 172.19.0."
+      ENCRYPTION: required   # oppure desired se vuoi compatibilità più ampia
+      LOG_LEVEL: "1"
+    networks:
+      kind: {}
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 445"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    cap_drop: ["ALL"]
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+    read_only: false
+    tmpfs:
+      - /run/samba:size=16m,mode=0755
+
+  # ===== Caldera =====
+  caldera-controller:
+    image: ${REGISTRY:-registry:5000}/caldera-controller:${CALDERA_CONTROLLER_TAG:-2.0.2}
+    build:
+      context: ../../src/caldera-controller
+      dockerfile: ../../src/caldera-controller/Dockerfile
+    container_name: ${CALDERA_CONTROLLER:-caldera.cont}
+    restart: unless-stopped
+    cap_add: [ "NET_ADMIN" ]
+    networks:
+      kind: {}
+    hostname: ${CALDERA_CONTROLLER:-caldera.cont}
+
+  caldera-outside:
+    image: ${REGISTRY:-registry:5000}/attacker:${ATTACKER_TAG:-2.0.2}
+    build:
+      context: ../../src/attacker
+      dockerfile: ../../src/attacker/Dockerfile
+      args:
+        SMTP_IP: ${SMTP_IP}
+        LOAD_BALANCER_IP: ${LOAD_BALANCER_IP}
+    container_name: ${CALDERA_OUTSIDE:-caldera.outs}
+    restart: unless-stopped
+    cap_add: [ "NET_ADMIN" ]
+    environment:
+      GROUP: outside
+      WAIT: ${WAIT_OUTSIDE:-1}
+      API_SERVER: ${API_SERVER:-https://kind-cluster-control-plane:6443}
+      SMTP_IP: ${SMTP_IP:-172.18.0.201}
+    networks:
+      kind: {}
+#      bridge_net: {}
+    hostname: ${CALDERA_OUTSIDE:-caldera.outs}
+
+  caldera-server:
+    image: ${REGISTRY:-registry:5000}/caldera:${CALDERA_TAG:-2.0.2}
+    build:
+      context: ../../src/caldera
+      dockerfile: ../../src/caldera/Dockerfile
+      args:
+        VARIANT: "full"
+    container_name: ${CALDERA_SERVER:-caldera.dock}
+    restart: unless-stopped
+    cap_add: [ "NET_ADMIN" ]
+    networks:
+      kind: {}
+    hostname: ${CALDERA_SERVER:-caldera-server}
+
+  caldera-underlay:
+    image: ${REGISTRY:-registry:5000}/attacker:${ATTACKER_TAG:-2.0.2}
+    build:
+      context: ../../src/attacker
+      dockerfile: ../../src/attacker/Dockerfile
+      args:
+        SMTP_IP: ${SMTP_IP}
+        LOAD_BALANCER_IP: ${LOAD_BALANCER_IP}
+    container_name: ${CALDERA_UNDERLAY:-caldera.undy}
+    restart: unless-stopped
+    privileged: true
+    environment: { GROUP: underlay }
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./apiserver:/apiserver
+    networks:
+      kind: {}
+    hostname: ${CALDERA_UNDERLAY:-caldera.undy}
+
+networks:
+  kind:
+    external: true
+    name: ${KIND_NET:-kind}
+
+#  bridge_net:
+#    driver: bridge
+#    name: ${BRIDGE_NET:-web}

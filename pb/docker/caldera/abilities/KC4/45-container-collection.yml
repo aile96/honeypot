@@ -1,0 +1,9 @@
+- id: 40000000-0000-0000-0000-000000000005
+  name: Data collection from containers
+  description: Using container amministrator commands to collect data from containers.
+  tactic: collection
+  technique: { attack_id: T1005, name: "Data from Local System" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "ssh root@$SMTP_IP '/usr/bin/env bash -s' < /opt/caldera/KC4/container-collection.sh > $DATA_PATH/KC4/cri-analysis.log 2>&1 && echo 'Analysis completed'", timeout: 900, parsers: [], cleanup: "" } }

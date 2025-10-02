@@ -1,0 +1,9 @@
+- id: 40000000-0000-0000-0000-000000000002
+  name: SSH Connection
+  description: Shell SSH connection.
+  tactic: lateral-movement
+  technique: { attack_id: T1021.004, name: "Remote Services: SSH" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: 'ssh -i ~/.ssh/id_ed25519 -p 22 -o StrictHostKeyChecking=no root@$SMTP_IP "cat ~/.ssh/authorized_keys" && mkdir -p $DATA_PATH/KC4/analysis', timeout: 900, parsers: [], cleanup: "" } }

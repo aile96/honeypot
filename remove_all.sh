@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # === Carica variabili da config/config.sh (ignora commenti e righe vuote) ===
-ENV_FILE="${PROJECT_ROOT}/project.env"
+ENV_FILE="${PROJECT_ROOT}/skaffold.env"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "File di configurazione non trovato: $ENV_FILE" >&2
   exit 1
@@ -16,9 +16,11 @@ while IFS= read -r line; do
   export "$line"
 done < "$ENV_FILE"
 
-remove_registry_hosts() {
+remove_registry() {
   local host="${1:-registry}"         # 1° arg: host da rimuovere (default: registry)
   local hosts="${2:-/etc/hosts}"      # 2° arg opzionale: path al file hosts (default: /etc/hosts)
+
+  docker rm -f $1
 
   # Controlla se esiste almeno un'entry contenente l'host come token intero
   if ! grep -Eq "^[[:space:]]*[0-9a-fA-F:.]+[[:space:]]+.*\b${host}\b" "$hosts"; then
@@ -54,9 +56,6 @@ remove_registry_hosts() {
   echo "Rimosso '${host}' da ${hosts}."
 }
 
-
-kind delete cluster --name $CLUSTER_NAME
-#docker ps --filter "network=kind" --format '{{.ID}} {{.Names}}' | grep -v $REGISTRY_NAME | awk '{print $1}'
-docker rm -f $(docker ps --filter "network=kind" --format '{{.ID}} {{.Names}}' | grep -v $REGISTRY_NAME | awk '{print $1}') || echo "Rete kind non esiste"
-docker rm -f $(docker ps -q --filter "network=${BRIDGE_NET}") && docker network rm $BRIDGE_NET || echo "Rete $BRIDGE_NET non esiste"
-#remove_registry_hosts $REGISTRY_NAME
+echo "Rimozione cluster k8s" && skaffold delete && echo "Rimozione completata" || echo "Rimozione non andata a buon fine"
+echo "Rimozione docker esclusi kind" && docker compose -f pb/docker/docker-compose.yml down && echo "Rimozione completata" || echo "Rimozione non andata a buon fine"
+echo "Rimozione kind" && kind delete cluster --name $CLUSTER_NAME && docker network rm kind && echo "Rimozione completata" || echo "Rimozione non andata a buon fine"

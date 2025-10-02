@@ -1,0 +1,9 @@
+- id: 30000000-0000-0000-0000-000000000003
+  name: Password of flagd found in ConfigMaps
+  description: The password of the flagd server stored in the ConfigMaps.
+  tactic: credential-access
+  technique: { attack_id: T1552.007, name: "Unsecured Credentials: Container API" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "cat $DATA_PATH/KC3/credentials", timeout: 30 } }

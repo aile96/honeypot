@@ -1,0 +1,9 @@
+- id: 30000000-0000-0000-0000-000000000004
+  name: Modification of security flags
+  description: Modification of the security flags for encryption between services and for a static path.
+  tactic: defense-evasion
+  technique: { attack_id: T1562.001, name: "Impair Defenses: Disable or Modify Tools" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC3/modify-flags.sh", timeout: 900, parsers: [], cleanup: "" } }

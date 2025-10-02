@@ -1,0 +1,9 @@
+- id: 60000000-0000-0000-0000-000000000004
+  name: Undo RBAC Anonymous permission
+  description: Remove the RBAC permission to the anonymous account to hide movements.
+  tactic: defense-evasion
+  technique: { attack_id: T1578.003, name: "Modify Cloud Compute Infrastructure: Delete Cloud Instance" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC6/undo-RBAC.sh", timeout: 900, parsers: [], cleanup: "" } }

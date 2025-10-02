@@ -1,0 +1,9 @@
+- id: 30000000-0000-0000-0000-000000000001
+  name: Initial Access via anonymous account
+  description: Simulation of the initial access to the API server (exposed to internet) with the anonymous account that has too grents.
+  tactic: initial-access
+  technique: { attack_id: T1078.001, name: "Valid Accounts: Default Accounts" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "echo \"[SIM] initial access with anonymous account\"", timeout: 30 } }

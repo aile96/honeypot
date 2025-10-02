@@ -1,0 +1,9 @@
+- id: 40000000-0000-0000-0000-000000000003
+  name: Container analysis
+  description: Container analysis of everything usefull inside.
+  tactic: discovery
+  technique: { attack_id: T1613, name: "Container and Resource Discovery" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "ssh root@$SMTP_IP '/usr/bin/env bash -s' < /opt/caldera/KC4/container-analysis.sh > $DATA_PATH/KC4/container-analysis.log 2>&1 && echo 'Analysis completed'", timeout: 900, parsers: [], cleanup: "" } }

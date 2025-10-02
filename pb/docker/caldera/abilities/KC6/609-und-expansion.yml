@@ -1,0 +1,9 @@
+- id: 60000000-0000-0000-0000-000000000009
+  name: Underlay Expansion
+  description: Nmap lookup in the underlay network.
+  tactic: discovery
+  technique: { attack_id: T1046, name: "Network Service Discovery" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC6/und-expansion.sh", timeout: 900, parsers: [], cleanup: "" } }

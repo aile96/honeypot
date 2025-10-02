@@ -99,6 +99,11 @@ config:
       data: 
         username: "postgres" 
         password: "yourpassword"
+    smb-creds:
+      namespace: "mem"
+      data:
+        username: "k8s"
+        password: "password"
 
 RBAC:
   enabled: false

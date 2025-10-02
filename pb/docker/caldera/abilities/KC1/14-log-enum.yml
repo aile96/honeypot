@@ -1,0 +1,9 @@
+- id: 10000000-0000-0000-0000-000000000004
+  name: Check logs for serviceaccount token file
+  description: Retry all logs from log server.
+  tactic: discovery
+  technique: { attack_id: T1654, name: Log Enumeration }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC1/scan-opensearch.sh", timeout: 900, parsers: [], cleanup: "" } }

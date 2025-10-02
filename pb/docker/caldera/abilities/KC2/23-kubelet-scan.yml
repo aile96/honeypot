@@ -1,0 +1,9 @@
+- id: 20000000-0000-0000-0000-000000000003
+  name: Node read only port inspection
+  description: Ask each node of the cluster in the open ports every data from the read only port.
+  tactic: discovery
+  technique: { attack_id: T1580, name: Cloud Infrastructure Discovery }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC2/kubelet-scan.sh", timeout: 900, parsers: [], cleanup: "" } }

@@ -1,0 +1,9 @@
+- id: 10000000-0000-0000-0000-000000000003
+  name: DNS enumeration
+  description: DNS lookups of some common name and ns.
+  tactic: discovery
+  technique: { attack_id: T1018, name: Remote System Discovery }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC1/dns-enum.sh", timeout: 900, parsers: [], cleanup: "" } }

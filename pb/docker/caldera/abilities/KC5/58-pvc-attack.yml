@@ -1,0 +1,9 @@
+- id: 50000000-0000-0000-0000-000000000008
+  name: PVC attack
+  description: Claiming a persistent volume to delete the content.
+  tactic: credential-access
+  technique: { attack_id: T1552, name: "Unsecured Credentials" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC5/pvc-attack.sh", timeout: 900, parsers: [], cleanup: "" } }

@@ -1,0 +1,53 @@
+[global]
+   workgroup = WORKGROUP
+   server string = Samba PV Server
+   log level = ${LOG_LEVEL}
+   log file = /data/log.%m
+   max log size = 1000
+   state directory = /data
+   cache directory = /data
+   lock directory = /data
+   pid directory = /run/samba
+
+   # Solo SMB su 445, niente NetBIOS
+   disable netbios = yes
+   smb ports = 445
+   dns proxy = no
+   load printers = no
+   printing = bsd
+   disable spoolss = yes
+
+   # Sicurezza moderna
+   server min protocol = SMB3_11
+   map to guest = Never
+   server signing = mandatory
+   server smb encrypt = ${ENCRYPTION}
+   client ipc signing = required
+   # opzionale: disabilita ntlmv1
+   ntlm auth = ntlmv2-only
+
+   # Restrizione IP (rete kind + loopback)
+   hosts allow = ${HOSTS_ALLOW}
+   hosts deny = 0.0.0.0/0
+
+   # Prestazioni/compatibilità
+   ea support = yes
+   kernel oplocks = no
+   strict locking = no
+   # time server = no
+
+[${SHARE_NAME}]
+   path = ${SHARE_PATH}
+   browseable = no
+   read only = no
+   guest ok = no
+   valid users = ${SAMBA_USER}
+   write list = ${SAMBA_USER}
+   force user = ${SAMBA_USER}
+   force group = ${SAMBA_USER}
+   create mask = 0660
+   directory mask = 0770
+   vfs objects = recycle
+   recycle:repository = /data/.recycle
+   recycle:keeptree = yes
+   recycle:versions = yes

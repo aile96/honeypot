@@ -1,0 +1,9 @@
+- id: 50000000-0000-0000-0000-000000000004
+  name: Container admin collection
+  description: Collection with container admin command of every service in every node.
+  tactic: collection
+  technique: { attack_id: T1005, name: "Data from Local System" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC5/node-collection.sh", timeout: 900, parsers: [], cleanup: "" } }

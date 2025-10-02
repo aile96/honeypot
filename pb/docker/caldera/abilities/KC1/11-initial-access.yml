@@ -1,0 +1,9 @@
+- id: 10000000-0000-0000-0000-000000000001
+  name: Initial Access via compromised image
+  description: Simulation of an initial access via compromised docker image.
+  tactic: initial-access
+  technique: { attack_id: T1195.002, name: "Supply Chain Compromise: Compromise Software Supply Chain" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "echo \"[SIM] initial access with this compromised image\"", timeout: 30 } }

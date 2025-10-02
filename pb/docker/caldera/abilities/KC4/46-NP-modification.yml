@@ -1,0 +1,9 @@
+- id: 40000000-0000-0000-0000-000000000006
+  name: Network policies modification
+  description: Modification on the network policies of the cluster to gain access to DBs.
+  tactic: defense-evasion
+  technique: { attack_id: T1578.005, name: "Modify Cloud Compute Infrastructure: Modify Cloud Compute Configurations" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: 'ssh root@$SMTP_IP "/usr/bin/env bash -s -- $API_SERVER" < /opt/caldera/KC4/np-modification.sh', timeout: 900, parsers: [], cleanup: "" } }

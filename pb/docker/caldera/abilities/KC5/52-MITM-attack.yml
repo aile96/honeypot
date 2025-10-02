@@ -1,0 +1,9 @@
+- id: 50000000-0000-0000-0000-000000000002
+  name: MITM Attack
+  description: Using the key of a certificate to impersonate the API server.
+  tactic: credential-access
+  technique: { attack_id: T1557.004, name: "Adversary-in-the-Middle: Evil Twin" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC5/MITM-attack.sh", timeout: 900, parsers: [], cleanup: "" } }

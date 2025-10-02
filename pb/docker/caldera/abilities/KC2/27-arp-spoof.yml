@@ -1,0 +1,9 @@
+- id: 20000000-0000-0000-0000-000000000007
+  name: Arp Spoofing
+  description: Spoofing of auth service to an attacker server.
+  tactic: collection
+  technique: { attack_id: T1557.002, name: "Adversary-in-the-Middle: ARP Cache Poisoning" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC2/arp-spoof.sh", timeout: 900, parsers: [], cleanup: "" } }

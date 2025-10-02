@@ -1,0 +1,74 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: smb-dyn
+provisioner: smb.csi.k8s.io
+parameters:
+  source: "//samba-pv/pvroot"
+  csi.storage.k8s.io/provisioner-secret-name: "smb-creds"
+  csi.storage.k8s.io/provisioner-secret-namespace: "mem"
+  csi.storage.k8s.io/node-stage-secret-name: "smb-creds"
+  csi.storage.k8s.io/node-stage-secret-namespace: "mem"
+mountOptions:
+  - dir_mode=0770
+  - file_mode=0660
+  - uid=10001
+  - gid=10001
+  - vers=3.1.1
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-smb-dyn
+  namespace: mem
+spec:
+  accessModes: [ "ReadWriteMany" ]
+  storageClassName: smb-dyn
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: write-once-to-pvc
+  namespace: mem
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: write-once-to-pvc
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: writer
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "Super important data" >> /data/importantdata.txt
+              ls -l /data
+          volumeMounts:
+            - name: dati
+              mountPath: /data
+      volumes:
+        - name: dati
+          persistentVolumeClaim:
+            claimName: pvc-smb-dyn
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: samba-pv
+  namespace: mem
+spec:
+  type: ExternalName
+  externalName: samba-pv

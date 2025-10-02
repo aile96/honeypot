@@ -1,0 +1,9 @@
+- id: 10000000-0000-0000-0000-000000000008
+  name: DNS Poisoning
+  description: DNS Poisoning of dnscore.
+  tactic: defense-evasion
+  technique: { attack_id: T1578, name: Modify Cloud Compute Infrastructure }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC1/dns-poisoning.sh", timeout: 900, parsers: [], cleanup: "" } }

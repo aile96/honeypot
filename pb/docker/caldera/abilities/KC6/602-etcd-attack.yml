@@ -1,0 +1,9 @@
+- id: 60000000-0000-0000-0000-000000000002
+  name: Etcd attack
+  description: Modification of RBAC inside the etcd to permit cluster role to anonymous account.
+  tactic: privilege-escalation
+  technique: { attack_id: T1098.003, name: "Account Manipulation: Additional Cloud Roles" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC6/etcd-attack.sh", timeout: 900, parsers: [], cleanup: "" } }

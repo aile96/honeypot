@@ -1,0 +1,5 @@
+id: KC000000-0000-0000-0000-000000000000
+name: KC0 – Test
+description: Test
+atomic_ordering:
+  - 00000000-0000-0000-0000-000000000000

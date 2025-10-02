@@ -32,7 +32,7 @@ metadata:
 rules:
 - apiGroups: ["apps"]
   resources: ["deployments"]
-  verbs: ["get", "list", "patch", "update"]
+  verbs: ["get", "list", "patch", "update", "create"]
 - apiGroups: [""]
   resources: ["namespaces"]
   verbs: ["get", "list"]

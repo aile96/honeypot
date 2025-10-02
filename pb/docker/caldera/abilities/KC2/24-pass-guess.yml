@@ -1,0 +1,9 @@
+- id: 20000000-0000-0000-0000-000000000004
+  name: Password enumeration
+  description: Password enumeration of registry server.
+  tactic: credential-access
+  technique: { attack_id: T1110.001, name: Password Guessing }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC2/pass-enum.sh", timeout: 900, parsers: [], cleanup: "" } }

@@ -1,0 +1,9 @@
+- id: 50000000-0000-0000-0000-000000000005
+  name: Node impersonification
+  description: Stealing certificates from the nodes to impersonate them.
+  tactic: credential-access
+  technique: { attack_id: T1649, name: "Steal or Forge Authentication Certificates" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC5/node-imp.sh", timeout: 900, parsers: [], cleanup: "" } }

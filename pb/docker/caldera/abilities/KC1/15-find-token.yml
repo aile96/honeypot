@@ -1,0 +1,9 @@
+- id: 10000000-0000-0000-0000-000000000005
+  name: Token found in the logs
+  description: Token in logs of opensearch.
+  tactic: credential-access
+  technique: { attack_id: T1528, name: "Steal Application Access Token" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "cat $DATA_PATH/KC1/token", timeout: 30 } }

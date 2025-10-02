@@ -1,0 +1,9 @@
+- id: 30000000-0000-0000-0000-000000000002
+  name: API resources enumeration
+  description: Querying the API server looking for informations.
+  tactic: discovery
+  technique: { attack_id: T1619, name: Cloud Storage Object Discovery }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC3/api-enum.sh", timeout: 900, parsers: [], cleanup: "" } }

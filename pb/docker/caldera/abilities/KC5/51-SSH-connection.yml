@@ -1,0 +1,9 @@
+- id: 50000000-0000-0000-0000-000000000001
+  name: SSH Initial access
+  description: Simulation of an SSH connection to an internal server.
+  tactic: initial-access
+  technique: { attack_id: T1133, name: "External Remote Services" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "echo \"[SIM] initial access with SSH connection\"", timeout: 30 } }

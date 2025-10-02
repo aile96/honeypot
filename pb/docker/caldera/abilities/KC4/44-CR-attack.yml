@@ -1,0 +1,9 @@
+- id: 40000000-0000-0000-0000-000000000004
+  name: Container runtime attack
+  description: Exec in a container with full privileges inside the node.
+  tactic: privilege-escalation
+  technique: { attack_id: T1611, name: "Escape to Host" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "ssh root@$SMTP_IP '/usr/bin/env bash -s' < /opt/caldera/KC4/cr-attack.sh", timeout: 900, parsers: [], cleanup: "" } }

@@ -1,0 +1,9 @@
+- id: 60000000-0000-0000-0000-000000000001
+  name: Etcd exposure
+  description: Simulation of execution of code in the control plane that expose etcd server.
+  tactic: initial-access
+  technique: { attack_id: T1566.001, name: "Phishing: Spearphishing Attachment" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "echo \"[SIM] execution of code in the control plane that expose etcd server\"", timeout: 30 } }

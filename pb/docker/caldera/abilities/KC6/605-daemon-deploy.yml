@@ -1,0 +1,9 @@
+- id: 60000000-0000-0000-0000-000000000005
+  name: Privileged DaemonSet creation
+  description: Creation of a privileged DaemonSet with SSH that can control every node of the cluster.
+  tactic: lateral-movement
+  technique: { attack_id: T1021.004, name: "Remote Services: SSH" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC6/daemon-deploy.sh", timeout: 900, parsers: [], cleanup: "" } }

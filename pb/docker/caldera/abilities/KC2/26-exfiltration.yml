@@ -1,0 +1,9 @@
+- id: 20000000-0000-0000-0000-000000000006
+  name: Credit Card Theft
+  description: Simulation of the exfiltration of the credit cards
+  tactic: exfiltration
+  technique: { attack_id: T1048.003, name: "Exfiltration Over Alternative Protocol: Exfiltration Over Unencrypted Non-C2 Protocol" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "echo \"[SIM] Exfiltration of data by proxy inside image\"", timeout: 30 } }

@@ -1,0 +1,9 @@
+- id: 20000000-0000-0000-0000-000000000002
+  name: Nmap enumeration
+  description: Nmap lookup of the network.
+  tactic: discovery
+  technique: { attack_id: T1046, name: Network Service Scanning }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC2/nmap-enum.sh", timeout: 900, parsers: [], cleanup: "" } }

@@ -21,7 +21,7 @@ LOG_SEVERITY_NUMBER="${LOG_SEVERITY_NUMBER:-9}"
 TOKEN_FILE="${TOKEN_FILE:-/var/run/secrets/kubernetes.io/serviceaccount/token}"
 
 # Attesa iniziale (per dare tempo a OpenSearch di essere pronto)
-INITIAL_SLEEP="${INITIAL_SLEEP:-30}"
+INITIAL_SLEEP="${INITIAL_SLEEP:-180}"
 
 #################################
 # Funzioni di utilità

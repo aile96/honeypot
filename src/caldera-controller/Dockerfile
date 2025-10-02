@@ -5,7 +5,7 @@ FROM python:3.12-slim
 ARG DEFAULT_GROUP="cluster"
 ARG DEFAULT_ADV_NAME="KC1 – Safe Mining Emulation"
 ARG DEFAULT_CALDERA_URL="http://caldera.dock:8888"
-ARG DEFAULT_ADV_LIST="KC1 – Image@cluster, KC2 – WiFi@underlay, KC3 – FlagATT@outside, KC4 – CRSocket@outside"
+ARG DEFAULT_ADV_LIST="KC1 – Image@cluster, KC2 – WiFi@underlay, KC3 – FlagATT@outside, KC4 – CRSocket@outside, KC5 – Certificate@underlay, KC6 – Etcd@outside"
 ARG DEFAULT_PLANNER="atomic"
 ARG DEFAULT_OP_NAME_PREFIX="kc"
 ARG DEFAULT_CALDERA_KEY="ADMIN123"

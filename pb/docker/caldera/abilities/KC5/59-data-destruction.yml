@@ -1,0 +1,9 @@
+- id: 50000000-0000-0000-0000-000000000009
+  name: Cluster data destruction
+  description: Simulation of the destruction of all the data of the cluster.
+  tactic: impact
+  technique: { attack_id: T1485, name: "Data Destruction" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "echo \"[SIM] destruction of all data\"", timeout: 30 } }

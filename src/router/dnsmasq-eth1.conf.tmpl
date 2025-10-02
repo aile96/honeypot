@@ -1,0 +1,23 @@
+# Ascolta solo su eth1
+bind-interfaces
+except-interface=lo
+interface=eth1
+
+# Non usare i resolver di sistema
+no-resolv
+no-hosts
+
+# Blocca il forward di tutto (salvo eccezioni sotto)
+local=/#
+
+# CONSENTI SOLO QUESTI DUE HOSTNAME A ESSERE INOLTRATI
+server=/${API_SERVER}/${DNS_DOCKER}
+server=/${WORKER}/${DNS_DOCKER}
+
+# >>> Mapping locale (IP noto) <<<
+host-record=${APP_NAME},${LOAD_BALANCER_IP}
+ptr-record=${LOAD_BALANCER_IP}.in-addr.arpa,${APP_NAME}
+
+# Facoltativo
+cache-size=0
+log-facility=-

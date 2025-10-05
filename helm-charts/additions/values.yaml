@@ -55,17 +55,6 @@ networkPolicies:
       allowInternetEgress: true
       allowInternetIngress: false
 
-imageUpdater:
-  enabled: false
-  name: image-updater
-  namespace: "mem"
-  schedule: "*/5 * * * *"
-  image: ""
-  registry:
-    address: registry:5000
-    username: testuser
-    password: testpassword
-
 caldera:
   enabled: false
   namespace: "dmz"
@@ -85,7 +74,7 @@ config:
         FLAGD_UI_USER: "admin" 
         FLAGD_UI_PASS: "elia" 
     proto:
-      namespace: "dat"
+      namespace: "app"
       dataFromFile: "files/demo.proto"
     product-catalog-products:
       namespace: "app"

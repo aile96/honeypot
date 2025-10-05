@@ -13,7 +13,7 @@ NAMESPACE=$(cat ${NAMESPACE_PATH})
 GROUP="cluster2"
 
 # URL API Server (interno al cluster, service DNS)
-APISERVER="https://kubernetes.default.svc:6443"
+APISERVER="https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT"
 IPAUTH=$(nslookup -type=A auth.app | awk '/Address: /{print $2}')
 
 # Deployment YAML

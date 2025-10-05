@@ -4,7 +4,7 @@ set -euo pipefail
 FILE_IP="$DATA_PATH/KC5/iphost"
 KEY_PATH="$DATA_PATH/KC5/ssh/ssh-key"
 
-list_node_ip() {
+list_node_hostnames() {
   if [[ ! -f "$FILE_IP" ]]; then
     echo "Errore: file '$FILE_IP' non trovato" >&2
     return 1
@@ -27,7 +27,7 @@ if [[ "${#nodes[@]}" -eq 0 ]]; then
 fi
 echo ">> Nodi trovati (${#nodes[@]}): ${nodes[*]}"
 for n in "${nodes[@]}"; do
-    ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -i $KEY_PATH root@$n \
-        '/usr/bin/env bash -s' < /opt/caldera/KC4/container-analysis.sh > $DATA_PATH/KC5/container-analysis-$n.log 2>&1
+    ssh -p 2222 -o StrictHostKeyChecking=accept-new -i $KEY_PATH root@$n 'bash -s --' -- "0" \
+    < /opt/caldera/KC4/container-collection.sh > $DATA_PATH/KC5/container-collection-$n.log 2>&1
     echo "Analysis completed for $n"
 done

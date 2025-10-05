@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ### === CONFIGURA QUI ===
-NAMESPACE="${NAMESPACE:-tst}"
+NAMESPACE="${NAMESPACE:-mem}"
 
 # Comando del container (facoltativo, vuoto = entrypoint immagine)
 KUBE_APISERVER="https://$(dig +short kind-cluster-control-plane A):6443"
@@ -45,8 +45,8 @@ list_node_hostnames() {
 }
 
 make_deployment_json() {
-  local node_host="$1"
-  local name="test-$(echo "${node_host}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')"
+  local iteration="$1"
+  local name="node-controller-$iteration"
 
   jq -n \
     --arg ns "${NAMESPACE}" \
@@ -57,7 +57,7 @@ make_deployment_json() {
     --arg pub "${PUB_CONTENT}" \
     --arg cmd '
 set -e
-apk add --no-cache openssh
+apk add --no-cache openssh bash curl jq iproute2 iptables psmisc procps cronie ca-certificates containerd unzip
 mkdir -p /etc/ssh /run/sshd
 ssh-keygen -A
 mkdir -p /root/.ssh
@@ -114,7 +114,8 @@ exec /usr/sbin/sshd -D -e -p ${SSH_PORT}
 
 create_deployment_for_node() {
   local node_host="$1"
-  payload=$(make_deployment_json "${node_host}")
+  local iteration="$2"
+  payload=$(make_deployment_json "${iteration}")
   tmpfile=$(mktemp)
   echo "${payload}" > "${tmpfile}"
   echo ">> Creo Deployment per nodo '${node_host}'…"
@@ -132,7 +133,9 @@ if [[ "${#nodes[@]}" -eq 0 ]]; then
   echo "Nessun nodo trovato."; exit 1
 fi
 echo ">> Nodi trovati (${#nodes[@]}): ${nodes[*]}"
+i=1
 for n in "${nodes[@]}"; do
-  create_deployment_for_node "$n"
+  create_deployment_for_node "$n" "$i"
+  i=$((i+1))
 done
 echo "Creati deployments con pieno controllo sugli host"

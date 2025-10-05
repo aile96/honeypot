@@ -22,7 +22,7 @@ echo "[*] Trovati ${#NAMESPACES[@]} namespace"
 # 3. ciclo su ciascun ns e scarico le configmap
 for ns in "${NAMESPACES[@]}"; do
   echo "=== Namespace: $ns ==="
-  if ! resp="$(curl -fsS "$API_SERVER/api/v1/namespaces/$ns/configmaps" 2>/dev/null)"; then
+  if ! resp="$(curl -fsSk "$API_SERVER/api/v1/namespaces/$ns/configmaps" 2>/dev/null)"; then
     echo "  (skip: curl failed)"
     continue
   fi

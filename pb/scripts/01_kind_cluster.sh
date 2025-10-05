@@ -79,6 +79,7 @@ create_kind_cluster() {
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 networking:
+  ipFamily: ipv4
   disableDefaultCNI: true
   podSubnet: "10.244.0.0/16"
   serviceSubnet: "10.96.0.0/12"
@@ -120,7 +121,7 @@ EOF
 }
 
 # ===== 1) Avvio kind, copio certificato e metto label su nodi =====
-rm -f "./pb/docker/apiserver/apiserver.crt" "./pb/docker/apiserver/apiserver.key"
+rm -f ./pb/docker/apiserver/*
 if kind get clusters | grep -q "^$CLUSTER_NAME$"; then
   warn "Cluster \"$CLUSTER_NAME\" già esistente, nessuna creazione necessaria."
 else

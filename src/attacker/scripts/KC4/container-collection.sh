@@ -1,6 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ -n "${1:-}" ]; then
+  curl -L https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.30.0/crictl-v1.30.0-linux-amd64.tar.gz | tar zx -C /usr/local/bin
+  cat >/etc/crictl.yaml <<'YAML'
+runtime-endpoint: unix:///host/run/containerd/containerd.sock
+image-endpoint: unix:///host/run/containerd/containerd.sock
+timeout: 10
+debug: false
+YAML
+fi
+
 CRICTL="crictl ${CRICTL_FLAGS:-}"
 
 have_jq() { command -v jq >/dev/null 2>&1; }

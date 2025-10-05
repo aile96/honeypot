@@ -117,7 +117,7 @@ void update_currency_conversion() {
     init_db_connection();
   }
 
-  PGresult* res = PQexec(db_conn, "SELECT code, rate FROM currency_rates");
+  PGresult* res = PQexec(db_conn, "SELECT code, rate FROM currency");
   if (PQresultStatus(res) != PGRES_TUPLES_OK) {
     std::cerr << "[rates] Query failed: " << PQerrorMessage(db_conn) << std::endl;
     PQclear(res);

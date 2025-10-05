@@ -76,7 +76,7 @@ services:
       SHARE_NAME: pvroot
       SHARE_PATH: /share
       HOSTS_ALLOW: "127. 172.18.0. 172.19.0."
-      ENCRYPTION: required   # oppure desired se vuoi compatibilità più ampia
+      ENCRYPTION: required   # o desired (per compatibilità più ampia)
       LOG_LEVEL: "1"
     networks:
       kind: {}
@@ -86,7 +86,7 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
-    cap_drop: ["ALL"]
+    #cap_drop: ["ALL"]
     cap_add:
       - NET_BIND_SERVICE
       - CHOWN
@@ -131,13 +131,19 @@ services:
   caldera-server:
     image: ${REGISTRY:-registry:5000}/caldera:${CALDERA_TAG:-2.0.2}
     build:
-      context: ../../src/caldera
-      dockerfile: ../../src/caldera/Dockerfile
+      #context: ../../src/caldera
+      #dockerfile: ../../src/caldera/Dockerfile
+      context: https://github.com/mitre/caldera.git#master
+      dockerfile: Dockerfile
       args:
         VARIANT: "full"
     container_name: ${CALDERA_SERVER:-caldera.dock}
     restart: unless-stopped
     cap_add: [ "NET_ADMIN" ]
+    volumes:
+      - ./caldera/local.yml:/usr/src/app/conf/local.yml
+      - ./caldera/adversaries:/usr/src/app/plugins/stockpile/data/adversaries/personal
+      - ./caldera/abilities:/usr/src/app/plugins/stockpile/data/abilities/personal
     networks:
       kind: {}
     hostname: ${CALDERA_SERVER:-caldera-server}
@@ -168,4 +174,5 @@ networks:
 
 #  bridge_net:
 #    driver: bridge
+#    enable_ipv6: false
 #    name: ${BRIDGE_NET:-web}

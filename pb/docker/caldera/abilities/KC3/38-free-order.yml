@@ -1,0 +1,9 @@
+- id: 30000000-0000-0000-0000-000000000008
+  name: Free order
+  description: Free order sent to the application.
+  tactic: impact
+  technique: { attack_id: T1657, name: "Financial Theft" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "echo \"[SIM] order with free products sent\"", timeout: 30 } }

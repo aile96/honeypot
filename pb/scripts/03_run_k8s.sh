@@ -18,4 +18,4 @@ else
 fi
 
 log "Avvio skaffold deployment..."
-skaffold deploy --tag "$IMAGE_VERSION" --port-forward=user "$@"
+skaffold run --tag "$IMAGE_VERSION" --port-forward=user "$@"

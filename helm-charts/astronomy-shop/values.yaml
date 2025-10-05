@@ -612,6 +612,30 @@ components:
       limits:
         memory: 50Mi
 
+  image-updater:
+    enabled: false
+    namespace: "mem"
+    serviceAccountName: "updater-sa"
+    useDefault:
+      env: true
+    replicas: 1
+    resources:
+      limits:
+        memory: 200Mi
+    imageOverride:
+      repository: "registry:5000/controller"
+    env:
+      - name: SCRIPT_NAME
+        value: "update-images.sh"
+      - name: RUN_EVERY
+        value: "1m"
+      - name: REGISTRY
+        value: "registry:5000"
+      - name: REGISTRY_USERNAME
+        value: "testuser"
+      - name: REGISTRY_PASSWORD
+        value: "testpassword"
+
   load-generator:
     enabled: false
     namespace: "web"
@@ -997,6 +1021,8 @@ components:
         value: "info"
       - name: SCRIPT_NAME
         value: "synthetic-log.sh"
+      - name: RUN_EVERY
+        value: "0"
     initContainers:
       - name: wait-for-opensearch
         image: busybox:latest

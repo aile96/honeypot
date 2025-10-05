@@ -15,7 +15,7 @@ IPAPI=$(dig +short $UPSTREAM_HOST A)
 
 cleanup() {
   echo "[*] Cleanup..."
-  /opt/caldera/common/remove-pids.sh $PIDFILE
+  /opt/caldera/common/remove-pids.sh "$PIDFILE" || echo "[WARN] remove-pids fallita" >&2
   iptables -t nat -D PREROUTING -i "$IFACE" -p tcp -d "$IPAPI" --dport "$UPSTREAM_PORT" -j REDIRECT --to-ports "$UPSTREAM_PORT" 2>/dev/null || true
   [[ -n "${SSLPID:-}" ]] && kill "$SSLPID" 2>/dev/null || true
 }

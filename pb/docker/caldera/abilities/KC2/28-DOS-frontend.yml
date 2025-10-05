@@ -1,0 +1,9 @@
+- id: 20000000-0000-0000-0000-000000000008
+  name: Frontend-proxy traffic control
+  description: Control of the incoming traffic of frontend-proxy.
+  tactic: impact
+  technique: { attack_id: T1489, name: "Service Stop" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC2/DOS-frontend.sh", timeout: 900, parsers: [], cleanup: "" } }

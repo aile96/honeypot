@@ -202,4 +202,37 @@ roleRef:
   kind: Role
   name: job-and-secret-access
 # Fine permessi currency
+---
+# Inizio permessi image-updater
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: updater-role
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "patch", "update", "create"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: updater-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: updater-role
+subjects:
+- kind: ServiceAccount
+  name: updater-sa
+  namespace: mem
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: updater-sa
+  namespace: mem
+# Fine permessi image-updater
 {{- end }}

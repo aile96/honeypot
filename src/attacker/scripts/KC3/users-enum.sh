@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Endpoint e risorse
-ENDPOINT="${API_SERVER:-https://kind-cluster-control-plane:6443}/api/v1/namespaces/$NSCREDS/services/traffic-controller:8080/proxy/translate"
+ENDPOINT="$API_SERVER/api/v1/namespaces/$NSCREDS/services/traffic-controller:8080/proxy/translate"
 TARGET='payment.pay.svc.cluster.local:8080'
 METHOD='oteldemo.PaymentService/ReceivePayment'
 PROTO_FILE="$DATA_PATH/KC3/demo.proto"
@@ -11,8 +11,7 @@ PROTO_FILE="$DATA_PATH/KC3/demo.proto"
 PROTO_JSON="$(jq -Rs . < "$PROTO_FILE")"
 
 # Pulisce/crea il file di output
-OUT_FILE='/tmp/result_payments'
-: > "$OUT_FILE"
+OUT_FILE="$DATA_PATH/KC3//result_payments"
 
 echo "Inizio richieste (user_id 1..15) → salvataggio in $OUT_FILE"
 

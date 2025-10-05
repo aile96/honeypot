@@ -37,7 +37,7 @@ ENV DATA_PATH="$DATA_PATH" \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         nmap curl jq dnsutils ca-certificates \
-        iproute2 wget docker.io dsniff tcpdump \
+        iproute2 wget docker.io dsniff tcpdump openssl \
         procps unzip openssh-client sshpass netcat-openbsd && \
     rm -rf /var/lib/apt/lists/*
 

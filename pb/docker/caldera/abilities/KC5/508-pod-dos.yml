@@ -1,4 +1,4 @@
-- id: 50000000-0000-0000-0000-000000000007
+- id: 50000000-0000-0000-0000-000000000008
   name: Pod DOS
   description: Using the command amministrator of containers to create a Denial Of Service.
   tactic: execution

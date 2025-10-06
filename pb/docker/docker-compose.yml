@@ -161,7 +161,6 @@ services:
     privileged: true
     environment: { GROUP: underlay }
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - ./apiserver:/apiserver
     networks:
       kind: {}

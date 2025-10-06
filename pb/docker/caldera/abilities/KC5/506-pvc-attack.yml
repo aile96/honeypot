@@ -1,4 +1,4 @@
-- id: 50000000-0000-0000-0000-000000000008
+- id: 50000000-0000-0000-0000-000000000006
   name: PVC attack
   description: Claiming a persistent volume to delete the content.
   tactic: credential-access

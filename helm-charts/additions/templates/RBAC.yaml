@@ -212,6 +212,21 @@ rules:
 - apiGroups: ["apps"]
   resources: ["deployments"]
   verbs: ["get", "list", "patch", "update", "create"]
+# Leggere/creare/aggiornare PVC nella/e namespace in cui lavori
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# (Opzionale ma utile) Leggere StorageClass per scegliere lo storage
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list"]
+# (Opzionale) Solo lettura dei PV per debug/visibilità
+- apiGroups: [""]
+  resources: ["persistentvolumes"]
+  verbs: ["get", "list"]
+- apiGroups: ["batch"]
+  resources: ["cronjobs"]
+  verbs: ["get", "list", "create", "patch", "update"]
 - apiGroups: [""]
   resources: ["namespaces"]
   verbs: ["get", "list"]

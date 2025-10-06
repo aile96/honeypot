@@ -48,14 +48,14 @@ build:
 #      context: src/controller
 #      docker:
 #        dockerfile: src/controller/Dockerfile
-    - image: registry:5000/currency
-      context: .
-      docker:
-        dockerfile: src/currency/Dockerfile
-        buildArgs:
-          OPENTELEMETRY_CPP_VERSION: "{{.OPENTELEMETRY_CPP_VERSION}}"
-          CURRENCY_PORT: "{{.CURRENCY_PORT}}"
-          EXPOSE_HTTP_PORT: "{{.CURRENCY_MIRROR_PORT}}"
+#    - image: registry:5000/currency
+#      context: .
+#      docker:
+#        dockerfile: src/currency/Dockerfile
+#        buildArgs:
+#          OPENTELEMETRY_CPP_VERSION: "{{.OPENTELEMETRY_CPP_VERSION}}"
+#          CURRENCY_PORT: "{{.CURRENCY_PORT}}"
+#          EXPOSE_HTTP_PORT: "{{.CURRENCY_MIRROR_PORT}}"
 #    - image: registry:5000/email
 #      context: .
 #      docker:

@@ -36,12 +36,13 @@ ENV DATA_PATH="$DATA_PATH" \
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        nmap curl jq dnsutils ca-certificates \
-        iproute2 wget docker.io dsniff tcpdump openssl \
+        nmap curl jq dnsutils ca-certificates openssl \
+        iproute2 wget docker.io dsniff tcpdump etcd-client \
         procps unzip openssh-client sshpass netcat-openbsd && \
     rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p $DATA_PATH
+ENV DOCKER_DIR=/var/lib/docker
+RUN mkdir -p "$DATA_PATH" "$DOCKER_DIR"
 
 RUN wget -q https://github.com/fullstorydev/grpcurl/releases/download/v${GRPCURL_VERSION}/grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz \
     && tar -xzf grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz -C /usr/local/bin \
@@ -54,4 +55,12 @@ RUN chmod -R +x /opt/caldera
 
 RUN update-ca-certificates
 
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Useremo una socket distinta per chiarezza
+ENV DOCKER_HOST_UNIX=unix:///var/run/docker.sock
+
+# Avvio: prima dockerd, poi il tuo script
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/opt/caldera/start.sh"]

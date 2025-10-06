@@ -4,8 +4,11 @@ set -euo pipefail
 BASE="$DATA_PATH/KC5"
 FILE_IP="$BASE/iphost"
 KEY_PATH="$BASE/ssh/ssh-key"
-LOG_DIR="$BASE/logs"
 PID_LIST="$BASE/pids"
+WAITING_TIME="120"
+
+echo "DOS for all services of the cluster for $WAITING_TIME s"
+sleep $WAITING_TIME
 
 list_node_hostnames() {
   if [[ ! -f "$FILE_IP" ]]; then
@@ -30,9 +33,8 @@ if [[ "${#nodes[@]}" -eq 0 ]]; then
 fi
 echo ">> Nodi trovati (${#nodes[@]}): ${nodes[*]}"
 for n in "${nodes[@]}"; do
-  LOG_FILE="$LOG_DIR/$n-dos.log"
-  nohup /opt/caldera/common/dos-loop.sh "ssh -p 2222 -i $KEY_PATH root@$n" >>"$LOG_FILE" 2>&1 &
-  pid=$!
-  echo "$pid" | tee -a "$PID_LIST"
-  echo "Attack completed for $n"
+  ssh -p 2222 -i $KEY_PATH root@$n kill -CONT "$(ssh -p 2222 -i $KEY_PATH root@$n pidof kubelet)"
+  echo "Remove everything for $n"
 done
+
+/opt/caldera/common/remove-pids.sh $PID_LIST

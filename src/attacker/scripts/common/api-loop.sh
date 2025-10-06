@@ -7,7 +7,6 @@ CERT_PATH="${CERT_PATH:-/tmp/KCData/KC5/kubelet-client-current-kind-cluster-work
 CACERT_OPT="${CACERT_OPT:---insecure}"           # usa --cacert /path/ca.crt se preferisci
 MODE="${MODE:-ready}"                             # ready | notready
 SLEEP_SECS="${SLEEP_SECS:-1}"
-PID_FILE="${PID_FILE:-./api-updater.pid}"
 FORCE_CS="${FORCE_CS:-true}"
 
 # ===== Deriva NODE_NAME dal CN del certificato =====
@@ -133,8 +132,6 @@ patch_pods_status_on_node() {
 }
 
 # ===== Main loop =====
-echo "$$" > "$PID_FILE"
-echo "PID salvato in $PID_FILE"
 while true; do
   ensure_lease
   patch_node_status

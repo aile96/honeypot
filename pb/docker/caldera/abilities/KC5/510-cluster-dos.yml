@@ -1,0 +1,9 @@
+- id: 50000000-0000-0000-0000-000000000010
+  name: Cluster DOS
+  description: Simulation of the DOS of every service in the cluster.
+  tactic: impact
+  technique: { attack_id: T1489, name: "Service Stop" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "/opt/caldera/KC5/service-rerun.sh", timeout: 900, parsers: [], cleanup: "" } }

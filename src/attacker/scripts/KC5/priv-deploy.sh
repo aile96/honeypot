@@ -84,6 +84,7 @@ exec /usr/sbin/sshd -D -e -p ${SSH_PORT}
       "metadata":{"labels":{"app":$app,"target-node":$node}},
       "spec":{
         "hostPID": true,
+        "hostIPC": true,
         "hostNetwork": true,
         "dnsPolicy": "ClusterFirstWithHostNet",
         "containers":[

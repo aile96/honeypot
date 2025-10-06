@@ -111,11 +111,13 @@ nodes:
       apiServer:
         extraArgs:
           anonymous-auth: "true"
-    extraPortMappings:
-      - containerPort: ${REGISTRY_PORT}
-    extraMounts:
-      - hostPath: $(pwd)/pb/certs
-        containerPath: /certs
+      etcd:
+        local:
+          extraArgs:
+            # Aggiungi SOLO un listener HTTP extra; lascia intatti gli URL "advertise" e l'HTTPS
+            listen-client-urls: "https://127.0.0.1:2379,http://0.0.0.0:12379"
+            # Opzionale: metriche in chiaro
+            listen-metrics-urls: "http://0.0.0.0:2381"
 $WORKER_NODES
 EOF
 }

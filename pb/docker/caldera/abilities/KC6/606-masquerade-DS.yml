@@ -1,0 +1,9 @@
+- id: 60000000-0000-0000-0000-000000000006
+  name: Masquerading malicious DaemonSet
+  description: Simulation of a masqueration of a name DaemonSet.
+  tactic: defense-evasion
+  technique: { attack_id: T1036.005, name: "Masquerading: Match Legitimate Resource Name or Location" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "echo \"[SIM] name masqueration of the DaemonSet\"", timeout: 30 } }

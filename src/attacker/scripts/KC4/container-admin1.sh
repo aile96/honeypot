@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+if [ -n "${1:-}" ]; then
+  curl -L https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.30.0/crictl-v1.30.0-linux-amd64.tar.gz | tar zx -C /usr/local/bin
+  cat >/etc/crictl.yaml <<'YAML'
+runtime-endpoint: unix:///host/run/containerd/containerd.sock
+image-endpoint: unix:///host/run/containerd/containerd.sock
+timeout: 10
+debug: false
+YAML
+fi
+
 # Diagnostica: stampa riga e comando su ogni errore non gestito
 trap 'echo "[ERR] (linea $LINENO) comando: $BASH_COMMAND" >&2' ERR
 

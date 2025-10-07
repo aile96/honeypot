@@ -58,4 +58,4 @@ remove_registry() {
 
 echo "Rimozione cluster k8s" && skaffold delete && echo "Rimozione completata" || echo "Rimozione non andata a buon fine"
 echo "Rimozione docker esclusi kind" && docker compose -f pb/docker/docker-compose.yml down && echo "Rimozione completata" || echo "Rimozione non andata a buon fine"
-#echo "Rimozione kind" && kind delete cluster --name $CLUSTER_NAME && docker network rm kind && echo "Rimozione completata" || echo "Rimozione non andata a buon fine"
+echo "Rimozione kind" && kind delete cluster --name $CLUSTER_NAME && docker network rm kind && echo "Rimozione completata" || echo "Rimozione non andata a buon fine"

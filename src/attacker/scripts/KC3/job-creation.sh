@@ -4,8 +4,8 @@ set -euo pipefail
 # ===== Config =====
 API_SERVER="${API_SERVER:-https://kind-cluster-control-plane:6443}"
 NS="${NSPROTO:-app}"
-SECRET="${SECRET:-dbcurrency-creds}"
 
+SECRET="dbcurrency-creds"
 JOB_NAME="insert-currency-rate-$(date +%Y%m%d%H%M%S)"
 PGHOST="postgres.dat.svc.cluster.local"
 PGPORT="5432"
@@ -13,15 +13,20 @@ PGDATABASE="currency"
 SQL_STMT="INSERT INTO currency (code, rate) VALUES ('NUL', 0);"
 TOKEN="$(cat $DATA_PATH/KC3/tokenCurrency)"
 
-echo ">> Leggo il Secret ${SECRET} nel namespace ${NS}..."
+# Installing dependencies and setup
+apt-get update >/dev/null 2>&1
+apt-get install -y --no-install-recommends bash curl jq ca-certificates >/dev/null 2>&1
+mkdir -p $DATA_PATH/KC3
+
+echo ">> Reading ${SECRET} in namespace ${NS}..."
 SECRET_JSON=$(curl -sk \
   --header "Authorization: Bearer $TOKEN" \
   $API_SERVER/api/v1/namespaces/$NS/secrets/$SECRET)
-# Estrazione e decodifica credenziali
+# Extraction credentials
 USER="$(jq -r '.data.username' <<<"$SECRET_JSON" | base64 -d)"
 PASS="$(jq -r '.data.password' <<<"$SECRET_JSON" | base64 -d)"
 
-echo ">> Credenziali estratte (username/password decodificate $USER - $PASS)."
+echo ">> Credenzials extracted (username/password $USER - $PASS)."
 
 JOB_JSON="$(
   jq -n \
@@ -72,11 +77,11 @@ JOB_JSON="$(
 '
 )"
 
-MANIFEST_FILE="${JOB_NAME}.json"
+MANIFEST_FILE="$DATA_PATH/KC3/$JOB_NAME.json"
 printf '%s\n' "$JOB_JSON" > "$MANIFEST_FILE"
-echo ">> Manifest salvato in ${MANIFEST_FILE}"
+echo ">> Manifest saved in ${MANIFEST_FILE}"
 
-echo ">> Creo il Job ${JOB_NAME} nel namespace ${NS}..."
+echo ">> Creating Job ${JOB_NAME} in namespace ${NS}..."
 CREATE_RESP="$(
   curl -sSk -X POST \
     --header "Authorization: Bearer ${TOKEN}" \
@@ -86,9 +91,9 @@ CREATE_RESP="$(
 )"
 
 if echo "$CREATE_RESP" | jq -e '.kind=="Job"' >/dev/null 2>&1; then
-  echo "Job creato: ${JOB_NAME}"
+  echo "Job created: ${JOB_NAME}"
 else
-  echo "Errore creando il Job. Risposta API:"
+  echo "Error creating the Job. API answer:"
   echo "$CREATE_RESP" | jq .
   exit 1
 fi

@@ -42,7 +42,7 @@ static std::string get_env_str(const char *k, const std::string &def = "") {
 }
 
 // ========================
-// DB globale
+// Global DB
 // ========================
 PGconn *db_conn = nullptr;
 

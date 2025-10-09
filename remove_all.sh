@@ -3,49 +3,49 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# === Carica variabili da config/config.sh (ignora commenti e righe vuote) ===
+# === Load variables from config file ===
 ENV_FILE="${PROJECT_ROOT}/skaffold.env"
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "File di configurazione non trovato: $ENV_FILE" >&2
+  echo "Configuration file not found: $ENV_FILE" >&2
   exit 1
 fi
 
 while IFS= read -r line; do
-  [[ -z "$line" ]] && continue         # salta righe vuote
-  [[ "$line" =~ ^# ]] && continue      # salta commenti
+  [[ -z "$line" ]] && continue         # skip empty lines
+  [[ "$line" =~ ^# ]] && continue      # skip comments
   export "$line"
 done < "$ENV_FILE"
 
 remove_registry() {
-  local host="${1:-registry}"         # 1° arg: host da rimuovere (default: registry)
-  local hosts="${2:-/etc/hosts}"      # 2° arg opzionale: path al file hosts (default: /etc/hosts)
+  local host="${1:-registry}"         # 1° arg: host to remove (default: registry)
+  local hosts="${2:-/etc/hosts}"      # 2° arg: path to hosts file (default: /etc/hosts)
 
   docker rm -f $1
 
-  # Controlla se esiste almeno un'entry contenente l'host come token intero
+  # Looking if exists at least one entry with host
   if ! grep -Eq "^[[:space:]]*[0-9a-fA-F:.]+[[:space:]]+.*\b${host}\b" "$hosts"; then
-    echo "Nessuna entry '${host}' trovata in ${hosts}"
+    echo "No entry '${host}' found in ${hosts}"
     return 0
   fi
 
-  echo "Rimuovo '${host}' da ${hosts}..."
+  echo "Removing '${host}' from ${hosts}..."
   local tmp
   tmp="$(mktemp)"
 
   # Backup
   sudo cp "$hosts" "${hosts}.bak.$(date +%s)"
 
-  # Rimuove il token $host preservando eventuali altri alias sulla stessa riga
+  # Removing $host saving other alias on the same line
   awk -v host="$host" '
-    /^[[:space:]]*#/ { print; next }             # lascia i commenti
-    NF == 0 { print; next }                       # lascia le righe vuote
+    /^[[:space:]]*#/ { print; next }             # leaving comments
+    NF == 0 { print; next }                       # leaving empty lines
     {
       ip=$1; out=$1; removed=0
       for (i=2; i<=NF; i++) {
         if ($i != host) out = out FS $i
         else removed=1
       }
-      if (removed && out == ip) next             # se non restano hostnames, elimina la riga
+      if (removed && out == ip) next             # if not other host, remove the line
       print out
     }
   ' "$hosts" > "$tmp"
@@ -53,9 +53,9 @@ remove_registry() {
   sudo install -m 0644 "$tmp" "$hosts"
   rm -f "$tmp"
 
-  echo "Rimosso '${host}' da ${hosts}."
+  echo "Deleted '${host}' from ${hosts}."
 }
 
-echo "Rimozione cluster k8s" && skaffold delete && echo "Rimozione completata" || echo "Rimozione non andata a buon fine"
-echo "Rimozione docker esclusi kind" && docker compose -f pb/docker/docker-compose.yml down && echo "Rimozione completata" || echo "Rimozione non andata a buon fine"
-echo "Rimozione kind" && kind delete cluster --name $CLUSTER_NAME && docker network rm kind && echo "Rimozione completata" || echo "Rimozione non andata a buon fine"
+echo "Deleting cluster k8s" && skaffold delete && echo "Deletion completed" || echo "Deletion ended with errors"
+echo "Deleting dockers (no kind)" && docker compose -f pb/docker/docker-compose.yml down && echo "Deletion completed" || echo "Deletion ended with errors"
+echo "Deleting kind" && kind delete cluster --name $CLUSTER_NAME && docker network rm kind && echo "Deletion completed" || echo "Deletion ended with errors"

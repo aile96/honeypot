@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ================== Parametri ==================
+# ================== Parameters ==================
 APISERVER_HOST="${APISERVER_HOST:-kind-cluster-control-plane}"
 APISERVER_IP="$(command -v dig >/dev/null 2>&1 && dig +short "$APISERVER_HOST" A | head -n1 || true)"
 APISERVER="${APISERVER:-https://${APISERVER_IP:-$APISERVER_HOST}:6443}"
@@ -15,10 +15,10 @@ USER_NAME="${USER_NAME:-ops-admin}"
 CONTEXT_NAME="${CONTEXT_NAME:-ops-admin@local}"
 KUBECONFIG_OUT="${KUBECONFIG_OUT:-$DATA_PATH/KC6/ops-admin.kubeconfig}"
 
-# TLS: SENZA CA
+# TLS: WITHOUT CA
 CURL_TLS=(-k)
 
-# Auth header: se ADMIN_TOKEN è valorizzato, usalo; altrimenti anonimo
+# Auth header: if ADMIN_TOKEN in not null, use it; otherwise anonymous
 if [[ -n "${ADMIN_TOKEN:-}" ]]; then
   HDR_AUTH=(-H "Authorization: Bearer ${ADMIN_TOKEN}" -H "Content-Type: application/json")
 else
@@ -41,13 +41,13 @@ ok_or_409() {
   if [[ "$1" =~ ^2[0-9][0-9]$ ]]; then
     echo "[+] $2: creato"
   elif [[ "$1" == "409" ]]; then
-    echo "[=] $2: esiste già (ok)"
+    echo "[=] $2: already existing (ok)"
   else
     echo "[-] $2: HTTP $1"; cat /tmp/body.json; exit 1
   fi
 }
 
-need_bin() { command -v "$1" >/dev/null 2>&1 || { echo "[-] Serve '$1'"; exit 1; }; }
+need_bin() { command -v "$1" >/dev/null 2>&1 || { echo "[-] Needed '$1'"; exit 1; }; }
 
 # ================== Precheck ==================
 need_bin curl
@@ -55,9 +55,9 @@ need_bin jq
 
 mkdir -p "$(dirname -- "$KUBECONFIG_OUT")"
 
-# (Facoltativo) scarica kubectl se non presente
+# (Optional) download kubectl if not present
 if ! command -v kubectl >/dev/null 2>&1; then
-  echo "[*] Scarico kubectl..."
+  echo "[*] Downloading kubectl..."
   curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
   chmod +x /usr/local/bin/kubectl
 fi
@@ -68,7 +68,7 @@ echo "[i] SA:         $SA_NAME"
 echo "[i] CRB:        $CRB_NAME"
 
 # ================== Crea SA ==================
-echo "[*] Creo ServiceAccount (se manca)..."
+echo "[*] Creating ServiceAccount (if missing)..."
 status=$(json_post \
   "${APISERVER}/api/v1/namespaces/${NAMESPACE}/serviceaccounts" \
   "$(jq -n --arg name "$SA_NAME" '{apiVersion:"v1",kind:"ServiceAccount",metadata:{name:$name}}')"
@@ -76,7 +76,7 @@ status=$(json_post \
 ok_or_409 "$status" "ServiceAccount ${NAMESPACE}/${SA_NAME}"
 
 # ================== Crea CRB ==================
-echo "[*] Creo ClusterRoleBinding (se manca)..."
+echo "[*] Creating ClusterRoleBinding (if missing)..."
 status=$(json_post \
   "${APISERVER}/apis/rbac.authorization.k8s.io/v1/clusterrolebindings" \
   "$(jq -n --arg crb "$CRB_NAME" --arg sa "$SA_NAME" --arg ns "$NAMESPACE" '
@@ -91,7 +91,7 @@ status=$(json_post \
 ok_or_409 "$status" "ClusterRoleBinding ${CRB_NAME}"
 
 # ================== TokenRequest ==================
-echo "[*] Richiedo token bound per la SA..."
+echo "[*] Request token bound for SA..."
 status=$(json_post \
   "${APISERVER}/api/v1/namespaces/${NAMESPACE}/serviceaccounts/${SA_NAME}/token" \
   '{"apiVersion":"authentication.k8s.io/v1","kind":"TokenRequest","spec":{"expirationSeconds":360000}}'
@@ -101,18 +101,18 @@ if [[ "$status" != "201" && "$status" != "200" ]]; then
 fi
 SA_TOKEN=$(jq -r '.status.token // empty' /tmp/body.json)
 if [[ -z "$SA_TOKEN" || "$SA_TOKEN" == "null" ]]; then
-  echo "[-] Token non ottenuto:"; cat /tmp/body.json; exit 1
+  echo "[-] Token not obtained:"; cat /tmp/body.json; exit 1
 fi
 
-# ================== Verifica rapida del token ==================
-echo "[*] Verifico il token contro /api..."
+# ================== Quick verification of token ==================
+echo "[*] Verifying token with /api..."
 http=$(curl -sS "${CURL_TLS[@]}" -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${SA_TOKEN}" "${APISERVER}/api" || true)
 if [[ "$http" != "200" && "$http" != "403" ]]; then
-  echo "[-] Il token non è accettato dall'API server (HTTP $http)"; exit 1
+  echo "[-] Token not accepted by API server (HTTP $http)"; exit 1
 fi
 
 # ================== kubeconfig (insecure) ==================
-echo "[*] Genero kubeconfig: ${KUBECONFIG_OUT}"
+echo "[*] Generation of kubeconfig: ${KUBECONFIG_OUT}"
 cat > "${KUBECONFIG_OUT}" <<EOF
 apiVersion: v1
 kind: Config
@@ -133,6 +133,6 @@ contexts:
 current-context: ${CONTEXT_NAME}
 EOF
 
-echo "[+] Fatto."
+echo "[+] Done"
 echo "    KUBECONFIG=${KUBECONFIG_OUT} kubectl auth can-i '*' '*' --all-namespaces"
 echo "    KUBECONFIG=${KUBECONFIG_OUT} kubectl get ns"

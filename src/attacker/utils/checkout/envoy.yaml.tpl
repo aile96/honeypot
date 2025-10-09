@@ -54,7 +54,7 @@ static_resources:
                 address: 127.0.0.1
                 port_value: ${APP_PORT}
 
-  # Cluster che usa la cache DNS del DFP:
+  # Cluster that uses DNS cache:
   - name: dynamic_forward_proxy_cluster
     connect_timeout: 1s
     lb_policy: CLUSTER_PROVIDED

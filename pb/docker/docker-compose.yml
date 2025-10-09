@@ -22,43 +22,27 @@ services:
     cap_add:
       - NET_ADMIN
       
-#  load-generator:
-#    image: ${REGISTRY:-registry:5000}/load-generator:${LOAD_GENERATOR_TAG:-2.0.2}
-#    build:
-#      context: ../..
-#      dockerfile: ../../src/load-generator/Dockerfile
-#    container_name: ${LOAD_GENERATOR:-load-generator}
-#    restart: unless-stopped
-#    cap_add: [ "NET_ADMIN" ]
-#    networks:
-#      bridge_net: {}
-#    hostname: ${LOAD_GENERATOR:-load-generator}
-
-#  router:
-#    image: ${REGISTRY:-registry:5000}/router:${ROUTER_TAG:-2.0.2}
-#    build:
-#      context: ../../src/router
-#      dockerfile: Dockerfile
-#    container_name: ${ROUTER_NAME:-router}
-#    restart: unless-stopped
-#    privileged: true
-#    cap_add: [ "NET_ADMIN", "NET_RAW" ]
-#    sysctls:
-#      net.ipv4.ip_forward: "1"
-#      net.ipv4.conf.all.rp_filter: "0"
-#      net.ipv4.conf.default.rp_filter: "0"
-#    environment:
-#      IFACE_A: eth0
-#      IFACE_B: eth1
-#      NAT: "0"
-#      API_SERVER: ${API_SERVER:-kind-cluster-control-plane}
-#      WORKER: ${WORKER:-kind-cluster-worker}
-#      APP_NAME: ${APP_NAME:-fantasticshop}
-#      LOAD_BALANCER_IP: ${LOAD_BALANCER_IP:-172.18.0.200}
-#    networks:
-#      kind: {}
-#      bridge_net: {}
-#    hostname: ${ROUTER_NAME:-router}
+  load-generator:
+    image: ${REGISTRY:-registry:5000}/load-generator:${LOAD_GENERATOR_TAG:-2.0.2}
+    build:
+      context: ../../src/load-generator
+      dockerfile: ../../src/load-generator/Dockerfile
+    container_name: ${LOAD_GENERATOR:-load-generator}
+    restart: unless-stopped
+    cap_add: [ "NET_ADMIN" ]
+    environment:
+      PLAYWRIGHT_BROWSERS_PATH: "/opt/pw-browsers"
+      LOCUST_WEB_HOST: "0.0.0.0"
+      LOCUST_WEB_PORT: "8089"
+      LOCUST_USERS: "20"
+      LOCUST_SPAWN_RATE: "10" 
+      LOCUST_HOST: "http://${LOAD_BALANCER_IP}:8080" 
+      LOCUST_HEADLESS: "true" 
+      LOCUST_AUTOSTART: "true" 
+      LOCUST_BROWSER_TRAFFIC_ENABLED: "true"
+    networks:
+      kind: {}
+    hostname: ${LOAD_GENERATOR:-load-generator}
 
   samba:
     image: ${REGISTRY:-registry:5000}/samba:${ROUTER_TAG:-2.0.2}
@@ -76,7 +60,7 @@ services:
       SHARE_NAME: pvroot
       SHARE_PATH: /share
       HOSTS_ALLOW: "127. 172.18.0. 172.19.0."
-      ENCRYPTION: required   # o desired (per compatibilità più ampia)
+      ENCRYPTION: required
       LOG_LEVEL: "1"
     networks:
       kind: {}
@@ -86,8 +70,8 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
-    #cap_drop: ["ALL"]
     cap_add:
+      - NET_ADMIN
       - NET_BIND_SERVICE
       - CHOWN
     read_only: false
@@ -107,37 +91,37 @@ services:
       kind: {}
     hostname: ${CALDERA_CONTROLLER:-caldera.cont}
 
-  caldera-outside:
+  attacker:
     image: ${REGISTRY:-registry:5000}/attacker:${ATTACKER_TAG:-2.0.2}
     build:
       context: ../../src/attacker
       dockerfile: ../../src/attacker/Dockerfile
       args:
         SMTP_IP: ${SMTP_IP}
-        LOAD_BALANCER_IP: ${LOAD_BALANCER_IP}
         DOCKER_DAEMON: "1"
+        CALDERA_URL: "http://${CALDERA_SERVER}:8888"
+        GROUP: "outside"
     container_name: ${CALDERA_OUTSIDE:-caldera.outs}
     restart: unless-stopped
     privileged: true
     environment:
-      GROUP: outside
-      WAIT: ${WAIT_OUTSIDE:-1}
+      WAIT: "0"
+      HOSTREGISTRY: "$REGISTRY_NAME:$REGISTRY_PORT"
+      ARP_VICTIM: "load-generator"
+      LOAD_BALANCER_IP: ${LOAD_BALANCER_IP}
       API_SERVER: ${API_SERVER:-https://kind-cluster-control-plane:6443}
       SMTP_IP: ${SMTP_IP:-172.18.0.201}
+    volumes:
+      - ./apiserver:/apiserver
     networks:
       kind: {}
-#      bridge_net: {}
-    hostname: ${CALDERA_OUTSIDE:-caldera.outs}
+    hostname: ${ATTACKER:-caldera.outs}
+    depends_on:
+      caldera-server:
+        condition: service_healthy
 
   caldera-server:
-    image: ${REGISTRY:-registry:5000}/caldera:${CALDERA_TAG:-2.0.2}
-    build:
-      #context: ../../src/caldera
-      #dockerfile: ../../src/caldera/Dockerfile
-      context: https://github.com/mitre/caldera.git#master
-      dockerfile: Dockerfile
-      args:
-        VARIANT: "full"
+    image: ghcr.io/mitre/caldera:5.2.0
     container_name: ${CALDERA_SERVER:-caldera.dock}
     restart: unless-stopped
     cap_add: [ "NET_ADMIN" ]
@@ -148,32 +132,14 @@ services:
     networks:
       kind: {}
     hostname: ${CALDERA_SERVER:-caldera-server}
-
-  caldera-underlay:
-    image: ${REGISTRY:-registry:5000}/attacker:${ATTACKER_TAG:-2.0.2}
-    build:
-      context: ../../src/attacker
-      dockerfile: ../../src/attacker/Dockerfile
-      args:
-        SMTP_IP: ${SMTP_IP}
-        LOAD_BALANCER_IP: ${LOAD_BALANCER_IP}
-        DOCKER_DAEMON: "1"
-    container_name: ${CALDERA_UNDERLAY:-caldera.undy}
-    restart: unless-stopped
-    privileged: true
-    environment: { GROUP: underlay }
-    volumes:
-      - ./apiserver:/apiserver
-    networks:
-      kind: {}
-    hostname: ${CALDERA_UNDERLAY:-caldera.undy}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8888/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 15s
 
 networks:
   kind:
     external: true
     name: ${KIND_NET:-kind}
-
-#  bridge_net:
-#    driver: bridge
-#    enable_ipv6: false
-#    name: ${BRIDGE_NET:-web}

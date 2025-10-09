@@ -1,6 +1,6 @@
 
 #!/usr/bin/env bash
-set -euo pipefail
+set -eu pipefail
 
 SSH_KEY="$DATA_PATH/KC6/ssh/ssh-key"
 OUT_FILE="$DATA_PATH/KC6/logenum"

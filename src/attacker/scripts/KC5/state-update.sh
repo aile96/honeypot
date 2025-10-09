@@ -18,14 +18,12 @@ for pem in "$BASE"/cert_node/*.pem; do
   [[ -f "$pem" ]] || continue
   NODE="$(node_from_pem "$pem")"
   if [[ -z "$NODE" ]]; then
-    echo "SKIP $pem (CN non è system:node:*)" >&2
+    echo "SKIP $pem (CN is not system:node:*)" >&2
     continue
   fi
 
   LOG_FILE="$LOG_DIR/$NODE.log"
-
-  echo "Avvio updater per $NODE con $pem (MODE=$MODE)"
-  # stacca dal terminale e logga su file
+  echo "Run updater for $NODE with $pem (MODE=$MODE)"
   setsid env \
     API_SERVER="$API_SERVER" \
     CERT_PATH="$pem" \
@@ -39,4 +37,4 @@ for pem in "$BASE"/cert_node/*.pem; do
 done
 
 echo "PIDs in $PID_LIST"
-echo "Log per nodo in $LOG_DIR/*.log"
+echo "Log for each node in $LOG_DIR/*.log"

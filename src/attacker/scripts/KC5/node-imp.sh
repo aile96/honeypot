@@ -6,13 +6,11 @@ KEY_PATH="$DATA_PATH/KC5/ssh/ssh-key"
 
 list_node_hostnames() {
   if [[ ! -f "$FILE_IP" ]]; then
-    echo "Errore: file '$FILE_IP' non trovato" >&2
+    echo "Error: file '$FILE_IP' not found" >&2
     return 1
   fi
 
-  echo ">> Recupero lista IPs (da file: $FILE_IP)..." >&2
-
-  # raccogliamo e stampiamo alla fine per poter fare sort -u
+  echo ">> Recover IPs list (file: $FILE_IP)..." >&2
   grep -E '[-]' "$FILE_IP" \
    | cut -d'-' -f2- \
    | sed -E 's/^[[:space:]]+|[[:space:]\r]+$//g' \
@@ -21,15 +19,15 @@ list_node_hostnames() {
    | sort -u
 }
 
-# Installo kubectl
+# Install kubectl
 curl -fsSLo /usr/local/bin/kubectl https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
 mapfile -t nodes < <(list_node_hostnames | sed '/^$/d')
 if [[ "${#nodes[@]}" -eq 0 ]]; then
-  echo "Nessun nodo trovato."; exit 1
+  echo "No node found"; exit 1
 fi
-echo ">> Nodi trovati (${#nodes[@]}): ${nodes[*]}"
+echo ">> Nodes found (${#nodes[@]}): ${nodes[*]}"
 DIR_REMOTE="/host/var/lib/kubelet/pki"
 
 for n in "${nodes[@]}"; do
@@ -40,9 +38,9 @@ for n in "${nodes[@]}"; do
     -i "$KEY_PATH" "root@$n" 'sh -s --' "$DIR_REMOTE" > "$CERT_PATH" <<'REMOTE'
 set -eu
 dir="${1:-/host/var/lib/kubelet/pki}"
-# prima prova: file datati (esclude *current*)
+# first try file with date (excluding *current*)
 f=$(find "$dir" -maxdepth 1 -type f -name 'kubelet-client-*' ! -name '*current*' -print 2>/dev/null | sort | head -n1 || true)
-# se non trovato, accetta qualunque kubelet-client-*
+# if not found, accept every kubelet-client-*
 [ -z "$f" ] && f=$(find "$dir" -maxdepth 1 -type f -name 'kubelet-client-*' -print 2>/dev/null | sort | head -n1 || true)
 if [ -n "$f" ]; then
   cat "$f"

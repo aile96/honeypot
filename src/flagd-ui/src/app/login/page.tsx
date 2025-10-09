@@ -7,7 +7,7 @@ export default function LoginPage() {
   const [password, setP] = useState("");
   const [error, setError] = useState("");
 
-  // legge il basePath dall'env
+  // read basePath from env
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
   const onSubmit = async (e: React.FormEvent) => {

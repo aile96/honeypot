@@ -69,7 +69,11 @@ set_resolver() {
   return 1
 }
 
-# ===== 2) Scoperta parametri dinamici =====
+## ===== 1) Installo su caldera il pacchetto iproute2 =====
+#docker exec -u root $CALDERA_SERVER bash -lc \
+#  "apt-get update && apt-get install -y --no-install-recommends iproute2 && rm -rf /var/lib/apt/lists/*"
+#
+## ===== 2) Scoperta parametri dinamici =====
 #log "Leggo subnet..."
 #KIND_SUBNET="$(net_subnet "$KIND_NET")"
 #BRIDGE_SUBNET="$(net_subnet "$BRIDGE_NET")"
@@ -89,7 +93,7 @@ set_resolver() {
 #FAILED_ROUTES=()
 #FAILED_RESOLV=()
 #
-#log "Rotte: '$KIND_NET' -> $BRIDGE_SUBNET via $KIND_ROUTER_IP"
+#log "Rotte: '$KIND_NET' -> $BRIDGE_SUBNET via $KIND_ROUTER_IP / Resolver -> $KIND_ROUTER_IP"
 #for cid in $(list_on "$KIND_NET"); do
 #  name="$(docker inspect -f '{{.Name}}' "$cid" | sed 's#^/##')"
 #  # skip router/dns
@@ -101,9 +105,14 @@ set_resolver() {
 #  else
 #    echo " route FAIL"; FAILED_ROUTES+=("$name(kind)")
 #  fi
+#  if set_resolver "$cid" "$KIND_ROUTER_IP"; then
+#    echo " dns OK"
+#  else
+#    echo " dns FAIL"; FAILED_RESOLV+=("$name")
+#  fi
 #done
 #
-#log "Rotte: '$BRIDGE_NET' -> $KIND_SUBNET via $BRIDGE_ROUTER_IP"
+#log "Rotte: '$BRIDGE_NET' -> $KIND_SUBNET via $BRIDGE_ROUTER_IP / Resolver -> $BRIDGE_ROUTER_IP"
 #for cid in $(list_on "$BRIDGE_NET"); do
 #  name="$(docker inspect -f '{{.Name}}' "$cid" | sed 's#^/##')"
 #  [[ "$name" == "$ROUTER_NAME" ]] && continue
@@ -114,14 +123,6 @@ set_resolver() {
 #  else
 #    echo " route FAIL"; FAILED_ROUTES+=("$name($BRIDGE_NET)")
 #  fi
-#done
-#
-#log "Imposto resolver -> $BRIDGE_ROUTER_IP su tutti i container"
-#for cid in $(docker ps -q); do
-#  name="$(docker inspect -f '{{.Name}}' "$cid" | sed 's#^/##')"
-#  [[ "$name" == "$ROUTER_NAME" ]] && continue
-#  is_running "$cid" || { warn "  - $name (non in esecuzione)"; continue; }
-#  printf "  - %-24s" "$name"
 #  if set_resolver "$cid" "$BRIDGE_ROUTER_IP"; then
 #    echo " dns OK"
 #  else

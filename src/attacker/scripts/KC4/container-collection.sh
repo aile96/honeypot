@@ -21,11 +21,11 @@ TOKEN_CANDIDATES=(
   "/var/run/secrets/kubernetes.io/serviceaccount/..data/token"
 )
 
-echo "== Enumerazione container tramite crictl =="
+echo "== Enumeration container using crictl =="
 CONTAINERS=$($CRICTL ps -a -q)
 
 if [[ -z "${CONTAINERS}" ]]; then
-  echo "Nessun container trovato."
+  echo "No container found"
   exit 0
 fi
 
@@ -51,14 +51,14 @@ for CID in $CONTAINERS; do
   elif echo "$JSON" | jq -e '.status.mounts' >/dev/null 2>&1; then
     echo "$JSON" | jq -r '.status.mounts[]? | "  - \(.host_path) -> \(.container_path) (ro=\(.readonly))"' || true
   else
-    echo "  (nessun mount visibile nell'inspect)"
+    echo "  (no mount visible in inspect)"
   fi
 
   echo "- Env:"
   if echo "$JSON" | jq -e '.info.runtimeSpec.process.env' >/dev/null 2>&1; then
     echo "$JSON" | jq -r '.info.runtimeSpec.process.env[]? | "  - \(.)"' || true
   else
-    echo "  (nessuna env visibile)"
+    echo "  (no env visible)"
   fi
 
   echo "- ServiceAccount tokens:"
@@ -76,12 +76,12 @@ for CID in $CONTAINERS; do
     done
 
     if [[ $FOUND_ANY -eq 0 ]]; then
-      echo "  (nessun token trovato)"
+      echo "  (no token found)"
     fi
   else
-    echo "  (container non in RUNNING)"
+    echo "  (container not in RUNNING)"
   fi
 done
 
 echo
-echo "== Finito =="
+echo "== Done =="

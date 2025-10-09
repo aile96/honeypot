@@ -2,40 +2,24 @@
 set -euo pipefail
 
 # ================== CONFIG ==================
-# Pianificazione (crontab)
 TIME="2"
-SCHEDULE="*/$TIME * * * *"
-# Immagine del container che esegue la cancellazione
-IMAGE="${IMAGE:-alpine:3.20}"
-# Comando che svuota /target inclusi dotfiles
+IMAGE="alpine:3.20"
 WIPE_CMD='rm -rf /target/* /target/.[!.]* /target/..?* || true'
-# Prefisso del nome CronJob
-CJ_PREFIX="${CJ_PREFIX:-wipe-pvc}"
-# DRY RUN: "true" = non crea niente, usa dryRun=All
-DRY_RUN="${DRY_RUN:-false}"
-# Filtri opzionali
-NAMESPACE="${NAMESPACE:-}"                  # es: "mem"
-PVC_SELECTOR="${PVC_SELECTOR:-}"            # es: 'environment=dev'
-# Timeout curl (secondi)
-CURL_TIMEOUT="${CURL_TIMEOUT:-20}"
-# Richiede jq per il parsing JSON
-JQ_BIN="${JQ_BIN:-jq}"
-# ============================================
-
-# === Individua endpoint e credenziali in-cluster ===
+CJ_PREFIX="wipe-pvc"
+CURL_TIMEOUT="20"
 API_SERVER="https://kind-cluster-control-plane:6443"
 
 TOKEN_FILE="$DATA_PATH/KC5/found_token"
+SCHEDULE="*/$TIME * * * *"
 
 if [[ ! -f "$TOKEN_FILE" ]]; then
-  echo "Impossibile trovare token del ServiceAccount" >&2
+  echo "Impossible to find ServiceAccount token" >&2
   exit 1
 fi
 
 AUTH_HEADER="Authorization: Bearer $(cat "${TOKEN_FILE}")"
 
 curl_k8s () {
-  # $1 = method, $2 = path (es: /api/v1/persistentvolumeclaims), $3 = body (opzionale), $4 = extra query (opzionale, già URL-encoded)
   local method="$1"; shift
   local path="$1"; shift
   local body="${1:-}"; shift || true
@@ -61,44 +45,27 @@ curl_k8s () {
 }
 
 urlencode () {
-  printf '%s' "$1" | ${JQ_BIN} -sRr @uri
+  printf '%s' "$1" | jq -sRr @uri
 }
 
 need_cmd () {
-  command -v "$1" >/dev/null 2>&1 || { echo "Comando richiesto non trovato: $1" >&2; exit 1; }
+  command -v "$1" >/dev/null 2>&1 || { echo "Command not found: $1" >&2; exit 1; }
 }
 
-need_cmd "${JQ_BIN}"
+need_cmd jq
 
 # === Costruisci query per lista PVC ===
-qs=()
-if [[ -n "$PVC_SELECTOR" ]]; then
-  qs+=("labelSelector=$(urlencode "$PVC_SELECTOR")")
-fi
-if [[ -n "$NAMESPACE" ]]; then
-  # FieldSelector per namespace specifico
-  qs+=("fieldSelector=$(urlencode "metadata.namespace=${NAMESPACE}")")
-fi
-PVC_QUERY=$(IFS='&'; echo "${qs[*]-}")
+echo ">> Getting PVC..."
+PVC_JSON="$(curl_k8s GET "/api/v1/persistentvolumeclaims" "" "")"
 
-# dryRun handling
-APPLY_Q=""
-if [[ "${DRY_RUN}" == "true" ]]; then
-  APPLY_Q="dryRun=All"
-fi
-
-echo ">> Recupero PVC (selector='${PVC_SELECTOR:-*}', namespace='${NAMESPACE:-tutti}')..."
-PVC_JSON="$(curl_k8s GET "/api/v1/persistentvolumeclaims" "" "${PVC_QUERY}")"
-
-PVC_COUNT=$(echo "${PVC_JSON}" | ${JQ_BIN} -r '.items | length')
+PVC_COUNT=$(echo "${PVC_JSON}" | jq -r '.items | length')
 if [[ "${PVC_COUNT}" -eq 0 ]]; then
-  echo "Nessuna PVC trovata."
+  echo "No PVC found"
   exit 0
 fi
-echo "Trovate ${PVC_COUNT} PVC."
+echo "Found ${PVC_COUNT} PVC."
 
 sanitize_name () {
-  # minuscole, sostituisce non DNS-1123 con '-', trim e troncamento a 52
   local s
   s=$(echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/^-*//; s/-*$//')
   echo "${s:0:52}"
@@ -109,7 +76,7 @@ make_cronjob_body () {
   local pvc="$2"
   local cj_name="$3"
 
-  # JSON body del CronJob (batch/v1)
+  # JSON body of CronJob (batch/v1)
   cat <<JSON
 {
   "apiVersion": "batch/v1",
@@ -176,33 +143,25 @@ create_or_patch_cronjob () {
   local body
   body="$(make_cronjob_body "${ns}" "${pvc}" "${cj_name}")"
 
-  # Prova CREATE
-  local q="${APPLY_Q}"
+  # CREATE
   local path="/apis/batch/v1/namespaces/${ns}/cronjobs"
-  if [[ -n "$q" ]]; then
-    q="dryRun=All"
-  fi
 
-  # Tentativo di creazione
+  # Trying to create
   set +e
-  CREATE_OUT=$(curl_k8s POST "${path}" "${body}" "${q}") ; rc=$?
+  CREATE_OUT=$(curl_k8s POST "${path}" "${body}") ; rc=$?
   set -e
 
   if [[ $rc -eq 0 ]]; then
-    echo "   -> creato (o simulato DRY_RUN)."
+    echo "   -> created"
     return
   fi
 
-  # Se già esiste, facciamo PATCH (merge patch) per allineare spec
-  echo "   -> esiste già, eseguo PATCH..."
+  # If it exists, doing PATCH (merge patch) to balance spec
+  echo "   -> already existing, run PATCH..."
   local patch_body
-  # Usiamo patch mirato a spec e label; metadata.namespace non è patchabile via merge.
-  patch_body="$(echo "${body}" | ${JQ_BIN} '{metadata: {labels: .metadata.labels}, spec: .spec}')"
+  patch_body="$(echo "${body}" | jq '{metadata: {labels: .metadata.labels}, spec: .spec}')"
 
   local patch_q=""
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    patch_q="dryRun=All"
-  fi
 
   curl -sSk --fail -X PATCH \
     --max-time "${CURL_TIMEOUT}" \
@@ -212,20 +171,16 @@ create_or_patch_cronjob () {
     "${API_SERVER}/apis/batch/v1/namespaces/${ns}/cronjobs/${cj_name}${patch_q:+?${patch_q}}" \
     >/dev/null
 
-  echo "   -> patch applicata (o simulata DRY_RUN)."
+  echo "   -> patch applied"
 }
 
 # === Itera tutte le PVC ===
-echo "${PVC_JSON}" | ${JQ_BIN} -r '.items[] | "\(.metadata.namespace);\(.metadata.name)"' | \
+echo "${PVC_JSON}" | jq -r '.items[] | "\(.metadata.namespace);\(.metadata.name)"' | \
 while IFS=';' read -r ns pvc; do
   [[ -z "$ns" || -z "$pvc" ]] && continue
   create_or_patch_cronjob "$ns" "$pvc"
 done
 
-if [[ "${DRY_RUN}" == "true" ]]; then
-  echo ">> DRY_RUN=true: nessuna risorsa realmente creata. Imposta DRY_RUN=false per applicare."
-else
-  echo ">> Completato."
-fi
-
+echo ">> Done, waiting $TIME seconds for the first Cronjob..."
 sleep $TIME
+echo "DONE"

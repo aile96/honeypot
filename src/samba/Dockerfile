@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        samba smbclient tini ca-certificates tzdata procps netcat-openbsd gettext-base && \
+        samba smbclient tini ca-certificates tzdata procps netcat-openbsd gettext-base iproute2 && \
     rm -rf /var/lib/apt/lists/*
 
 # Dir standard: /data (config, state) e /share (contenuti)

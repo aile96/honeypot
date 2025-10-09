@@ -11,11 +11,11 @@ from sqlalchemy.engine import URL
 
 # ---- Config ----
 def get_database_url():
-    # Se esiste già DATABASE_URL lo uso così com'è
+    # If already exixts DATABASE_URL, use it as it is
     if os.getenv("DATABASE_URL"):
         return os.getenv("DATABASE_URL")
 
-    # Altrimenti compongo l'URL dai singoli pezzi
+    # Otherwise building the URL
     return URL.create(
         drivername=os.getenv("DB_DRIVER", "postgresql+psycopg"),
         username=os.getenv("DB_USER", "testuser"),
@@ -23,7 +23,7 @@ def get_database_url():
         host=os.getenv("DB_HOST", "postgres"),
         port=int(os.getenv("DB_PORT", "5432")),
         database=os.getenv("DB_NAME", "usersdb"),
-        # opzionale: query param, es. sslmode=require
+        # optional: query param, es. sslmode=require
         # query=dict(item.split("=", 1) for item in os.getenv("DB_QUERY", "").split("&") if item)
     )
 DATABASE_URL = get_database_url()

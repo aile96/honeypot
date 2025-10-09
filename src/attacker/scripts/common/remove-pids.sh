@@ -5,47 +5,47 @@ PIDFILE="${1:-$DATA_PATH/KC5/arp_pids}"
 TERM_WAIT_SECONDS="5"
 
 if [[ ! -f "$PIDFILE" ]]; then
-  echo "PID file non trovato: $PIDFILE" >&2
+  echo "PID file not found: $PIDFILE" >&2
   exit 1
 fi
 
-# Funzione che prova a terminare un PID in modo pulito
+# Function that tries to kill a PID in a clean way
 stop_pid() {
   local pid="$1"
 
-  # sanity: PID deve essere numerico
+  # sanity: PID must be numeric
   if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
-    echo "[!] Ignoro riga non numerica: '$pid'"
+    echo "[!] Ignore line not numeric: '$pid'"
     return
   fi
 
   if ! kill -0 "$pid" 2>/dev/null; then
-    echo "[*] PID $pid non esiste (già terminato)."
+    echo "[*] PID $pid doesn't exist (already killed)."
     return
   fi
 
-  echo "[*] Inoltro SIGTERM a PID $pid"
+  echo "[*] Sending SIGTERM to PID $pid"
   kill -TERM "$pid" 2>/dev/null || true
 
-  # aspetta che termini entro TERM_WAIT_SECONDS
+  # waiting the termination before TERM_WAIT_SECONDS
   local end=$(( SECONDS + TERM_WAIT_SECONDS ))
   while kill -0 "$pid" 2>/dev/null; do
     if (( SECONDS >= end )); then
-      echo "[*] PID $pid ancora vivo dopo ${TERM_WAIT_SECONDS}s, invio SIGKILL"
+      echo "[*] PID $pid still alive after ${TERM_WAIT_SECONDS}s, sending SIGKILL"
       kill -KILL "$pid" 2>/dev/null || true
       break
     fi
-    sleep 0.25
+    sleep 1
   done
 
   if kill -0 "$pid" 2>/dev/null; then
-    echo "[!] PID $pid sembra ancora in esecuzione dopo KILL." >&2
+    echo "[!] PID $pid seems to be still in execution after KILL." >&2
   else
-    echo "[*] PID $pid terminato."
+    echo "[*] PID $pid terminated."
   fi
 }
 
-# Legge il PIDFILE e ferma ogni PID (uno per riga)
+# Read the PIDFILE and stop each PID (one per line)
 while IFS= read -r line || [[ -n "$line" ]]; do
   # strip spaces
   line="${line#"${line%%[![:space:]]*}"}"
@@ -54,8 +54,8 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   stop_pid "$line"
 done < "$PIDFILE"
 
-# opzionale: rimuovi il pidfile
+# Removing PID file
 rm -f "$PIDFILE" || true
-echo "[*] Tutti i PID processati. PID file rimosso: $PIDFILE"
+echo "[*] Every PID processed. PID file deleted: $PIDFILE"
 
 exit 0

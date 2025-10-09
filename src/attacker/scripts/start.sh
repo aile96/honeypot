@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -e
 
-CALDERA_URL="${CALDERA_URL:-http://caldera.web:8888}"
+CALDERA_URL="${CALDERA_URL:-http://caldera.dock:8888}"
 GROUP="${GROUP:-cluster}"
 
 echo "Waiting for $CALDERA_URL ..."
 until wget -qO- "$CALDERA_URL" >/dev/null 2>&1; do sleep 2; done
 
-if [ "${WAIT:-0}" -eq 1 ]; then
+if [ "${WAIT:-1}" -eq 1 ]; then
   sleep 60
 else
-  sleep 30
+  sleep 10
 fi
 
 echo "Downloading sandcat payload..."

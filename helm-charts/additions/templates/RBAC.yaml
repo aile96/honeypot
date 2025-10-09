@@ -2,45 +2,41 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: acc-mem
+  name: traffic-sa
   namespace: mem
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: acc-app
+  name: currency-sa
   namespace: app
 ---
-# Inizio permessi traffic controller
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+apiVersion: v1
+kind: ServiceAccount
 metadata:
-  name: role-tst
-  namespace: tst
-rules:
-- apiGroups: ["apps"]
-  resources: ["deployments"]
-  verbs: ["create", "delete"]
+  name: updater-sa
+  namespace: mem
 ---
+# Start traffic controller
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: role-dmz
+  name: traffic-dmz
   namespace: dmz
 rules:
 - apiGroups: ["apps"]
   resources: ["deployments"]
-  resourceNames: ["frontend-proxy", "image-provider"]
+  resourceNames: ["frontend-proxy", "image-provider", "smtp"]
   verbs: ["get", "update", "patch"]
 - apiGroups: [""]
   resources: ["services"]
-  resourceNames: ["frontend-proxy", "image-provider"]
+  resourceNames: ["frontend-proxy", "image-provider", "smtp"]
   verbs: ["get", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: role-coredns
+  name: traffic-coredns
   namespace: kube-system
 rules:
 - apiGroups: [""]
@@ -56,24 +52,10 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: role-dmz
+  name: traffic-dmz
 subjects:
 - kind: ServiceAccount
-  name: acc-mem
-  namespace: mem
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: traffic-controller-tst
-  namespace: tst
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: role-tst
-subjects:
-- kind: ServiceAccount
-  name: acc-mem
+  name: traffic-sa
   namespace: mem
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -84,14 +66,14 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: role-coredns
+  name: traffic-coredns
 subjects:
 - kind: ServiceAccount
-  name: acc-mem
+  name: traffic-sa
   namespace: mem
-# Fine permessi traffic controller
+# End traffic controller
 ---
-# Inizio utente anonimo
+# Start anonymous
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -121,7 +103,7 @@ rules:
   resources:
     - pods/proxy
     - services/proxy
-    - nodes/proxy        # proxy verso kubelet
+    - nodes/proxy # proxy to kubelet
   verbs: ["get","create"]
 - apiGroups: [""]
   resources: ["namespaces"]
@@ -170,16 +152,15 @@ roleRef:
   kind: ClusterRole
   name: list-resources-proxy
   apiGroup: rbac.authorization.k8s.io
-# Fine utente anonimo
+# End anonymous
 ---
-# Inizio permessi currency
+# Start currency
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: job-and-secret-access
   namespace: app
 rules:
-  # Permesso di creare Job
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["create", "get", "list", "watch"]
@@ -195,15 +176,15 @@ metadata:
   namespace: app
 subjects:
   - kind: ServiceAccount
-    name: acc-app
+    name: currency-sa
     namespace: app
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: job-and-secret-access
-# Fine permessi currency
+# End currency
 ---
-# Inizio permessi image-updater
+# Start image-updater
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -212,15 +193,12 @@ rules:
 - apiGroups: ["apps"]
   resources: ["deployments"]
   verbs: ["get", "list", "patch", "update", "create"]
-# Leggere/creare/aggiornare PVC nella/e namespace in cui lavori
 - apiGroups: [""]
   resources: ["persistentvolumeclaims"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-# (Opzionale ma utile) Leggere StorageClass per scegliere lo storage
 - apiGroups: ["storage.k8s.io"]
   resources: ["storageclasses"]
   verbs: ["get", "list"]
-# (Opzionale) Solo lettura dei PV per debug/visibilità
 - apiGroups: [""]
   resources: ["persistentvolumes"]
   verbs: ["get", "list"]
@@ -243,11 +221,5 @@ subjects:
 - kind: ServiceAccount
   name: updater-sa
   namespace: mem
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: updater-sa
-  namespace: mem
-# Fine permessi image-updater
+# End image-updater
 {{- end }}

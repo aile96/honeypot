@@ -11,12 +11,12 @@ networkPolicies:
   allowSameNamespace: true
   podSelector: {}
   internet:
-    mode: world        # "world" (consigliato) oppure "cidr"
-    egressCidrs: []    # usati solo con mode: cidr
-    ingressCidrs: []   # usati solo con mode: cidr
-    exceptCidrs:       # utile se mode: cidr (escludi CIDR del cluster)
-      - "10.96.0.0/12"   # Service CIDR (esempio)
-      - "10.244.0.0/16"  # Pod CIDR (esempio)
+    mode: world
+    egressCidrs: []
+    ingressCidrs: []
+    exceptCidrs:
+      - "10.96.0.0/12"
+      - "10.244.0.0/16"
   rules:
     dmz:
       name: "dmz"
@@ -46,7 +46,7 @@ networkPolicies:
       name: "mem"
       ingress: "app, dat, dmz, pay, tst, kube-system"
       egress:  "app, dat, dmz, pay, tst, kube-system"
-      allowInternetEgress: true # grafana deve prendere qualcosa da grafana.com
+      allowInternetEgress: true
       allowInternetIngress: false
     tst:
       name: "tst"

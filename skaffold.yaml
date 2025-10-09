@@ -26,8 +26,12 @@ build:
       docker:
         dockerfile: src/attacker/Dockerfile
         buildArgs:
-          SMTP_IP: "{{.SMTP_IP}}"
-          LOAD_BALANCER_IP: "{{.LOAD_BALANCER_IP}}"
+          GROUP: "cluster"
+          LOG_NS: "{{.MEM_NAMESPACE}}"
+          ATTACKED_NS: "{{.DMZ_NAMESPACE}}"
+          AUTH_NS: "{{.APP_NAMESPACE}}"
+          MIRRORADDR: "{{.ATTACKER}}:8080"
+          CALDERA_URL: "http://{{.CALDERA_SERVER}}:8888"
     - image: registry:5000/auth
       context: src/auth
       docker:
@@ -99,10 +103,6 @@ build:
       context: .
       docker:
         dockerfile: src/kafka/Dockerfile
-    - image: registry:5000/load-generator
-      context: .
-      docker:
-        dockerfile: src/load-generator/Dockerfile
     - image: registry:5000/payment
       context: .
       docker:
@@ -175,7 +175,7 @@ deploy:
         createNamespace: false
         wait: true
         setValueTemplates:
-          operator.replicas: "{{.NUM_WORKERS}}"
+          operator.replicas: "{{.NUM_OPERATORS}}"
         version: "{{.CILIUM_HELM_VERSION}}"
       - name: metallb
         remoteChart: metallb
@@ -204,6 +204,7 @@ deploy:
       - name: honeypot-telemetry
         chartPath: helm-charts/telemetry
         namespace: "{{.MEM_NAMESPACE}}"
+        wait: true
         setValueTemplates:
         #Abilitations
           opentelemetry-collector.enabled: "true"

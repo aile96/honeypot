@@ -1,38 +1,31 @@
 FROM debian:bookworm-slim
 
 ARG DOCKER_DAEMON="0"
-ARG DATA_PATH="/tmp/KCData"
-ARG GROUP="underlay"
-ARG LOG_ENDPOINT="http://opensearch.mem:9200"
-ARG NAMESPACE2="dmz"
-ARG MIRRORADDR="prova.dmz.svc.cluster.local:8080"
-ARG REWRITE_LINE="rewrite name auth.app.svc.cluster.local image-provider.dmz.svc.cluster.local"
-ARG HOSTREGISTRY="registry:5000"
-ARG LOAD_BALANCER_IP="172.18.0.201"
-ARG API_SERVER="https://kind-cluster-control-plane:6443"
-ARG NSPROTO="app"
-ARG NSCREDS="mem"
-ARG CMNAME="flagd-credentials-ui"
-ARG FLAGHOST="flagd:4000"
 ARG CALDERA_URL="http://caldera.dock:8888"
-ARG GRPCURL_VERSION="1.9.1"
-ARG SMTP_IP="172.18.0.200"
+ARG GROUP="underlay"
+ARG LOG_NS="mem"
+ARG ATTACKED_NS="dmz"
+ARG AUTH_NS="app"
+ARG MIRRORADDR="prova.dmz.svc.cluster.local:8080"
 
-ENV DOCKER_DAEMON="$DOCKER_DAEMON" \
-    DATA_PATH="$DATA_PATH" \
-    GROUP="$GROUP" \
-    LOG_ENDPOINT="$LOG_ENDPOINT" \
-    NAMESPACE2="$NAMESPACE2" \
-    MIRRORADDR="$MIRRORADDR" \
-    REWRITE_LINE="$REWRITE_LINE" \
-    HOSTREGISTRY="$HOSTREGISTRY" \
-    LOAD_BALANCER_IP="$LOAD_BALANCER_IP" \
-    API_SERVER="$API_SERVER" \
-    NSPROTO="$NSPROTO" \
-    NSCREDS="$NSCREDS" \
-    CMNAME="$CMNAME" \
-    FLAGHOST="$FLAGHOST" \
+ENV DATA_PATH="/tmp/KCData" \
+    DOCKER_DAEMON="$DOCKER_DAEMON"
+
+ENV GROUP="$GROUP" \
+    WAIT="1" \
     CALDERA_URL="$CALDERA_URL" \
+    LOG_NS="$LOG_NS" \
+    ATTACKED_NS="$ATTACKED_NS" \
+    AUTH_NS="$AUTH_NS" \
+    MIRRORADDR="$MIRRORADDR"
+
+ENV HOSTREGISTRY="registry:5000" \
+    ARP_VICTIM="load-generator" \
+    LOAD_BALANCER_IP="172.18.0.200"
+
+ENV API_SERVER="https://kind-cluster-control-plane:6443" \
+    NSPROTO="$AUTH_NS" \
+    NSCREDS="$LOG_NS" \
     GRPCURL_VERSION="$GRPCURL_VERSION" \
     SMTP_IP="$SMTP_IP"
 
@@ -43,12 +36,7 @@ RUN apt-get update && \
         procps unzip openssh-client sshpass netcat-openbsd && \
     rm -rf /var/lib/apt/lists/*
 
-ENV DOCKER_DIR=/var/lib/docker
-RUN mkdir -p "$DATA_PATH" "$DOCKER_DIR"
-
-RUN wget -q https://github.com/fullstorydev/grpcurl/releases/download/v${GRPCURL_VERSION}/grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz \
-    && tar -xzf grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz -C /usr/local/bin \
-    && rm grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz
+RUN mkdir -p "$DATA_PATH"
 
 COPY ./scripts /opt/caldera
 COPY ./utils /utils
@@ -60,9 +48,5 @@ RUN update-ca-certificates
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Useremo una socket distinta per chiarezza
-ENV DOCKER_HOST_UNIX=unix:///var/run/docker.sock
-
-# Avvio: prima dockerd, poi il tuo script
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/opt/caldera/start.sh"]

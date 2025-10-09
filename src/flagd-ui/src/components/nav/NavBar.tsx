@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 
 function hasSessionCookie(): boolean {
   if (typeof document === "undefined") return false;
-  // cookie creato dall'API /feature/api/login
+  // cookie created by API /feature/api/login
   return document.cookie
     .split(";")
     .some((c) => c.trim().startsWith("flagdui_jwt"));
@@ -21,7 +21,6 @@ export default function NavBar() {
   useEffect(() => {
     const check = () => setAuthed(hasSessionCookie());
     check();
-    // ricontrolla quando la tab torna attiva o ogni tanto
     const i = setInterval(check, 2000);
     window.addEventListener("focus", check);
     document.addEventListener("visibilitychange", check);
@@ -40,7 +39,7 @@ export default function NavBar() {
     try {
       await fetch("/feature/api/logout", { method: "POST" });
     } catch {
-      // ignora errori di rete
+      // ignore network errors
     } finally {
       setAuthed(false);
       goToLogin();

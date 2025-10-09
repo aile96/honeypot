@@ -7,16 +7,18 @@ TARGET='payment.pay.svc.cluster.local:8080'
 METHOD='oteldemo.PaymentService/ReceivePayment'
 PROTO_FILE="$DATA_PATH/KC3/demo.proto"
 
-# Legge il contenuto del proto e lo converte in stringa JSON correttamente escapata
+# Installing dependencies and setup
+apt-get update >/dev/null 2>&1
+apt-get install -y --no-install-recommends bash curl jq ca-certificates >/dev/null 2>&1
+mkdir -p $(dirname $PROTO_FILE)
+
+# Converting proto in json
 PROTO_JSON="$(jq -Rs . < "$PROTO_FILE")"
 
-# Pulisce/crea il file di output
-OUT_FILE="$DATA_PATH/KC3//result_payments"
-
-echo "Inizio richieste (user_id 1..15) → salvataggio in $OUT_FILE"
+OUT_FILE="$DATA_PATH/KC3/result_payments"
+echo "Starting requests (user_id 1..15) → saving in $OUT_FILE"
 
 for uid in $(seq 1 15); do
-  # Costruisce il body JSON in modo robusto con jq
   BODY="$(
     jq -n \
       --arg target "$TARGET" \
@@ -32,20 +34,19 @@ for uid in $(seq 1 15); do
       }'
   )"
 
-  # Effettua la POST
   RESP="$(curl -sk -X POST "$ENDPOINT" \
     -H "Content-Type: application/json" \
     -d "$BODY")"
 
-  # Estrae solo .payment (se presente) e aggiunge una riga NDJSON
+  # Extracting only .payment (if present) and adding one line NDJSON
   if echo "$RESP" | jq -e '.stdout.payment' >/dev/null 2>&1; then
     echo "$RESP" | jq -c '.stdout.payment' >> "$OUT_FILE"
-    echo "✔ user_id=$uid salvato"
+    echo "user_id=$uid saved"
   else
-    # Logga eventuali errori/assenza payment
+    # Log error
     ERR_MSG="$(echo "$RESP" | jq -r '.error // empty' 2>/dev/null || true)"
-    echo "⚠ user_id=$uid: nessun campo .payment trovato${ERR_MSG:+ (errore: $ERR_MSG)}" >&2
+    echo "user_id=$uid: no field .payment found${ERR_MSG:+ (errore: $ERR_MSG)}" >&2
   fi
 done
 
-echo "Fatto. File generato: $OUT_FILE"
+echo "Done. File generated: $OUT_FILE"

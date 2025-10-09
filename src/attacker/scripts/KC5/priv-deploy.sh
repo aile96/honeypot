@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-### === CONFIGURA QUI ===
 NAMESPACE="${NAMESPACE:-mem}"
-
-# Comando del container (facoltativo, vuoto = entrypoint immagine)
 KUBE_APISERVER="https://$(dig +short kind-cluster-control-plane A):6443"
 TOKEN="$(cat $DATA_PATH/KC5/found_token)"
 FILE_IP="$DATA_PATH/KC5/iphost"
@@ -24,18 +21,16 @@ api_get()   { curl "${curl_common[@]}" -X GET  "${KUBE_APISERVER}$1"; }
 api_post()  { curl "${curl_common[@]}" -X POST -d @"$2" "${KUBE_APISERVER}$1"; }
 api_put()   { curl "${curl_common[@]}" -X PUT  -d @"$2" "${KUBE_APISERVER}$1"; }
 
-echo ">> Verifica raggiungibilità API server…"
-api_get "/version" >/dev/null || { echo "Impossibile contattare l’API server. Controlla KUBE_APISERVER/TOKEN/CA."; exit 1; }
+echo ">> Verify reachability API server…"
+api_get "/version" >/dev/null || { echo "Impossible to reach API server. Watch KUBE_APISERVER/TOKEN/CA."; exit 1; }
 
 list_node_hostnames() {
   if [[ ! -f "$FILE_IP" ]]; then
-    echo "Errore: file '$FILE_IP' non trovato" >&2
+    echo "Error: file '$FILE_IP' not found" >&2
     return 1
   fi
 
-  echo ">> Recupero lista nodi (da file: $FILE_IP)..." >&2
-
-  # raccogliamo e stampiamo alla fine per poter fare sort -u
+  echo ">> Recover IPs list (file: $FILE_IP)..." >&2
   grep -E '[-]' "$FILE_IP" \
    | cut -d'-' -f2- \
    | sed -E 's/^[[:space:]]+|[[:space:]\r]+$//g' \
@@ -119,7 +114,7 @@ create_deployment_for_node() {
   payload=$(make_deployment_json "${iteration}")
   tmpfile=$(mktemp)
   echo "${payload}" > "${tmpfile}"
-  echo ">> Creo Deployment per nodo '${node_host}'…"
+  echo ">> Create Deployment for node '${node_host}'…"
   api_post "/apis/apps/v1/namespaces/${NAMESPACE}/deployments" "${tmpfile}" >/dev/null
   rm -f "${tmpfile}"
 }
@@ -127,16 +122,16 @@ create_deployment_for_node() {
 mkdir -p ${KEY_DIR}
 ssh-keygen -t ed25519 -N '' -f "${PRIV_KEY}" -C "ultra-priv" >/dev/null
 PUB_CONTENT="$(cat "${PUB_KEY}")"
-echo "[i] Chiave generata: ${PRIV_KEY} / ${PUB_KEY}"
+echo "[i] Key generated: ${PRIV_KEY} / ${PUB_KEY}"
 
 mapfile -t nodes < <(list_node_hostnames | sed '/^$/d')
 if [[ "${#nodes[@]}" -eq 0 ]]; then
-  echo "Nessun nodo trovato."; exit 1
+  echo "No node found"; exit 1
 fi
-echo ">> Nodi trovati (${#nodes[@]}): ${nodes[*]}"
+echo ">> Nodes found (${#nodes[@]}): ${nodes[*]}"
 i=1
 for n in "${nodes[@]}"; do
   create_deployment_for_node "$n" "$i"
   i=$((i+1))
 done
-echo "Creati deployments con pieno controllo sugli host"
+echo "Created deployments with full control on host"

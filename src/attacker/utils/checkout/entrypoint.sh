@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-# genera un file temporaneo sicuro in /tmp
+# Generating a temporary file in /tmp
 OUT=$(mktemp -p /tmp envoy.XXXX.yaml)
 
 envsubst '${LISTEN_PORT} ${APP_PORT}' \

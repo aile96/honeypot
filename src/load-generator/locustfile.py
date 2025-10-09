@@ -1,9 +1,5 @@
 #!/usr/bin/python
 
-# Copyright The OpenTelemetry Authors
-# SPDX-License-Identifier: Apache-2.0
-
-
 import json
 import os
 import random
@@ -11,72 +7,14 @@ import uuid
 import logging
 
 from locust import HttpUser, task, between
-from locust_plugins.users.playwright import PlaywrightUser, pw, PageWithRetry, event
-
-from opentelemetry import context, baggage, trace
-from opentelemetry.metrics import set_meter_provider
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.jinja2 import Jinja2Instrumentor
-from opentelemetry.instrumentation.requests import RequestsInstrumentor
-from opentelemetry.instrumentation.system_metrics import SystemMetricsInstrumentor
-from opentelemetry.instrumentation.urllib3 import URLLib3Instrumentor
-from opentelemetry._logs import set_logger_provider
-from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
-    OTLPLogExporter,
-)
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.sdk.resources import Resource
-
-from openfeature import api
-from openfeature.contrib.provider.ofrep import OFREPProvider
-from openfeature.contrib.hook.opentelemetry import TracingHook
-
+from locust_plugins.users.playwright import PlaywrightUser, pw, PageWithRetry
+from opentelemetry import context, baggage
 from playwright.async_api import Route, Request
 
-logger_provider = LoggerProvider(resource=Resource.create(
-        {
-            "service.name": "load-generator",
-        }
-    ),)
-set_logger_provider(logger_provider)
-
-exporter = OTLPLogExporter(insecure=True)
-logger_provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
-handler = LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
-
-# Attach OTLP handler to locust logger
-logging.getLogger().addHandler(handler)
-logging.getLogger().setLevel(logging.INFO)
-
-exporter = OTLPMetricExporter(insecure=True)
-set_meter_provider(MeterProvider([PeriodicExportingMetricReader(exporter)]))
-
-tracer_provider = TracerProvider()
-trace.set_tracer_provider(tracer_provider)
-tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-
-# Instrumenting manually to avoid error with locust gevent monkey
-Jinja2Instrumentor().instrument()
-RequestsInstrumentor().instrument()
-SystemMetricsInstrumentor().instrument()
-URLLib3Instrumentor().instrument()
+# --- Logging standard ---
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.info("Avvio load-generator senza telemetria OTel")
 logging.info("Instrumentation complete")
-
-# Initialize Flagd provider
-base_url = f"http://{os.environ.get('FLAGD_HOST', 'localhost')}:{os.environ.get('FLAGD_OFREP_PORT', 8016)}"
-api.set_provider(OFREPProvider(base_url=base_url))
-api.add_hooks([TracingHook()])
-
-def get_flagd_value(FlagName):
-    # Initialize OpenFeature
-    client = api.get_client()
-    return client.get_integer_value(FlagName, 0)
 
 categories = [
     "binoculars",
@@ -105,7 +43,7 @@ people_file = open('people.json')
 people = json.load(people_file)
 
 class WebsiteUser(HttpUser):
-    wait_time = between(1, 10)
+    wait_time = between(5, 10)
 
     @task(1)
     def index(self):
@@ -169,7 +107,7 @@ class WebsiteUser(HttpUser):
 
     @task(5)
     def flood_home(self):
-        for _ in range(0, get_flagd_value("loadGeneratorFloodHomepage")):
+        for _ in range(0, 10):
             self.client.get("/")
 
     def on_start(self):
@@ -184,6 +122,7 @@ browser_traffic_enabled = os.environ.get("LOCUST_BROWSER_TRAFFIC_ENABLED", "").l
 if browser_traffic_enabled:
     class WebsiteBrowserUser(PlaywrightUser):
         headless = True  # to use a headless browser, without a GUI
+        wait_time = between(5, 10)
 
         @task
         @pw
@@ -193,7 +132,7 @@ if browser_traffic_enabled:
                 await page.route('**/*', add_baggage_header)
                 await page.goto("/cart", wait_until="domcontentloaded")
                 await page.select_option('[name="currency_code"]', 'CHF')
-                await page.wait_for_timeout(2000)  # giving the browser time to export the traces
+                await page.wait_for_timeout(6000)  # giving the browser time to export the traces
             except:
                 pass
 
@@ -206,7 +145,7 @@ if browser_traffic_enabled:
                 await page.goto("/", wait_until="domcontentloaded")
                 await page.click('p:has-text("Roof Binoculars")', wait_until="domcontentloaded")
                 await page.click('button:has-text("Add To Cart")', wait_until="domcontentloaded")
-                await page.wait_for_timeout(2000)  # giving the browser time to export the traces
+                await page.wait_for_timeout(6000)  # giving the browser time to export the traces
             except:
                 pass
 

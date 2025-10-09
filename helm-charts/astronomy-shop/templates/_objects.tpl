@@ -14,6 +14,10 @@ metadata:
     {{- include "otel-demo.labels" . | nindent 4 }}
 spec:
   replicas: {{ .replicas | default .defaultValues.replicas }}
+  {{- if .strategy }}
+  strategy:
+    {{- toYaml .strategy | nindent 4 }}
+  {{- end }}
   revisionHistoryLimit: {{ .revisionHistoryLimit | default .defaultValues.revisionHistoryLimit }}
   selector:
     matchLabels:

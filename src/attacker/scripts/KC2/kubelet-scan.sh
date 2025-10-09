@@ -13,6 +13,10 @@ ENDPOINTS="/pods /metrics /stats/summary /spec /healthz"
 PORT=10255
 SCHEME="http"
 
+# Installing dependencies and setup
+apt-get update >/dev/null 2>&1
+apt-get install -y --no-install-recommends bash curl gawk \
+  sed coreutils jq ca-certificates >/dev/null 2>&1
 mkdir -p "${OUT_DIR}"
 SUMMARY="${OUT_DIR}/summary.ndjson"
 REPORT="${OUT_DIR}/report.txt"
@@ -83,27 +87,25 @@ probe_one() {
   printf '%s\n' "$(printf '%-15s %-18s -> %3s  (%s bytes)' "${host}" "${ep}" "${code}" "${size}")" >> "${REPORT}"
 }
 
-# --- MAIN LOOP: legge "IP - HOST" e filtra su worker|control-plane ---
+# --- MAIN LOOP: read "IP - HOST" and filter on worker|control-plane ---
 while IFS= read -r line || [ -n "$line" ]; do
   # trim e salta righe vuote/commenti
   line="$(printf "%s" "$line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   [ -z "${line}" ] && continue
   case "${line}" in \#*) continue ;; esac
 
-  # estrai IP e HOST, separatore " - " con spazi opzionali
+  # Extract IP and HOST; Case-insensitive
   ip="$(printf "%s\n" "$line" | awk -F'[[:space:]]+-[[:space:]]+' 'NF>=1{print $1}')"
   host_name="$(printf "%s\n" "$line" | awk -F'[[:space:]]+-[[:space:]]+' 'NF>=2{print $2}')"
-
-  # normalizza nome per match case-insensitive
   name_lc="$(printf "%s" "$host_name" | tr '[:upper:]' '[:lower:]')"
 
-  # tieni solo host che contengono worker o control-plane
+  # Keep only worker or control-plane
   case "${name_lc}" in
     *worker*|*control-plane*) ;;
     *) continue ;;
   esac
 
-  # usa l'IP come "host" per la probe
+  # Use IP as "host" for probe
   mkdir -p "${OUT_DIR}/${ip}"
 
   for ep in ${ENDPOINTS}; do

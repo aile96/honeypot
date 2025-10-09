@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -eu
 
-LOG_ENDPOINT="${LOG_ENDPOINT:-http://opensearch.mem:9200}"
-OUT="$DATA_PATH/KC1/token"
-MAX=1000
+LOG_ENDPOINT="http://opensearch.$LOG_NS:9200"
+OUT_FILE="$DATA_PATH/KC1/token"
+MAX=100
 TOKEN=""
 
-: > "$OUT"
+# Installing dependencies and setup
+apt-get update >/dev/null 2>&1
+apt-get install -y --no-install-recommends curl jq ca-certificates >/dev/null 2>&1
+mkdir -p $(dirname $OUT_FILE)
 
 for i in $(seq 1 $MAX); do
   TOKEN="$(curl -s "${LOG_ENDPOINT}/_all/_search" \
@@ -23,20 +26,18 @@ for i in $(seq 1 $MAX); do
     | head -n1)"
 
   if [ -n "$TOKEN" ]; then
-    echo "Trovato al tentativo $i:"
+    echo "Found in attempt $i:"
     echo "$TOKEN"
     break
   fi
 
-  sleep 1
+  sleep 5
 done
 
 if [ -z "$TOKEN" ]; then
-  echo "Nessun valore trovato dopo $MAX tentativi"
+  echo "No values after $MAX retries"
 fi
 
 echo "TOKEN=$TOKEN"
-echo "$TOKEN" > "$OUT"
-
-LINES="$(wc -l < "$OUT" | tr -d ' ')"
-echo "Salvati ${LINES} valori di authorization fittizi in: $OUT"
+echo "$TOKEN" > "$OUT_FILE"
+echo "Saved value in: $OUT_FILE"

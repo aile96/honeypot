@@ -197,6 +197,7 @@ deploy:
         wait: true
       - name: honeypot-additions
         chartPath: helm-charts/additions
+        wait: true
         setValueTemplates:
         #Abilitations
           networkPolicies.enabled: "true"

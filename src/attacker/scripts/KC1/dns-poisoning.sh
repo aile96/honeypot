@@ -7,7 +7,6 @@ APISERVER="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}"
 TOKEN_PATH="$DATA_PATH/KC1/token"
 NS="kube-system"
 CM_NAME="coredns"
-CACERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 TOKEN=$(cat ${TOKEN_PATH})
 TMP_FILE="$DATA_PATH/KC1/Corefile"
 
@@ -19,8 +18,7 @@ mkdir -p $(dirname $TMP_FILE)
 # --- HTTP helpers ---
 api_get() {
   path="$1"
-  curl --fail --silent --show-error \
-    --cacert "$CACERT" \
+  curl -k --fail --silent --show-error \
     -H "Authorization: Bearer $TOKEN" \
     -H "Accept: application/json" \
     "$APISERVER$path"
@@ -28,8 +26,7 @@ api_get() {
 
 api_patch_json() {
   path="$1"
-  curl --fail --silent --show-error \
-    --cacert "$CACERT" \
+  curl -k --fail --silent --show-error \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/merge-patch+json" \
     -X PATCH \
@@ -39,8 +36,7 @@ api_patch_json() {
 
 api_patch_strategic() {
   path="$1"
-  curl --fail --silent --show-error \
-    --cacert "$CACERT" \
+  curl -k --fail --silent --show-error \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/strategic-merge-patch+json" \
     -X PATCH \

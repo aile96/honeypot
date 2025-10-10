@@ -22,14 +22,14 @@ RUN dotnet publish "./Accounting.csproj" -r linux-$TARGETARCH -c $BUILD_CONFIGUR
 # -----------------------------------------------------------------------------
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
-USER app
+USER 1000
 WORKDIR /app
 COPY --from=publish /app/publish .
 
 USER root
 RUN mkdir -p "/var/log/opentelemetry/dotnet"
-RUN chown app "/var/log/opentelemetry/dotnet"
-RUN chown app "/app/instrument.sh"
-USER app
+RUN chown 1000 "/var/log/opentelemetry/dotnet"
+RUN chown 1000 "/app/instrument.sh"
+USER 1000
 
 ENTRYPOINT ["./instrument.sh", "dotnet", "Accounting.dll"]

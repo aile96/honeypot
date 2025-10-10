@@ -171,6 +171,18 @@ components:
     resources:
       limits:
         memory: 120Mi
+        cpu: 500m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     initContainers:
       - name: wait-for-kafka
         image: busybox:latest
@@ -197,6 +209,18 @@ components:
     resources:
       limits:
         memory: 300Mi
+        cpu: 500m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
 
   auth:
     enabled: false
@@ -224,7 +248,19 @@ components:
         value: "CHANGEME_SUPER_SECRET"
     resources:
       limits:
-        memory: 500Mi
+        memory: 300Mi
+        cpu: 500m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     initContainers:
       - name: wait-for-postgres
         image: postgres:15-alpine
@@ -259,6 +295,18 @@ components:
     resources:
       limits:
         memory: 160Mi
+        cpu: 500m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     initContainers:
       - name: wait-for-valkey-cart
         image: busybox:latest
@@ -295,19 +343,21 @@ components:
         value: "8013"
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: http://$(OTEL_COLLECTOR_NAME):4317
-    securityContext:
-      runAsUser: 0
-      runAsGroup: 0
-      allowPrivilegeEscalation: true
-      runAsNonRoot: false
-    podSecurityContext:
-      runAsUser: 0
-      runAsGroup: 0
-      fsGroup: 0
-      runAsNonRoot: false
     resources:
       limits:
         memory: 1Gi
+        cpu: 1000m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     initContainers:
       - name: wait-for-kafka
         image: busybox:latest
@@ -336,6 +386,21 @@ components:
             value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
+        resources:
+          limits:
+            memory: 600Mi
+            cpu: 1000m
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
       - name: crypto-egress
         imageOverride:
           repository: "registry:5000/sidecar-enc"
@@ -356,11 +421,27 @@ components:
             value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
+        resources:
+          limits:
+            memory: 600Mi
+            cpu: 1000m
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
 
   currency:
     enabled: false
     namespace: "app"
     serviceAccountName: "currency-sa"
+    automountServiceAccountToken: "true"
     useDefault:
       env: true
     ports:
@@ -401,10 +482,11 @@ components:
             name: dbcurrency-creds
             key: password
       - name: DB_PORT
-        value: "5432"
+        value: "5432"  
     resources:
       limits:
         memory: 20Mi
+        cpu: 500m
     initContainers:
       - name: wait-for-postgres
         image: postgres:15-alpine
@@ -433,6 +515,18 @@ components:
     resources:
       limits:
         memory: 100Mi
+        cpu: 500m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
 
   fraud-detection:
     enabled: false
@@ -451,6 +545,18 @@ components:
     resources:
       limits:
         memory: 300Mi
+        cpu: 500m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     initContainers:
       - name: wait-for-kafka
         image: busybox:latest
@@ -498,22 +604,23 @@ components:
         value: http://localhost:8080/otlp-http/v1/traces             # This expects users to use `kubectl port-forward ...`
     resources:
       limits:
-        memory: 250Mi
+        memory: 300Mi
+        cpu: 500m
     securityContext:
-      runAsUser: 1001  # nextjs
+      runAsUser: 1001
       runAsGroup: 1001
       runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     mountedEmptyDirs:
       - name: sa-public
         mountPath: /app/public/var/run/secrets/kubernetes.io/serviceaccount
     initContainers:
-      - name: copy-sa
-        image: busybox:1.36
-        command: ["/bin/sh", "-c"]
-        args:
-          - >
-            set -eu;
-            cp -a /var/run/secrets/kubernetes.io/serviceaccount/. /target/;
       - name: wait-for-flagd
         image: busybox:latest
         command: ["sh", "-c", "until nc -z -v -w30 flagd.mem 8013; do echo waiting for flagd; sleep 2; done;"]
@@ -541,6 +648,21 @@ components:
             value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
+        resources:
+          limits:
+            memory: 300Mi
+            cpu: 500m
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
 
   frontend-proxy:
     enabled: false
@@ -587,10 +709,22 @@ components:
     resources:
       limits:
         memory: 65Mi
+        cpu: 1500m
     securityContext:
       runAsUser: 101  # envoy
       runAsGroup: 101
       runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+        add: ["NET_BIND_SERVICE"]
+      seccompProfile:
+        type: RuntimeDefault
+    mountedEmptyDirs:
+      - name: config-rw
+        mountPath: /tmp
 
   image-provider:
     enabled: false
@@ -611,11 +745,31 @@ components:
     resources:
       limits:
         memory: 50Mi
+        cpu: 1500m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
+    mountedEmptyDirs:
+      - name: config-rw
+        mountPath: /tmp
+      - name: cache 
+        mountPath: /var/cache/nginx
+      - name: run
+        mountPath: /var/run
 
   image-updater:
     enabled: false
     namespace: "mem"
     serviceAccountName: "updater-sa"
+    automountServiceAccountToken: "true"
     useDefault:
       env: true
     replicas: 1
@@ -702,10 +856,18 @@ components:
     resources:
       limits:
         memory: 120Mi
+        cpu: 500m
     securityContext:
-      runAsUser: 1000  # node
+      runAsUser: 1000
       runAsGroup: 1000
       runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     initContainers:
       - name: wait-for-flagd
         image: busybox:latest
@@ -740,6 +902,21 @@ components:
             value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
+        resources:
+          limits:
+            memory: 120Mi
+            cpu: 500m
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
 
   product-catalog:
     enabled: false
@@ -766,6 +943,18 @@ components:
     resources:
       limits:
         memory: 20Mi
+        cpu: 500m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
 
   quote:
     enabled: false
@@ -784,10 +973,18 @@ components:
     resources:
       limits:
         memory: 40Mi
+        cpu: 500m
     securityContext:
-      runAsUser: 33  # www-data
+      runAsUser: 33 # www-data
       runAsGroup: 33
       runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
 
   recommendation:
     enabled: false
@@ -813,7 +1010,19 @@ components:
         value: http://$(OTEL_COLLECTOR_NAME):4317
     resources:
       limits:
-        memory: 500Mi            # This is high to enable supporting the recommendationCache feature flag use case
+        memory: 500Mi
+        cpu: 500m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
 
   shipping:
     enabled: false
@@ -832,6 +1041,18 @@ components:
     resources:
       limits:
         memory: 20Mi
+        cpu: 500m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
 
   smtp:
     enabled: false
@@ -882,6 +1103,18 @@ components:
     resources:
       limits:
         memory: 75Mi
+        cpu: 300m
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     command:
       - "/flagd-build"
       - "start"
@@ -919,13 +1152,30 @@ components:
         resources:
           limits:
             memory: 100Mi
+            cpu: 300m
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
         volumeMounts:
           - name: config-rw
             mountPath: /app/data
     initContainers:
       - name: init-config
         image: busybox
-        command: ["sh", "-c", "cp /config-ro/demo.flagd.json /config-rw/demo.flagd.json && cat /config-rw/demo.flagd.json"]
+        command: ["sh","-c","
+            cp /config-ro/demo.flagd.json /config-rw/demo.flagd.json \
+            && chown -R 1000:1000 /config-rw \
+            && chmod -R u+rw,g+rw /config-rw \
+            && ls -l /config-rw
+          "]
         volumeMounts:
           - mountPath: /config-ro
             name: config-ro
@@ -954,13 +1204,22 @@ components:
         value: http://$(OTEL_COLLECTOR_NAME):4318
       - name: KAFKA_HEAP_OPTS
         value: "-Xmx400M -Xms400M"
-    resources:
-      limits:
-        memory: 600Mi
     securityContext:
       runAsUser: 1000  # appuser
       runAsGroup: 1000
       runAsNonRoot: true
+      readOnlyRootFilesystem: false
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
+    resources:
+      limits:
+        memory: 600Mi
+        cpu: 1500m
+      
 
   test-image:
     enabled: false
@@ -980,6 +1239,7 @@ components:
     enabled: false
     namespace: "mem"
     serviceAccountName: "traffic-sa"
+    automountServiceAccountToken: "true"
     useDefault:
       env: true
     replicas: 1
@@ -1071,7 +1331,14 @@ components:
     resources:
       limits:
         memory: 20Mi
+        cpu: 500m
     securityContext:
-      runAsUser: 999  # valkey
+      runAsUser: 999
       runAsGroup: 1000
       runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      privileged: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault

@@ -4,18 +4,21 @@ kind: ServiceAccount
 metadata:
   name: traffic-sa
   namespace: mem
+automountServiceAccountToken: false
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: currency-sa
   namespace: app
+automountServiceAccountToken: false
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: updater-sa
   namespace: mem
+automountServiceAccountToken: false
 ---
 # Start traffic controller
 apiVersion: rbac.authorization.k8s.io/v1

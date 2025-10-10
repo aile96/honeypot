@@ -1,248 +1,166 @@
 {{- if .Values.postgres.enabled }}
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: {{ .Values.postgres.namespace }}
-spec:
-  type: ClusterIP
-  selector:
-    app: postgres
-  ports:
-    - name: postgres
-      port: 5432
-      targetPort: 5432
+{{- $ns := default .Release.Namespace .Values.postgres.namespace }}
+{{- $common := default dict .Values.postgres.common }}
+{{- $instances := omit .Values.postgres "enabled" "namespace" "common" }}
+{{- range $name, $pg := $instances }}
+{{- if (default true $pg.enabled) }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres-headless
-  namespace: {{ .Values.postgres.namespace }}
+  name: {{ $name }}
+  namespace: {{ $ns }}
+spec:
+  type: {{ default "ClusterIP" $pg.serviceType }}
+  selector:
+    app: {{ $name }}
+  ports:
+    - name: postgres
+      port: {{ default 5432 $pg.port }}
+      targetPort: {{ default 5432 $pg.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-headless
+  namespace: {{ $ns }}
 spec:
   clusterIP: None
   selector:
-    app: postgres
+    app: {{ $name }}
   ports:
     - name: postgres
-      port: 5432
+      port: {{ default 5432 $pg.port }}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: postgres
-  namespace: {{ .Values.postgres.namespace }}
+  name: {{ $name }}
+  namespace: {{ $ns }}
 spec:
-  serviceName: postgres-headless
-  replicas: 1
+  serviceName: {{ $name }}-headless
+  replicas: {{ default 1 $pg.replicas }}
   selector:
     matchLabels:
-      app: postgres
+      app: {{ $name }}
   template:
     metadata:
       labels:
-        app: postgres
+        app: {{ $name }}
+        {{- with $common.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
+      automountServiceAccountToken: {{ default false $common.automountServiceAccountToken }}
+      {{- with $common.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
-        fsGroup: 999
+        fsGroup: {{ default 999 $common.fsGroup }}
+      {{- if not $pg.affinity }}
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
-            - matchExpressions:
-              - key: group
-                operator: In
-                values: ["NotAttacker"]
-      containers:
-        - name: postgres
-          image: registry:5000/postgres:2.0.2
-          imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 5432
-              name: postgres
-          env:
-            - name: POSTGRES_USER
-              value: postgres
-            - name: POSTGRES_DB
-              value: currency
-            - name: POSTGRES_PASSWORD
-              value: yourpassword
-          readinessProbe:
-            exec: { command: ["sh","-c","pg_isready -U app -d appdb -h 127.0.0.1 -p 5432"] }
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          livenessProbe:
-            exec: { command: ["sh","-c","pg_isready -U app -d appdb -h 127.0.0.1 -p 5432"] }
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            failureThreshold: 6
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres-auth
-  namespace: {{ .Values.postgres.namespace }}
-spec:
-  type: ClusterIP
-  selector:
-    app: postgres-auth
-  ports:
-    - name: postgres
-      port: 5432
-      targetPort: 5432
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres-auth-headless
-  namespace: {{ .Values.postgres.namespace }}
-spec:
-  clusterIP: None
-  selector:
-    app: postgres-auth
-  ports:
-    - name: postgres
-      port: 5432
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: postgres-auth
-  namespace: {{ .Values.postgres.namespace }}
-spec:
-  serviceName: postgres-auth-headless
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres-auth
-  template:
-    metadata:
-      labels:
-        app: postgres-auth
-    spec:
-      securityContext:
-        fsGroup: 999
+              - matchExpressions:
+                  - key: {{ default "group" $common.nodeSelectorKey }}
+                    operator: In
+                    values: [ "{{ default "NotAttacker" $pg.nodeGroup }}" ]
+      {{- else }}
       affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: group
-                operator: In
-                values: ["NodeAttacker"]
+        {{- toYaml $pg.affinity | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: init-perms
+          image: {{ default "busybox:1.36" $common.initImage }}
+          command: ["sh","-c",{{ printf "%q" (default "set -eux\nmkdir -p /var/lib/postgresql/data /var/run/postgresql /tmp\nchown -R 999:999 /var/lib/postgresql/data /var/run/postgresql /tmp\nchmod 0775 /var/run/postgresql" $common.initScript) }}]
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            seccompProfile: { type: RuntimeDefault }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: postgres
-          image: registry:5000/postgres-auth:2.0.2
-          imagePullPolicy: IfNotPresent
+          image: {{ required (printf "missing .postgres.%s.image" $name) $pg.image }}
+          imagePullPolicy: {{ default "IfNotPresent" $common.imagePullPolicy }}
+          {{- with (coalesce $pg.resources $common.resources) }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
-            - containerPort: 5432
+            - containerPort: {{ default 5432 $pg.port }}
               name: postgres
           env:
             - name: POSTGRES_USER
-              value: testuser
-            - name: POSTGRES_DB
-              value: users
+              valueFrom:
+                secretKeyRef:
+                  key: {{ default "username" $pg.secretUserKey }}
+                  name: {{ required (printf "missing .postgres.%s.secretName" $name) $pg.secretName }}
             - name: POSTGRES_PASSWORD
-              value: testpassword
+              valueFrom:
+                secretKeyRef:
+                  key: {{ default "password" $pg.secretPasswordKey }}
+                  name: {{ $pg.secretName }}
+            - name: POSTGRES_DB
+              value: {{ required (printf "missing .postgres.%s.db" $name) $pg.db | quote }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ default 999 $common.runAsUser }}
+            runAsGroup: {{ default 999 $common.runAsGroup }}
+            readOnlyRootFilesystem: {{ default true $common.readOnlyRootFilesystem }}
+            allowPrivilegeEscalation: false
+            seccompProfile: { type: RuntimeDefault }
+            capabilities:
+              drop: ["ALL"]
           readinessProbe:
             exec:
-              command:
-                - sh
-                - -c
-                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
-            initialDelaySeconds: 5
-            periodSeconds: 5
+              command: ["sh","-c",{{ printf "%q" (default "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1 -p 5432" $common.readinessCmd) }}]
+            initialDelaySeconds: {{ default 5 $common.readinessInitialDelaySeconds }}
+            periodSeconds: {{ default 5 $common.readinessPeriodSeconds }}
           livenessProbe:
             exec:
-              command:
-                - sh
-                - -c
-                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            failureThreshold: 6
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres-payment
-  namespace: {{ .Values.postgres.namespace }}
-spec:
-  type: ClusterIP
-  selector:
-    app: postgres-payment
-  ports:
-    - name: postgres
-      port: 5432
-      targetPort: 5432
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres-payment-headless
-  namespace: {{ .Values.postgres.namespace }}
-spec:
-  clusterIP: None
-  selector:
-    app: postgres-payment
-  ports:
-    - name: postgres
-      port: 5432
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: postgres-payment
-  namespace: {{ .Values.postgres.namespace }}
-spec:
-  serviceName: postgres-payment-headless
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres-payment
-  template:
-    metadata:
-      labels:
-        app: postgres-payment
-    spec:
-      securityContext:
-        fsGroup: 999
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: group
-                operator: In
-                values: ["NodeAttacker"]
-      containers:
-        - name: postgres
-          image: registry:5000/postgres-payment:2.0.2
-          imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 5432
-              name: postgres
-          env:
-            - name: POSTGRES_USER
-              value: payments_rw
-            - name: POSTGRES_DB
-              value: payments
-            - name: POSTGRES_PASSWORD
-              value: payments_rw_pwd
-          readinessProbe:
-            exec:
-              command:
-                - sh
-                - -c
-                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          livenessProbe:
-            exec:
-              command:
-                - sh
-                - -c
-                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            failureThreshold: 6
+              command: ["sh","-c",{{ printf "%q" (default "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1 -p 5432" $common.livenessCmd) }}]
+            initialDelaySeconds: {{ default 30 $common.livenessInitialDelaySeconds }}
+            periodSeconds: {{ default 10 $common.livenessPeriodSeconds }}
+            failureThreshold: {{ default 6 $common.livenessFailureThreshold }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      {{- if $pg.persistence }}
+      volumes: []
+      {{- else }}
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: run
+          emptyDir: { medium: Memory }
+        - name: tmp
+          emptyDir: {}
+      {{- end }}
+  {{- if $pg.persistence }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: {{ default "10Gi" $pg.persistence.size }}
+        {{- with $pg.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
 {{- end }}

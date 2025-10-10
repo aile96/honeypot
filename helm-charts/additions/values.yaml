@@ -61,9 +61,24 @@ caldera:
   host: "caldera.dock"
   port: 8888
 
-postgres:
+postgres: 
   enabled: false
   namespace: "dat"
+  postgres:
+    image: registry:5000/postgres:2.0.2
+    db: currency
+    secretName: dbcurrency
+    nodeGroup: NotAttacker
+  postgres-auth:
+    image: registry:5000/postgres-auth:2.0.2
+    db: users
+    secretName: dbauth
+    nodeGroup: NodeAttacker
+  postgres-payment:
+    image: registry:5000/postgres-payment:2.0.2
+    db: payments
+    secretName: dbpayment
+    nodeGroup: NodeAttacker
 
 config:
   enabled: false
@@ -82,12 +97,27 @@ config:
     flagd-config:
       namespace: "mem"
       dataFromFile: "files/demo.flagd.json"
-  secrets: 
+  secrets:
     dbcurrency-creds:
       namespace: "app"
       data: 
         username: "postgres" 
         password: "yourpassword"
+    dbcurrency:
+      namespace: "dat"
+      data: 
+        username: "postgres" 
+        password: "yourpassword"
+    dbpayment:
+      namespace: "dat"
+      data: 
+        username: "payments_rw" 
+        password: "payments_rw_pwd"
+    dbauth:
+      namespace: "dat"
+      data: 
+        username: "testuser" 
+        password: "testpassword"
     smb-creds:
       namespace: "mem"
       data:

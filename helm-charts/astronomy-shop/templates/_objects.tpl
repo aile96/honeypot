@@ -40,6 +40,7 @@ spec:
       {{- if .hostNetwork }}
       hostNetwork: true
       {{- end }}
+      automountServiceAccountToken: {{ default "false" .automountServiceAccountToken }}
       {{- $schedulingRules := .schedulingRules | default dict }}
       {{- if or .defaultValues.schedulingRules.nodeSelector $schedulingRules.nodeSelector}}
       nodeSelector:

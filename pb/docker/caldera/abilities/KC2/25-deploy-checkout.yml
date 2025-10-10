@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "docker login $HOSTREGISTRY -u $(cat $DATA_PATH/KC2/user) -p $(cat $DATA_PATH/KC2/pass) && docker build -f /utils/checkout/Dockerfile -t $HOSTREGISTRY/checkout:2.0.3 /utils/checkout && docker push $HOSTREGISTRY/checkout:2.0.3", timeout: 300 } }
+    linux: { sh: { command: "docker login $HOSTREGISTRY -u $(cat $DATA_PATH/KC2/user) -p $(cat $DATA_PATH/KC2/pass) && docker build -f /utils/checkout/Dockerfile -t $HOSTREGISTRY/checkout:2.0.3 /utils/checkout && docker push $HOSTREGISTRY/checkout:2.0.3", timeout: 500 } }

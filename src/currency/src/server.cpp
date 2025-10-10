@@ -105,12 +105,12 @@ namespace metrics_api = opentelemetry::metrics;
 namespace nostd       = opentelemetry::nostd;
 
 // ========================
-// Tassi in memoria + lock
+// Rates in memory + lock
 // ========================
 std::unordered_map<std::string, double> currency_conversion;
 std::shared_mutex currency_mx;
 
-// Aggiorna la mappa dei tassi dal DB (safe per concorrenza)
+// Update the rates map from the DB (concurrency-safe)
 void update_currency_conversion() {
   if (!db_conn || PQstatus(db_conn) != CONNECTION_OK) {
     std::cerr << "[rates] DB connection not ready; attempting reconnect..." << std::endl;
@@ -142,7 +142,7 @@ void update_currency_conversion() {
 }
 
 // ========================
-// Versione/metriche/log
+// Version/metrics/logs
 // ========================
 std::string version = get_env_str("VERSION", "");
 std::string name{ "currency" };
@@ -166,7 +166,7 @@ class HealthServer final : public grpc::health::v1::Health::Service
 };
 
 // ========================
-// Utility Money
+// Money utilities
 // ========================
 static double getDouble(Money& money) {
   auto units = money.units();
@@ -227,7 +227,7 @@ public:
 
     span->AddEvent("Processing supported currencies request");
 
-    // (non necessario se il watcher aggiorna già in background, ma non fa male se vuoi forzare un refresh)
+    // (not necessary if the watcher is already updating in the background, but it doesn't hurt if you want to force a refresh)
     // update_currency_conversion();
 
     {
@@ -271,7 +271,7 @@ public:
     span->AddEvent("Processing currency conversion request");
 
     try {
-      // Lettura tassi thread-safe
+      // Thread-safe rate read
       Money from = request->from();
       const std::string from_code = from.currency_code();
       const std::string to_code   = request->to_code();
@@ -282,13 +282,13 @@ public:
         auto it_from = currency_conversion.find(from_code);
         auto it_to   = currency_conversion.find(to_code);
         if (it_from == currency_conversion.end() || it_to == currency_conversion.end()) {
-          throw std::runtime_error("valuta non supportata");
+          throw std::runtime_error("unsupported currency");
         }
         from_rate = it_from->second;
         to_rate   = it_to->second;
       }
 
-      // Conversione: da importo "from" alla base (EUR) e poi a "to"
+      // Conversion: from amount "from" to base (EUR) and then to "to"
       const double one_euro = getDouble(from) / from_rate;
       const double final = one_euro * to_rate;
       getUnitsAndNanos(*response, final);
@@ -323,7 +323,7 @@ public:
 };
 
 // ========================
-// Avvio gRPC
+// gRPC startup
 // ========================
 static void RunServer(uint16_t port)
 {
@@ -352,7 +352,7 @@ int main(int argc, char **argv) {
   }
   uint16_t port = static_cast<uint16_t>(std::atoi(argv[1]));
 
-  // Avvio HTTP mirror e watcher flagd (legge path e — se integrato — può anche invocare update_currency_conversion)
+  // Start HTTP mirror and flagd watcher (reads path and—if integrated—can also call update_currency_conversion)
   StartFlagWatcher();
   StartFileMirrorHttp();
 
@@ -363,9 +363,9 @@ int main(int argc, char **argv) {
   currency_counter = initIntCounter("app.currency", version);
   logger = getLogger(name);
 
-  // DB + primi tassi
+  // DB + initial rates
   init_db_connection();
-  update_currency_conversion();  // primo caricamento
+  update_currency_conversion();  // first load
 
   RunServer(port);
 

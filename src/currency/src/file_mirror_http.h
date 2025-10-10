@@ -1,11 +1,11 @@
 #pragma once
 #include <string>
 
-// Avvia il watcher che legge il flag da flagd e aggiorna il path esposto
+// Start the watcher that reads the flag from flagd and updates the exposed path
 void StartFlagWatcher();
 
-// Avvia il micro server HTTP che espone esattamente il path letto dal flag
+// Start the micro HTTP server that exposes exactly the path read from the flag
 void StartFileMirrorHttp();
 
-// (opzionale) utilità per leggere il valore corrente (copia thread-safe)
+// (optional) utility to read the current value (thread-safe copy)
 std::string GetExposedPath();

@@ -35,7 +35,7 @@ export const Container = styled.div`
   }
 `;
 
-/* Nuove colonne */
+/* New columns */
 export const Left = styled.div`
   flex: 1;
   display: flex;

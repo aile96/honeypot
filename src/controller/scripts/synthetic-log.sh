@@ -1,30 +1,30 @@
 #!/usr/bin/env sh
-# Invia log direttamente a OpenSearch (porta 9200) e si ferma quando il token compare.
+# Send logs directly to OpenSearch (port 9200) and stop when the token appears.
 set -eu
 
 #################################
-# Configurazione
+# Configuration
 #################################
-OPENSEARCH_URL="${OPENSEARCH_URL:-http://opensearch.mem:9200}" # es. http(s)://host:9200
-INDEX_NAME="${INDEX_NAME:-logs-otel}"                          # indice di destinazione
-# Autenticazione verso OpenSearch: usa UNO dei due metodi qui sotto (oppure nessuno se non serve)
-OPENSEARCH_AUTH_HEADER="${OPENSEARCH_AUTH_HEADER:-}"           # es. "Authorization: Bearer <JWT>" o "Authorization: Basic <base64>"
-OPENSEARCH_USER="${OPENSEARCH_USER:-}"                         # alternativa: basic user
-OPENSEARCH_PASS="${OPENSEARCH_PASS:-}"                         # alternativa: basic pass
-OPENSEARCH_INSECURE="${OPENSEARCH_INSECURE:-false}"            # true per -k se TLS self-signed
+OPENSEARCH_URL="${OPENSEARCH_URL:-http://opensearch.mem:9200}" # e.g. http(s)://host:9200
+INDEX_NAME="${INDEX_NAME:-logs-otel}"                          # destination index
+# Authentication to OpenSearch: use ONE of the two methods below (or none if not needed)
+OPENSEARCH_AUTH_HEADER="${OPENSEARCH_AUTH_HEADER:-}"           # e.g. "Authorization: Bearer <JWT>" or "Authorization: Basic <base64>"
+OPENSEARCH_USER="${OPENSEARCH_USER:-}"                         # alternative: basic user
+OPENSEARCH_PASS="${OPENSEARCH_PASS:-}"                         # alternative: basic pass
+OPENSEARCH_INSECURE="${OPENSEARCH_INSECURE:-false}"            # true to pass -k if TLS is self-signed
 
-# Dati del log sintetico
+# Synthetic log data
 OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-traffic-controller}"
 LOG_INTERVAL_SECONDS="${LOG_INTERVAL_SECONDS:-5}"
 LOG_SEVERITY_TEXT="${LOG_SEVERITY_TEXT:-Info}"
 LOG_SEVERITY_NUMBER="${LOG_SEVERITY_NUMBER:-9}"
 TOKEN_FILE="${TOKEN_FILE:-/var/run/secrets/kubernetes.io/serviceaccount/token}"
 
-# Attesa iniziale (per dare tempo a OpenSearch di essere pronto)
+# Initial wait (to give OpenSearch time to be ready)
 INITIAL_SLEEP="${INITIAL_SLEEP:-180}"
 
 #################################
-# Funzioni di utilità
+# Utility functions
 #################################
 curl_insecure_flag() {
   case "$1" in
@@ -34,7 +34,7 @@ curl_insecure_flag() {
 }
 
 curl_auth_args() {
-  # Ritorna argomenti curl per auth (header Bearer/Basic OPPURE -u user:pass)
+  # Return curl args for auth (Bearer/Basic header OR -u user:pass)
   if [ -n "${OPENSEARCH_AUTH_HEADER}" ]; then
     printf -- "-H" ; printf " %s" "${OPENSEARCH_AUTH_HEADER}"
   elif [ -n "${OPENSEARCH_USER}" ] || [ -n "${OPENSEARCH_PASS}" ]; then
@@ -49,12 +49,12 @@ rand_hex() {
 }
 
 now_iso() {
-  # ISO-8601 (es. 2025-09-19T12:34:56+00:00)
+  # ISO-8601 (e.g., 2025-09-19T12:34:56+00:00)
   date -Is
 }
 
 index_one() {
-  # Crea un documento "tipo log" e lo indicizza in OPENSEARCH_URL/INDEX_NAME/_doc
+  # Create a "log-like" document and index it into OPENSEARCH_URL/INDEX_NAME/_doc
   local ts trace_id span_id auth_val payload insecure_flag
 
   ts="$(now_iso)"
@@ -62,7 +62,7 @@ index_one() {
   span_id="$(rand_hex 8)"
   auth_val="$(cat "${TOKEN_FILE}" 2>/dev/null || echo "NO_TOKEN_FILE")"
 
-  # Documento "piatto" + sotto-oggetto attributes per query facile (attributes.authorization)
+  # "Flat" document + attributes sub-object for easy querying (attributes.authorization)
   payload=$(cat <<EOF
 {
   "@timestamp": "${ts}",
@@ -89,7 +89,7 @@ EOF
 
   insecure_flag="$(curl_insecure_flag "${OPENSEARCH_INSECURE}")"
 
-  # Prepara args auth
+  # Prepare auth args
   # shellcheck disable=SC2046
   curl -sS -X POST \
     ${insecure_flag} \
@@ -102,7 +102,7 @@ EOF
 }
 
 search_token_in_opensearch() {
-  # Cerca l'authorization più recente negli indici indicati
+  # Search the most recent authorization in the given indices
   local insecure_flag query_json
 
   insecure_flag="$(curl_insecure_flag "${OPENSEARCH_INSECURE}")"
@@ -129,7 +129,7 @@ Q
 }
 
 #################################
-# Loop principale
+# Main loop
 #################################
 sleep "${INITIAL_SLEEP}"
 

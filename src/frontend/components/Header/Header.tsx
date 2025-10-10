@@ -21,14 +21,14 @@ const Header = () => {
     <S.Header>
       <S.NavBar>
         <S.Container>
-          {/* Colonna sinistra: logo */}
+          {/* Left column: logo */}
           <S.Left>
             <S.NavBarBrand href="/">
               <S.BrandImg />
             </S.NavBarBrand>
           </S.Left>
 
-          {/* Colonna centrale: login/register o logout */}
+          {/* Center column: login/register or logout */}
           <S.Center>
             {user ? (
               <>
@@ -49,7 +49,7 @@ const Header = () => {
             )}
           </S.Center>
 
-          {/* Colonna destra: controlli */}
+          {/* Right column: controls */}
           <S.Right>
             <CurrencySwitcher />
             <CartIcon />

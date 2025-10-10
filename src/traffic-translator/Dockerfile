@@ -1,7 +1,7 @@
-# Build minimal, con grpcurl
+# Build minimal, with grpcurl
 FROM alpine:3.20
 
-# Install dipendenze + jq (utile per debug) + grpcurl
+# Install dependencies + jq + grpcurl
 RUN apk add --no-cache ca-certificates curl jq libc6-compat && \
     GRPCURL_VERSION=1.9.2 && \
     curl -L -o /tmp/grpcurl.tgz \
@@ -13,7 +13,7 @@ RUN apk add --no-cache ca-certificates curl jq libc6-compat && \
 WORKDIR /app
 COPY main.go /app/
 
-# Compila Go staticamente usando TinyGo? (qui usiamo Go standard via apk)
+# Compiling Go standard via apk
 RUN apk add --no-cache go build-base && \
     CGO_ENABLED=0 go build -o /usr/local/bin/http2grpc /app/main.go && \
     apk del go build-base

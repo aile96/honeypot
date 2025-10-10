@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 set -euo pipefail
 
 DOCKER_HOST_UNIX="unix:///var/run/docker.sock"   # Where clients connect (unix socket)

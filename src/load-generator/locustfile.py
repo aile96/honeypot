@@ -13,7 +13,7 @@ from playwright.async_api import Route, Request
 
 # --- Logging standard ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logging.info("Avvio load-generator senza telemetria OTel")
+logging.info("Starting load-generator")
 logging.info("Instrumentation complete")
 
 categories = [

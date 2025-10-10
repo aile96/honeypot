@@ -9,7 +9,7 @@
    #lock directory = /data
    pid directory = /run/samba
 
-   # Solo SMB su 445, niente NetBIOS
+   # SMB only on 445, no NetBIOS
    disable netbios = yes
    smb ports = 445
    dns proxy = no
@@ -17,20 +17,20 @@
    printing = bsd
    disable spoolss = yes
 
-   # Sicurezza moderna
+   # Modern security
    server min protocol = SMB3_11
    map to guest = Never
    server signing = mandatory
    server smb encrypt = ${ENCRYPTION}
    client ipc signing = required
-   # opzionale: disabilita ntlmv1
+   # optional: disable ntlmv1
    ntlm auth = ntlmv2-only
 
-   # Restrizione IP (rete kind + loopback)
+   # IP restriction (kind network + loopback)
    hosts allow = ${HOSTS_ALLOW}
    hosts deny = 0.0.0.0/0
 
-   # Prestazioni/compatibilità
+   # Performance/compatibility
    ea support = yes
    kernel oplocks = no
    strict locking = no

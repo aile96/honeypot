@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-SRC = Path("users.json")
+SRC = Path("auth.json")
 OUT = Path("init.sql")
 
 def esc(s: str) -> str:

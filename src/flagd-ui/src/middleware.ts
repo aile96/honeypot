@@ -43,7 +43,7 @@ export async function middleware(req: NextRequest) {
   
   if (!token) {
     if (isApiPath(pathname)) {
-      // per API: nessun redirect, solo 401 JSON
+      // for APIs: no redirect, just 401 JSON
       return NextResponse.json(
         { ok: false, error: "Unauthorized" },
         {
@@ -64,7 +64,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   } catch {
     if (isApiPath(pathname)) {
-      // per API: nessun redirect, solo 401 JSON
+      // for APIs: no redirect, just 401 JSON
       return NextResponse.json(
         { ok: false, error: "Unauthorized" },
         {

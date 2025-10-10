@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 # INPUT atteso
-SRC = Path("payments.json")
+SRC = Path("pay.json")
 # OUTPUT SQL (puoi cambiarlo se preferisci)
 OUT = Path("init.sql")
 
@@ -33,7 +33,7 @@ try:
     raw = SRC.read_text(encoding="utf-8")
     data = json.loads(raw)
     if not isinstance(data, list):
-        raise ValueError("payments.json deve essere una lista di oggetti pagamento")
+        raise ValueError("pay.json deve essere una lista di oggetti pagamento")
 except Exception as e:
     print(f"Errore leggendo {SRC}: {e}", file=sys.stderr)
     raise

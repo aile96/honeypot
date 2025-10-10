@@ -9,23 +9,23 @@ _SHOULD_STOP = False
 
 def _handle_stop(signum, frame):
     global _SHOULD_STOP
-    print(f"Ricevuto segnale {signum}, arresto richiesto…")
+    print(f"Received signal {signum}, stop requested…")
     _SHOULD_STOP = True
 
-# Registra handler per chiusure pulite (utile in container)
+# Register handlers for clean shutdowns (useful in containers)
 signal.signal(signal.SIGTERM, _handle_stop)
 signal.signal(signal.SIGINT, _handle_stop)
 
 def parse_duration(s: Optional[str]) -> Optional[int]:
     """
-    Converte una stringa durata in secondi.
-    Esempi validi:
-      - "30"  -> 30 secondi
-      - "45s" -> 45 secondi
-      - "5m"  -> 300 secondi
-      - "2h"  -> 7200 secondi
-    Ritorna None se s è None o stringa vuota.
-    Lancia ValueError se il formato è invalido.
+    Convert a duration string to seconds.
+    Valid examples:
+      - "30"  -> 30 seconds
+      - "45s" -> 45 seconds
+      - "5m"  -> 300 seconds
+      - "2h"  -> 7200 seconds
+    Returns None if s is None or an empty string.
+    Raises ValueError if the format is invalid.
     """
     if s is None:
         return None
@@ -34,18 +34,18 @@ def parse_duration(s: Optional[str]) -> Optional[int]:
         return None
     if s.isdigit():
         return int(s)
-    # suffissi
+    # suffixes
     if s.endswith("s"):
         return int(s[:-1])
     if s.endswith("m"):
         return int(float(s[:-1]) * 60)
     if s.endswith("h"):
         return int(float(s[:-1]) * 3600)
-    # fallback: prova a interpretare come numero (secondi)
+    # fallback: try to interpret as a number (seconds)
     return int(float(s))
 
 def run_script(script_path: str) -> int:
-    # Determina l'interprete
+    # Determine the interpreter
     interpreter = None
     try:
         with open(script_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -59,21 +59,21 @@ def run_script(script_path: str) -> int:
     except Exception:
         pass
 
-    # Heuristics: .sh => bash, altrimenti fallback a /bin/sh se non eseguibile
+    # Heuristics: .sh => bash, otherwise fall back to /bin/sh if not executable
     if interpreter is None and script_path.endswith(".sh"):
         interpreter = "/bin/bash"
 
     if interpreter:
         cmd = [interpreter, script_path]
     else:
-        # Se ha shebang valida + eseguibile, lancia diretto; altrimenti /bin/sh
+        # If it has a valid shebang + is executable, run directly; otherwise /bin/sh
         if os.access(script_path, os.X_OK):
             cmd = [script_path]
         else:
             cmd = ["/bin/sh", script_path]
 
-    print(f"Eseguo: {' '.join(cmd)}")
-    # Streamma stdout/stderr (niente buffering), exit code propagato
+    print(f"Running: {' '.join(cmd)}")
+    # Stream stdout/stderr (no buffering), propagate exit code
     proc = subprocess.Popen(cmd)
     try:
         return proc.wait()
@@ -82,50 +82,50 @@ def run_script(script_path: str) -> int:
         return proc.wait()
 
 def main():
-    print("Controller di test avviato")
+    print("Test controller started")
 
     script_name = os.getenv("SCRIPT_NAME")
     if not script_name:
-        print("Variabile d'ambiente SCRIPT_NAME non impostata", file=sys.stderr)
+        print("Environment variable SCRIPT_NAME not set", file=sys.stderr)
         sys.exit(1)
 
     script_path = os.path.join("/app/scripts", script_name)
     if not os.path.isfile(script_path):
-        print(f"Script non trovato: {script_path}", file=sys.stderr)
+        print(f"Script not found: {script_path}", file=sys.stderr)
         sys.exit(1)
 
-    # Se impostata, esegue periodicamente; se assente/vuota/0, esegue una sola volta
-    run_every_raw = os.getenv("RUN_EVERY")  # es: "30s", "5m", "2h", "60"
+    # If set, run periodically; if missing/empty/0, run only once
+    run_every_raw = os.getenv("RUN_EVERY")  # e.g., "30s", "5m", "2h", "60"
     try:
         interval = parse_duration(run_every_raw)
     except ValueError:
-        print(f"Valore RUN_EVERY non valido: {run_every_raw!r}. Esecuzione singola.", file=sys.stderr)
+        print(f"Invalid RUN_EVERY value: {run_every_raw!r}. Single run.", file=sys.stderr)
         interval = None
 
     if interval and interval > 0:
-        print(f"Modalità periodica attiva: esecuzione ogni {interval} secondi.")
-        # Esegue subito, poi ripete finché non arriva un segnale di stop
+        print(f"Periodic mode active: running every {interval} seconds.")
+        # Run immediately, then repeat until a stop signal arrives
         while not _SHOULD_STOP:
             code = run_script(script_path)
             if _SHOULD_STOP:
                 break
-            print(f"Attendo {interval} secondi prima della prossima esecuzione (ultimo exit code: {code})…")
-            # Attendi in piccoli passi per reagire rapidamente ai segnali
+            print(f"Waiting {interval} seconds before the next run (last exit code: {code})…")
+            # Wait in small steps to react quickly to signals
             slept = 0
             while slept < interval and not _SHOULD_STOP:
                 time.sleep(min(1, interval - slept))
                 slept += 1
-        print("Arresto richiesto, controller in uscita.")
+        print("Stop requested, controller exiting.")
     else:
-        print("Modalità singola: eseguo lo script una sola volta.")
+        print("Single mode: running the script once.")
         code = run_script(script_path)
-        # Mantieni il processo vivo (comportamento attuale) oppure esci:
-        stay_idle = os.getenv("STAY_IDLE", "1")  # default 1 = rimani in idle
+        # Keep the process alive (current behavior) or exit:
+        stay_idle = os.getenv("STAY_IDLE", "1")  # default 1 = stay idle
         if stay_idle not in ("0", "false", "False"):
-            print(f"Controller in idle (exit code script: {code})… Premi Ctrl+C per terminare.")
+            print(f"Controller idle (script exit code: {code})… Press Ctrl+C to terminate.")
             while not _SHOULD_STOP:
                 time.sleep(60)
-            print("Arresto richiesto, controller in uscita.")
+            print("Stop requested, controller exiting.")
         else:
             sys.exit(code)
 

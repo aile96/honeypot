@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
 """
-auto-starter: avvia una o più kill chain su Caldera in sequenza.
+auto-starter: start one or more kill chains on Caldera in sequence.
 
-ENV supportate:
-  CALDERA_URL   (str)   es: http://caldera:8888
-  CALDERA_KEY   (str)   API key (opzionale)
+Supported ENVs:
+  CALDERA_URL   (str)   e.g., http://caldera:8888
+  CALDERA_KEY   (str)   API key (optional)
 
-  GROUP         (str)   gruppo agent di default (default: cluster)
+  GROUP         (str)   default agent group (default: cluster)
 
-  ADV_LIST      (str)   CSV di adversary, con mapping opzionale gruppo:
+  ADV_LIST      (str)   Adversary CSV, with optional group mapping:
                        - "KC1,KC2,KC3"
-                       - "KC1@grpA, KC2:grpB, KC3"  (usa @ o :)
-  ADV_NAME      (str)   fallback singolo se ADV_LIST vuota (usa GROUP)
+                       - "KC1@grpA, KC2:grpB, KC3"  (use @ or :)
+  ADV_NAME      (str)   single fallback if ADV_LIST is empty (uses GROUP)
 
-  PLANNER       (str)   planner (default: batch) es: atomic
+  PLANNER       (str)   planner (default: batch) e.g., atomic
   AUTONOMOUS    (0/1)   default 1
   AUTO_CLOSE    (0/1)   default 1
-  OP_NAME_PREFIX(str)   prefisso per nomi operazioni (default: kc-auto-op)
+  OP_NAME_PREFIX(str)   prefix for operation names (default: kc-auto-op)
 
-  OP_TIMEOUT        (int sec) timeout per singola op (default: 3600)
-  POLL_INTERVAL     (float s)  polling dello stato (default: 3)
-  DELAY_BETWEEN     (float s)  attesa tra chain (default: 2)
+  OP_TIMEOUT        (int sec) timeout per single op (default: 3600)
+  POLL_INTERVAL     (float s)  status polling (default: 3)
+  DELAY_BETWEEN     (float s)  wait between chains (default: 2)
   STOP_ON_FAIL      (bool)     "true"/"false" default true
-  RECENT_WINDOW_MIN (int)      minuti per dedup (default: 5)
-  REQUIRE_AGENT     (bool)     attende agent nel gruppo (default true)
+  RECENT_WINDOW_MIN (int)      minutes for dedup (default: 5)
+  REQUIRE_AGENT     (bool)     waits for an agent in the group (default true)
 """
 
 import json, os, signal, sys, time, urllib.request
@@ -124,7 +124,7 @@ def create_operation(adv_id: str, group: str) -> str:
     }
     op_resp = rest(create_payload, method="PUT")
 
-    # estrai id (può essere int o UUID string) -> trattiamo sempre come stringa
+    # extract id (can be int or UUID string) -> always treat as string
     op_id: Optional[str] = None
     if isinstance(op_resp, dict):
         op_id = op_resp.get("id") or op_resp.get("op_id")
@@ -132,7 +132,7 @@ def create_operation(adv_id: str, group: str) -> str:
         op_id = op_resp[0].get("id") or op_resp[0].get("op_id")
 
     if op_id is None:
-        # fallback per nome
+        # fallback by name
         for o in list_operations():
             if o.get("name")==op_name and o.get("id") is not None:
                 op_id = str(o.get("id")); break
@@ -177,22 +177,22 @@ def wait_operation_done(op_id: str, timeout_s: int) -> Tuple[bool, str]:
         time.sleep(POLL_INTERVAL)
     return False, last or "timeout"
 
-# ---------- Nuovo parsing ADV_LIST con mapping gruppo ----------
+# ---------- New ADV_LIST parsing with group mapping ----------
 def parse_adv_list(raw: str, default_group: str) -> List[Tuple[str, str]]:
     """
-    Accetta elementi separati da virgola.
-    Ogni elemento può essere:
-      - "Nome"            -> usa default_group
-      - "Nome@Gruppo"     -> gruppo specifico
-      - "Nome:Gruppo"     -> gruppo specifico
-    Spazi sono ignorati attorno ai token.
+    Accepts comma-separated items.
+    Each item can be:
+      - "Name"            -> uses default_group
+      - "Name@Group"      -> specific group
+      - "Name:Group"      -> specific group
+    Spaces around tokens are ignored.
     """
     items: List[Tuple[str,str]] = []
     for token in [s.strip() for s in raw.split(",") if s.strip()]:
         name, group = token, default_group
-        # supporta sia '@' che ':'
+        # supports both '@' and ':'
         if "@" in token or ":" in token:
-            # scegli il separatore che compare per ultimo, così gestiamo nomi con ':'
+            # pick the separator that appears last, so we handle names containing ':'
             sep_pos = max(token.rfind("@"), token.rfind(":"))
             name = token[:sep_pos].strip()
             group = token[sep_pos+1:].strip() or default_group
@@ -207,7 +207,7 @@ def run_sequence(adversaries_with_groups: List[Tuple[str, str]]) -> int:
     for i, (adv_name, group) in enumerate(adversaries_with_groups, 1):
         log(f"\n=== [{i}/{len(adversaries_with_groups)}] adversary: {adv_name} (group={group}) ===")
 
-        # attende agent nel gruppo specifico (se richiesto)
+        # waits for an agent in the specific group (if required)
         wait_agent_in_group(group)
 
         adv_id = None
@@ -250,11 +250,11 @@ def main():
 
     adv_with_groups = parse_adv_list(ADV_LIST_RAW, GROUP_DEFAULT)
     if not adv_with_groups:
-        # fallback singolo
+        # single fallback
         adv_with_groups = [(FALLBACK_ADV, GROUP_DEFAULT)]
 
     exit_code = run_sequence(adv_with_groups)
-    # Se vuoi che il pod esca quando finisce, commenta la riga sotto e lascia sys.exit:
+    # If you want the pod to exit when it finishes, comment the line below and leave sys.exit:
     signal.pause()
     # sys.exit(exit_code)
 

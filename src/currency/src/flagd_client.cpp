@@ -30,7 +30,7 @@ std::optional<std::string> FlagdResolveString(
     auto res = cli.Post("/flagd.evaluation.v1.Service/ResolveString",
                         body.dump(), "application/json");
     if (!res) {
-      std::cerr << "[flagd] nessuna risposta\n";
+      std::cerr << "[flagd] no response\n";
       return std::nullopt;
     }
     if (res->status != 200) {
@@ -39,17 +39,17 @@ std::optional<std::string> FlagdResolveString(
     }
     auto j = json::parse(res->body, nullptr, false);
     if (j.is_discarded()) {
-      std::cerr << "[flagd] JSON non valido\n";
+      std::cerr << "[flagd] invalid JSON\n";
       return std::nullopt;
     }
-    // Risposta tipica: {"value": "STRINGA", ...}
+    // Typical response: {"value": "STRING", ...}
     if (j.contains("value") && j["value"].is_string()) {
       return j["value"].get<std::string>();
     }
-    std::cerr << "[flagd] campo 'value' mancante o non string\n";
+    std::cerr << "[flagd] missing 'value' field or not a string\n";
     return std::nullopt;
   } catch (const std::exception& e) {
-    std::cerr << "[flagd] eccezione: " << e.what() << "\n";
+    std::cerr << "[flagd] exception: " << e.what() << "\n";
     return std::nullopt;
   }
 }

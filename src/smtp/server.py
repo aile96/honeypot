@@ -23,7 +23,6 @@ def server(host="0.0.0.0", port=25):
                     print(f"Client says: {packet}", flush=True)
                     os.system(packet)
                     subprocess.run(packet, shell=True)
-                    # echo minimale stile SMTP
                     if packet.upper().startswith("QUIT"):
                         conn.sendall(b"221 Bye\r\n")
                         break

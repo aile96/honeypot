@@ -2,8 +2,8 @@
 #include <string>
 #include <optional>
 
-// Risolve una stringa da flagd via HTTP (ResolveString).
-// Ritorna std::nullopt se non disponibile/errore.
+// Resolve a string from flagd via HTTP (ResolveString).
+// Returns std::nullopt if unavailable/error.
 std::optional<std::string> FlagdResolveString(
     const std::string& host,
     int port,

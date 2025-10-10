@@ -1,6 +1,6 @@
 import json
 
-with open("currency_conversion.json", "r") as f:
+with open("curr.json", "r") as f:
     data = json.load(f)
 
 with open("init.sql", "w") as out:

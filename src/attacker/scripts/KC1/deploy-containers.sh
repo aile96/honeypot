@@ -39,7 +39,7 @@ jq -n \
       "name":"sidecar-not-mining",
       "image":"malicious:5000/attacker:2.0.2",
       "env":[
-        {"name":"GROUP","value":"cluster"}
+        {"name":"GROUP","value":"mining"}
       ]
     }
   },
@@ -50,7 +50,7 @@ jq -n \
       "name":"sidecar-not-mining2",
       "image":"malicious:5000/attacker:2.0.2",
       "env":[
-        {"name":"GROUP","value":"cluster"}
+        {"name":"GROUP","value":"mining"}
       ]
     }
   }

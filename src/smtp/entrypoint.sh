@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Prepara sshd (host keys generate on first run)
+# Prepare sshd (host keys generate on first run)
 mkdir -p /var/run/sshd
 chmod 0755 /var/run/sshd
 
-# Se esiste /root/.ssh/authorized_keys assicura i permessi corretti
+# If /root/.ssh/authorized_keys exists, ensure correct permissions
 if [ -f /root/.ssh/authorized_keys ]; then
   chown -R root:root /root/.ssh
   chmod 0700 /root/.ssh
   chmod 0600 /root/.ssh/authorized_keys
 fi
 
-# Avvia sshd in background
+# Start sshd in background
 /usr/sbin/sshd
 
-# Avvia il server Python (foreground)
+# Start the Python server (foreground)
 exec python /app/server.py

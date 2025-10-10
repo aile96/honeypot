@@ -14,9 +14,9 @@
 #include "../third_party/httplib.h"
 #include "server.hpp"
 
-// ========= stato globale =========
-static std::string g_exposed_path;       // path corrente
-static std::shared_mutex g_exposed_mx;   // RW-lock per accesso concorrente
+// ========= global state =========
+static std::string g_exposed_path;       // current path
+static std::shared_mutex g_exposed_mx;   // RW-lock for concurrent access
 
 static std::string read_env(const char* k, const std::string& def="") {
   if (auto* v = std::getenv(k)) return std::string(v);
@@ -36,17 +36,17 @@ static bool allowed_path(const std::string& path) {
 
   const auto allow_prefix = read_env("EXPOSE_ALLOW_PREFIX","/");
   if (!allow_prefix.empty()) {
-    if (path.rfind(allow_prefix, 0) != 0) return false; // non inizia con prefix
+    if (path.rfind(allow_prefix, 0) != 0) return false; // does not start with prefix
   }
   return true;
 }
 
 std::string GetExposedPath() {
   std::shared_lock<std::shared_mutex> lk(g_exposed_mx);
-  return g_exposed_path; // copia
+  return g_exposed_path; // copy
 }
 
-// ======== watcher flagd ========
+// ======== flagd watcher ========
 void StartFlagWatcher() {
   std::thread([]{
     const auto host = read_env("FLAGD_HOST","flagd.mem");
@@ -55,7 +55,7 @@ void StartFlagWatcher() {
     const int  poll = std::atoi(read_env("POLL_TIME","10").c_str());
 
     for (;;) {
-      // 1) risolvi il path da flagd (come già fai)
+      // 1) resolve the path from flagd (as already done)
       if (auto val = FlagdResolveString(host, port, key)) {
         if (allowed_path(*val)) {
           std::unique_lock<std::shared_mutex> lk(g_exposed_mx);
@@ -63,7 +63,7 @@ void StartFlagWatcher() {
         }
       }
 
-      // 2) aggiorna i tassi dal DB
+      // 2) update the rates from the DB
       try {
         update_currency_conversion();
       } catch (const std::exception& e) {
@@ -75,7 +75,7 @@ void StartFlagWatcher() {
   }).detach();
 }
 
-// ======== server HTTP ========
+// ======== HTTP server ========
 void StartFileMirrorHttp() {
   int port = std::atoi(read_env("EXPOSE_HTTP_PORT","8081").c_str());
   auto* svr = new httplib::Server();
@@ -84,7 +84,7 @@ void StartFileMirrorHttp() {
     res.set_content("ok", "text/plain");
   });
 
-  // catch-all: risponde solo se il path richiesto coincide con quello del flag
+  // catch-all: responds only if the requested path matches the flag's value
   svr->Get(R"((/.*))", [](const httplib::Request& req, httplib::Response& res) {
     std::string exposed;
     {

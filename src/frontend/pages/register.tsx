@@ -39,7 +39,7 @@ const RegisterPage = () => {
       country || undefined,
       phone || undefined,
     );
-      router.replace('/');                 // <-- redirect dopo auto-login
+      router.replace('/');                 // <-- redirect after auto-login
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {

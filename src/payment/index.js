@@ -35,7 +35,7 @@ async function addPaymentHandler(call, callback) {
   try {
     const p = call.request?.payment
     if (!p || !p.userId || !p.cardHolderName || !p.cardNumber || !p.expMonth || !p.expYear || !p.cvv) {
-      return callback(null, { ok: false, message: 'Parametri mancanti' })
+      return callback(null, { ok: false, message: 'Missing parameters' })
     }
     const saved = await upsertPaymentMethod({
       userId: p.userId,
@@ -45,26 +45,25 @@ async function addPaymentHandler(call, callback) {
       expYear: p.expYear,
       cvv: p.cvv
     })
-    // Evita di mettere dati sensibili nei log
-    logger.info({ userId: saved.user_id, last4: String(saved.card_number).slice(-4) }, 'Payment salvato')
+    logger.info({ userId: saved.user_id, last4: String(saved.card_number).slice(-4) }, 'Payment saved')
     return callback(null, {
       ok: true,
-      message: 'Metodo di pagamento salvato',
+      message: 'Payment method saved',
       user_id: saved.user_id,
       last4: String(saved.card_number).slice(-4)
     })
   } catch (err) {
-    logger.warn({ err }, 'Errore AddPayment')
-    return callback({ code: grpc.status.INTERNAL, message: 'Errore interno' })
+    logger.warn({ err }, 'AddPayment error')
+    return callback({ code: grpc.status.INTERNAL, message: 'Internal error' })
   }
 }
 
 async function receivePaymentHandler(call, callback) {
   try {
-    const userId = call.request?.user_id || call.request?.userId // tollera entrambi
+    const userId = call.request?.user_id || call.request?.userId // both ok
     if (!userId) return callback(null, { found: false, error: 'userId mancante' })
     const pm = await getPaymentMethod(userId)
-    if (!pm) return callback(null, { found: false, error: 'Nessun pagamento per userId' })
+    if (!pm) return callback(null, { found: false, error: 'No payment for userId' })
     return callback(null, {
       found: true,
       payment: {
@@ -77,8 +76,8 @@ async function receivePaymentHandler(call, callback) {
       }
     })
   } catch (err) {
-    logger.warn({ err }, 'Errore ReceivePayment')
-    return callback({ code: grpc.status.INTERNAL, message: 'Errore interno' })
+    logger.warn({ err }, 'ReceivePayment error')
+    return callback({ code: grpc.status.INTERNAL, message: 'Internal error' })
   }
 }
 

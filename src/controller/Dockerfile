@@ -2,7 +2,7 @@ FROM alpine:3.22
 
 RUN apk add --no-cache curl jq coreutils nano bash kubectl python3 tini
 
-# Evita bytecode e buffer per log immediati
+# Avoid bytecode and buffer for immediate log
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     SCRIPT_NAME="synthetic-log.sh" \
@@ -10,11 +10,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Copiamo il controller e gli script già presenti nel repo
 COPY controller.py /app/controller.py
 COPY scripts/ /app/scripts/
-
-# Garantiamo il bit di esecuzione agli script (se vuoi)
 RUN chmod -R a+rx /app/scripts
 
 ENTRYPOINT ["/sbin/tini","--"]

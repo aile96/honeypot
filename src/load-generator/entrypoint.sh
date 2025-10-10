@@ -2,8 +2,8 @@
 set -euo pipefail
 
 WAIT_FOR_URLS="${LOCUST_HOST}/api/products/6E92ZMYYFZ"
-WAIT_TIMEOUT="180"
-WAIT_INTERVAL="3"
+WAIT_TIMEOUT="18000"
+WAIT_INTERVAL="60"
 
 echo "Waiting for: ${WAIT_FOR_URLS} (timeout=${WAIT_TIMEOUT}s)"
 deadline=$(( $(date +%s) + WAIT_TIMEOUT ))
@@ -18,8 +18,5 @@ for raw in "${URLS[@]}"; do
   done
   echo "OK: $url"
 done
-
-: "${LOCUST_USERS:=10}"; : "${LOCUST_SPAWN_RATE:=1}"
-: "${LOCUST_HEADLESS:=true}"; : "${LOCUSTFILE:=locustfile.py}"
 
 exec locust --skip-log-setup

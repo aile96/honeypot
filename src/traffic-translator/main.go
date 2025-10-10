@@ -16,10 +16,10 @@ import (
 	"time"
 )
 
-// TranslateRequest è il payload JSON che il relay accetta.
+// TranslateRequest is the JSON payload accepted by the relay.
 type TranslateRequest struct {
-	Target        string            `json:"target"`                    // es: payment.pay.svc.cluster.local:8081
-	Method        string            `json:"method"`                    // es: oteldemo.PaymentService/ReceivePayment
+	Target        string            `json:"target"`                    // e.g., payment.pay.svc.cluster.local:8081
+	Method        string            `json:"method"`                    // e.g., oteldemo.PaymentService/ReceivePayment
 	Payload       interface{}       `json:"payload,omitempty"`         // JSON request message
 	Plaintext     *bool             `json:"plaintext,omitempty"`       // default: true (env DEFAULT_PLAINTEXT)
 	Headers       map[string]string `json:"headers,omitempty"`         // -rpc-header
@@ -33,11 +33,11 @@ type TranslateRequest struct {
 	Authority     string            `json:"authority,omitempty"`
 }
 
-// TranslateResponse è la risposta JSON del relay.
+// TranslateResponse is the JSON response from the relay.
 type TranslateResponse struct {
 	OK        bool            `json:"ok"`
 	ExitCode  int             `json:"exit_code"`
-	Stdout    json.RawMessage `json:"stdout,omitempty"`   // parsed JSON stdout (se possibile)
+	Stdout    json.RawMessage `json:"stdout,omitempty"`     // parsed JSON stdout (if possible)
 	StdoutTxt string          `json:"stdout_txt,omitempty"` // raw stdout if not JSON
 	Stderr    string          `json:"stderr,omitempty"`
 	ElapsedMs int64           `json:"elapsed_ms"`
@@ -94,7 +94,7 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// serializza payload in JSON per -d
+	// serialize payload to JSON for -d
 	var payloadBuf bytes.Buffer
 	if req.Payload != nil {
 		if err := json.NewEncoder(&payloadBuf).Encode(req.Payload); err != nil {
@@ -105,7 +105,7 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 		payloadBuf.WriteString("{}")
 	}
 
-	// Se sono stati forniti proto files o protoset -> crea tempdir e scrivi lì
+	// If proto files or protoset are provided -> create tempdir and write them there
 	var tempDir string
 	var cleanupTemp bool
 	if len(req.ProtoFilesMap) > 0 || req.ProtosetB64 != "" {
@@ -123,9 +123,9 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
-	// Scrivi i .proto se forniti
+	// Write .proto files if provided
 	for fname, content := range req.ProtoFilesMap {
-		// semplice sanificazione base: non permetti path che escano dalla dir (rimuovi eventuali ../)
+		// simple basic sanitization: do not allow paths escaping the dir (strip any ../)
 		clean := filepath.Clean(fname)
 		if clean == "." || clean == ".." || clean == "/" || clean == "\\" || filepath.IsAbs(clean) {
 			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid proto filename: %s", fname))
@@ -142,7 +142,7 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Scrivi protoset se presente
+	// Write protoset if present
 	var protosetPath string
 	if req.ProtosetB64 != "" {
 		data, err := base64.StdEncoding.DecodeString(req.ProtosetB64)
@@ -157,7 +157,7 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Costruisci args per grpcurl
+	// Build args for grpcurl
 	args := []string{
 		"-format", "json",
 		"-connect-timeout", "5",
@@ -184,18 +184,18 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "-rpc-header", k+": "+v)
 	}
 
-	// Gestione proto/protoset/reflection
+	// Handle proto/protoset/reflection
 	if protosetPath != "" {
 		args = append(args, "-protoset", protosetPath)
 	} else if len(req.ProtoFilesMap) > 0 {
-		// aggiungi import-path tempDir e -proto per ogni file
+		// add import-path tempDir and -proto for each file
 		args = append(args, "-import-path", tempDir)
 		for fname := range req.ProtoFilesMap {
 			p := filepath.Join(tempDir, filepath.Clean(fname))
 			args = append(args, "-proto", p)
 		}
 	} else {
-		// nessun proto fornito: reflection per default. Se user chiede disabilitazione, gestiscila
+		// no proto provided: reflection by default. If the user asks to disable it, handle it
 		useRef := true
 		if req.UseReflection != nil {
 			useRef = *req.UseReflection
@@ -208,11 +208,11 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 	// payload, target, method
 	args = append(args, "-d", payloadBuf.String(), req.Target, req.Method)
 
-	// Contesto con timeout
+	// Context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout+5)*time.Second)
 	defer cancel()
 
-	// Esegui grpcurl
+	// Execute grpcurl
 	cmd := exec.CommandContext(ctx, "grpcurl", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -229,10 +229,10 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 		ElapsedMs: elapsed,
 	}
 
-	// Prova a interpretare stdout come JSON
+	// Try to interpret stdout as JSON
 	out := bytes.TrimSpace(stdout.Bytes())
 	if len(out) > 0 && (out[0] == '{' || out[0] == '[' || out[0] == '"') {
-		// valid JSON? Se sì, metti come RawMessage
+		// valid JSON? If so, store as RawMessage
 		resp.Stdout = json.RawMessage(out)
 	} else if len(out) > 0 {
 		resp.StdoutTxt = string(out)
@@ -250,7 +250,7 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// writeErr manda una risposta JSON di errore
+// writeErr sends a JSON error response
 func writeErr(w http.ResponseWriter, code int, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -260,7 +260,7 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 	})
 }
 
-// exitCodeFromErr estrae l'exit code dall'errore di exec, se possibile
+// exitCodeFromErr extracts the exec exit code from the error, if possible
 func exitCodeFromErr(err error) int {
 	if err == nil {
 		return 0
@@ -273,11 +273,11 @@ func exitCodeFromErr(err error) int {
 		// Fall back to 1
 		return 1
 	}
-	// se il comando non è stato trovato o altro
+	// if the command was not found or other issues
 	return 1
 }
 
-// getenvDefault ritorna valore di env o default
+// getenvDefault returns the env value or the default
 func getenvDefault(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

@@ -12,7 +12,7 @@ RUN apk update && apk add --no-cache \
 
 ARG OPENTELEMETRY_CPP_VERSION
 
-# build opentelemetry-cpp con OTLP gRPC
+# build opentelemetry-cpp with OTLP gRPC
 RUN git clone --depth 1 --branch v${OPENTELEMETRY_CPP_VERSION} https://github.com/open-telemetry/opentelemetry-cpp \
     && cd opentelemetry-cpp/ \
     && mkdir build && cd build \
@@ -21,12 +21,12 @@ RUN git clone --depth 1 --branch v${OPENTELEMETRY_CPP_VERSION} https://github.co
           -DWITH_EXAMPLES=OFF -DWITH_OTLP_GRPC=ON -DWITH_ABSEIL=ON \
     && make -j$(nproc || sysctl -n hw.ncpu || echo 1) install && cd ../..
 
-# copia sorgenti currency e proto
+# copy currency sources and proto
 COPY ./src/currency /currency
 COPY ./pb/demo.proto /currency/proto/demo.proto
 
-# vendorizza header-only necessari per HTTP server e JSON
-# (li mettiamo in /currency/src/third_party per essere inclusi da CMake)
+# vendor header-only needed for HTTP server and JSON
+# (we put them in /currency/src/third_party to be included by CMake)
 RUN mkdir -p /currency/src/third_party \
  && wget -O /currency/src/third_party/httplib.h \
       https://raw.githubusercontent.com/yhirose/cpp-httplib/v0.14.1/httplib.h \
@@ -42,21 +42,21 @@ RUN cd /currency \
 
 FROM alpine:3.18 AS release
 
-# runtime minimale
+# minimal runtime
 RUN apk update && apk add --no-cache \
     libstdc++ grpc-dev grpc protobuf \
     c-ares re2 abseil-cpp postgresql-libs \
     openssl zlib libpq ca-certificates
 
-# binari/librerie installati dallo stage builder
+# binaries/libraries installed from the builder stage
 COPY --from=builder /usr/local /usr/local
 
 ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/lib"
 
-# copia due file in /tmp
+# copy two files into /tmp
 COPY ./src/currency/data/log.txt ./src/currency/data/debug.txt /tmp/
 
-# === env di default per flagd e http mirror (sovrascrivibili da Helm) ===
+# === default env for flagd and http mirror (overridable by Helm) ===
 ENV FLAGD_HOST=flagd.mem \
     FLAGD_PORT=8013 \
     EXPOSED_FLAG_KEY=exposedPath \
@@ -65,9 +65,9 @@ ENV FLAGD_HOST=flagd.mem \
     POLL_TIME=10 \
     EXPOSE_ALLOW_PREFIX=/
 
-# espone sia la porta gRPC di currency (CURRENCY_PORT) sia l'HTTP mirror (8081)
+# expose both the currency gRPC port (CURRENCY_PORT) and the HTTP mirror (8081)
 EXPOSE ${CURRENCY_PORT}
 EXPOSE ${EXPOSE_HTTP_PORT}
 
-# avvio: il binario legge CURRENCY_PORT e avvia anche l'HTTP mirror
+# startup: the binary reads CURRENCY_PORT and also starts the HTTP mirror
 ENTRYPOINT ["sh", "-c", "./usr/local/bin/currency ${CURRENCY_PORT}"]

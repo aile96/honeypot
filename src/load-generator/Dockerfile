@@ -34,4 +34,3 @@ COPY people.json .
 
 COPY entrypoint.sh .
 ENTRYPOINT ["./entrypoint.sh"]
-#ENTRYPOINT ["locust", "--skip-log-setup"]

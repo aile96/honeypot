@@ -1,20 +1,20 @@
-# Sidecar di mirroring HTTP basato su NGINX
+# HTTP mirroring sidecar based on NGINX
 FROM nginx:1.25-alpine
 
-# envsubst per templating
+# envsubst for templating
 RUN apk add --no-cache bash gettext
 
-# Copia template e entrypoint
+# Copy template and entrypoint
 COPY nginx.conf.tmpl /etc/nginx/templates/nginx.conf.tmpl
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-# Esponi la porta del sidecar (ingresso richieste dall'app)
+# Expose the sidecar port (entry point for app requests)
 EXPOSE 8080
 
-# Variabili con default sensati (puoi override in Pod env:)
-# PRIMARY_IP:PORT  es. 10.10.10.5:8080
-# MIRROR_HOST:PORT es. mirror.svc.cluster.local:8081
+# Variables with sensible defaults (can be overridden in Pod env:)
+# PRIMARY_IP:PORT  e.g. 10.10.10.5:8080
+# MIRROR_HOST:PORT e.g. mirror.svc.cluster.local:8081
 ENV PRIMARY_ADDR="127.0.0.1:8080" \
     MIRROR_ADDR="prova:8080" \
     CONNECT_TIMEOUT=2s \

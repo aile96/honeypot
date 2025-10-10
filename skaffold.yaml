@@ -110,17 +110,23 @@ build:
         buildArgs:
           PAYMENT_PORT: "{{.PAYMENT_PORT}}"
     - image: registry:5000/postgres
-      context: src/postgres-currency
+      context: src/postgres
       docker:
-        dockerfile: src/postgres-currency/Dockerfile
+        dockerfile: src/postgres/Dockerfile
+        buildArgs:
+          DB: "curr"
     - image: registry:5000/postgres-auth
-      context: src/postgres-auth
+      context: src/postgres
       docker:
-        dockerfile: src/postgres-auth/Dockerfile
+        dockerfile: src/postgres/Dockerfile
+        buildArgs:
+          DB: "auth"
     - image: registry:5000/postgres-payment
-      context: src/postgres-payment
+      context: src/postgres
       docker:
-        dockerfile: src/postgres-payment/Dockerfile
+        dockerfile: src/postgres/Dockerfile
+        buildArgs:
+          DB: "pay"
     - image: registry:5000/product-catalog
       context: .
       docker:

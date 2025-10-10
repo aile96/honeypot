@@ -2,13 +2,13 @@ FROM python:3.12-slim
 
 ARG CRICTL_VERSION="v1.30.0"
 
-# Install sshd + tini per un PID1 pulito
+# Install sshd + tini for a clean PID1
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
  openssh-server tini curl containerd unzip jq \
  && rm -rf /var/lib/apt/lists/*
 
-# SSH basic hardening (pubkey only; puoi cambiare a piacere)
+# Basic SSH hardening (pubkey only; you can adjust as needed)
 RUN sed -ri 's/^#?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config \
  && sed -ri 's/^#?PermitRootLogin .*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config \
  && mkdir -p /root/.ssh
@@ -22,9 +22,9 @@ COPY server.py /app/server.py
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Espone SSH e il server TCP (SMTP-like) su 25
+# Expose SSH and the TCP server (SMTP-like) on port 25
 EXPOSE 22 25
 
-# Usa tini come entrypoint e il nostro script come CMD
+# Use tini as entrypoint and our script as CMD
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/entrypoint.sh"]

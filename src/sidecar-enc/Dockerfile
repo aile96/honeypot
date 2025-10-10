@@ -2,11 +2,11 @@
 FROM golang:1.24 AS build
 WORKDIR /src
 
-# 1) copy mod e scarica le dipendenze base
+# 1) copy mod and download base dependencies
 COPY go.mod ./
 RUN go mod download
 
-# 2) copia il resto del codice, genera go.sum e compila
+# 2) copy the rest of the code, generate go.sum and compile
 COPY . .
 RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/crypto-proxy .

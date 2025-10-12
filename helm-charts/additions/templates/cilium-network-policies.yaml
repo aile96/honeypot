@@ -44,12 +44,12 @@ spec:
             "k8s:io.kubernetes.pod.namespace": {{ $ns | quote }}
         {{- end }}
       {{- end }}
-      {{- if $root.Values.networkPolicies.allowKubeAPIServer }}
-      fromServices:
-        - k8sService:
-            namespace: default
-            serviceName: kubernetes
-      {{- end }}
+      #{{- if $root.Values.networkPolicies.allowKubeAPIServer }}
+      #fromServices:
+      #  - k8sService:
+      #      namespace: default
+      #      serviceName: kubernetes
+      #{{- end }}
       {{/* --- Internet per-namespace (ingress) --- */}}
       {{- if $allowWorldIngress }}
         {{- $mode := (default "world" $root.Values.networkPolicies.internet.mode) -}}

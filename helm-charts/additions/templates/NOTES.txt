@@ -4,8 +4,8 @@
 - Namespaces
 - Postgres DBs
 - Network policies
-- Image updater
-- Caldera
 - ConfigMaps
 - Secrets
 - RBAC objects
+- Volumes
+- LoadBalancerIP

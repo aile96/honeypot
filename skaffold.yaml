@@ -201,7 +201,6 @@ deploy:
         setValueTemplates:
         #Abilitations
           networkPolicies.enabled: "true"
-          caldera.enabled: "true"
           postgres.enabled: "true"
           config.enabled: "true"
           RBAC.enabled: "true"
@@ -253,14 +252,3 @@ deploy:
           components.smtp.service.loadBalancerIP: "{{.SMTP_IP}}"
         valuesFiles:
           - helm-charts/astronomy-shop/values.yaml
-portForward:
-  - resourceType: service
-    resourceName: frontend-proxy
-    namespace: "{{.DMZ_NAMESPACE}}"
-    port: 8080
-    localPort: 8080
-  - resourceType: service
-    resourceName: caldera-proxy
-    namespace: "{{.DMZ_NAMESPACE}}"
-    port: 8888
-    localPort: 8888

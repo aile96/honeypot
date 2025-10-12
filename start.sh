@@ -17,9 +17,8 @@ while IFS= read -r line; do
   export "$line"
 done < "$ENV_FILE"
 
-source "${PROJECT_ROOT}/pb/scripts/00_install_deps.sh"
-source "${PROJECT_ROOT}/pb/scripts/01_kind_cluster.sh"
-source "${PROJECT_ROOT}/pb/scripts/02_docker_network.sh"
+source "${PROJECT_ROOT}/pb/scripts/01_install_deps.sh"
+source "${PROJECT_ROOT}/pb/scripts/02_kind_cluster.sh"
 source "${PROJECT_ROOT}/pb/scripts/03_run_k8s.sh"
 
 echo "Pipeline completed"

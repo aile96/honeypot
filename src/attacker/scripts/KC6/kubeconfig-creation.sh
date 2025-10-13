@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ================== Parameters ==================
-APISERVER_HOST="${APISERVER_HOST:-kind-cluster-control-plane}"
+APISERVER_HOST="$CLUSTER_NAME-control-plane"
 APISERVER_IP="$(command -v dig >/dev/null 2>&1 && dig +short "$APISERVER_HOST" A | head -n1 || true)"
 APISERVER="${APISERVER:-https://${APISERVER_IP:-$APISERVER_HOST}:6443}"
 
@@ -10,7 +10,7 @@ NAMESPACE="${NAMESPACE:-kube-system}"
 SA_NAME="${SA_NAME:-ops-admin}"
 CRB_NAME="${CRB_NAME:-ops-admin-crb}"
 
-CLUSTER_NAME="${CLUSTER_NAME:-local-cluster}"
+CLUSTER_NAME="${CLUSTER_NAME:-kind-cluster}"
 USER_NAME="${USER_NAME:-ops-admin}"
 CONTEXT_NAME="${CONTEXT_NAME:-ops-admin@local}"
 KUBECONFIG_OUT="${KUBECONFIG_OUT:-$DATA_PATH/KC6/ops-admin.kubeconfig}"

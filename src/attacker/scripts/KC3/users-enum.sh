@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Endpoint e risorse
-ENDPOINT="$API_SERVER/api/v1/namespaces/$NSCREDS/services/traffic-controller:8080/proxy/translate"
+ENDPOINT="https://$CLUSTER_NAME-control-plane:6443/api/v1/namespaces/$NSCREDS/services/traffic-controller:8080/proxy/translate"
 TARGET='payment.pay.svc.cluster.local:8080'
 METHOD='oteldemo.PaymentService/ReceivePayment'
 PROTO_FILE="$DATA_PATH/KC3/demo.proto"

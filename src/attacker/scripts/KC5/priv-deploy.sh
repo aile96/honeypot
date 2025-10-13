@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NAMESPACE="${NAMESPACE:-mem}"
-KUBE_APISERVER="https://$(dig +short kind-cluster-control-plane A):6443"
+NAMESPACE="$LOG_NS"
+KUBE_APISERVER="https://$(dig +short $CLUSTER_NAME-control-plane A):6443"
 TOKEN="$(cat $DATA_PATH/KC5/found_token)"
 FILE_IP="$DATA_PATH/KC5/iphost"
 

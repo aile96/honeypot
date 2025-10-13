@@ -4,7 +4,7 @@ set -euo pipefail
 # ========== CONFIG ==========
 # Bastion
 BASTION_USER="root"
-BASTION_HOST="kind-cluster-control-plane"
+BASTION_HOST="$CLUSTER_NAME-control-plane"
 BASTION_PORT="122"
 # Internal targets
 TARGET_USER="root"

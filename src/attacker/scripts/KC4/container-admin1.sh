@@ -77,7 +77,4 @@ for CID in "${CIDS[@]}"; do
   [[ -s "$OUTFILE.err" ]] || rm -f "$OUTFILE.err"
 done
 
-
-
-
 echo "Done. Output in: $OUTDIR"

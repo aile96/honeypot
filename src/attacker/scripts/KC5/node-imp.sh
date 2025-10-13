@@ -46,7 +46,7 @@ if [ -n "$f" ]; then
   cat "$f"
 fi
 REMOTE
-    kubectl --server="https://kind-cluster-control-plane:6443" \
+    kubectl --server="https://$CLUSTER_NAME-control-plane:6443" \
       --insecure-skip-tls-verify=true \
       --client-certificate="$CERT_PATH" \
       --client-key="$CERT_PATH" auth can-i --list

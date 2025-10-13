@@ -6,47 +6,58 @@ ARG GROUP="underlay"
 ARG LOG_NS="mem"
 ARG ATTACKED_NS="dmz"
 ARG AUTH_NS="app"
-ARG MIRRORADDR="prova.dmz.svc.cluster.local:8080"
+ARG ATTACKERADDR="prova.dmz.svc.cluster.local"
+ARG DATA_PATH="/tmp/KCData"
+ARG WAIT="1"
 
-ENV DATA_PATH="/tmp/KCData" \
+# Building
+ENV WAIT="$WAIT" \
+    CALDERA_URL="$CALDERA_URL" \
+    GROUP="$GROUP" \
+    DATA_PATH="$DATA_PATH" \
     DOCKER_DAEMON="$DOCKER_DAEMON"
 
-ENV GROUP="$GROUP" \
-    WAIT="1" \
-    CALDERA_URL="$CALDERA_URL" \
-    LOG_NS="$LOG_NS" \
+ENV LOG_NS="$LOG_NS" \
     ATTACKED_NS="$ATTACKED_NS" \
     AUTH_NS="$AUTH_NS" \
-    MIRRORADDR="$MIRRORADDR"
+    ATTACKERADDR="$ATTACKERADDR"
 
 ENV HOSTREGISTRY="registry:5000" \
     ARP_VICTIM="load-generator" \
-    LOAD_BALANCER_IP="172.18.0.200"
+    LOAD_BALANCER_IP="172.18.0.200" \
+    REGISTRY_USER="testuser" \
+    REGISTRY_PASS="testpassword"
 
-ENV API_SERVER="https://kind-cluster-control-plane:6443" \
+ENV CLUSTER_NAME="kind-cluster" \
     NSPROTO="$AUTH_NS" \
-    NSCREDS="$LOG_NS" \
-    GRPCURL_VERSION="$GRPCURL_VERSION" \
-    SMTP_IP="$SMTP_IP"
+    NSCREDS="$LOG_NS"
 
+# Install utilities and dnsmasq + python deps
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         nmap curl jq dnsutils ca-certificates openssl \
         iproute2 wget docker.io dsniff tcpdump etcd-client \
-        procps unzip openssh-client sshpass netcat-openbsd && \
+        procps unzip openssh-client sshpass netcat-openbsd \
+        dnsmasq python3 python3-pip && \
     rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p "$DATA_PATH"
+# Create data dir and logdir
+RUN mkdir -p "$DATA_PATH" /opt/caldera /utils /var/log/myservices
 
 COPY ./scripts /opt/caldera
 COPY ./utils /utils
 
-RUN chmod -R +x /opt/caldera
+# Copy entrypoint and python server
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY dns_respond_generator.sh /usr/local/bin/dns_respond_generator.sh
+COPY server_8080.py /usr/local/bin/server_8080.py
+
+RUN chmod -R +x /opt/caldera /usr/local/bin/docker-entrypoint.sh /usr/local/bin/dns_respond_generator.sh /usr/local/bin/server_8080.py
 
 RUN update-ca-certificates
 
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/opt/caldera/start.sh"]
+
+# Expose ports for DNS and for the HTTP server
+EXPOSE 53/udp 53/tcp 8080

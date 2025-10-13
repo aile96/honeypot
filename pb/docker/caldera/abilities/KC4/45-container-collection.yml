@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "ssh root@$SMTP_IP '/usr/bin/env bash -s' < /opt/caldera/KC4/container-collection.sh > $DATA_PATH/KC4/cri-analysis.log 2>&1 && echo 'Analysis completed'", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "ssh root@$CLUSTER_NAME-worker '/usr/bin/env bash -s' < /opt/caldera/KC4/container-collection.sh > $DATA_PATH/KC4/cri-analysis.log 2>&1 && echo 'Analysis completed'", timeout: 900, parsers: [], cleanup: "" } }

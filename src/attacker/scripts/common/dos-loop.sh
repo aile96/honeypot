@@ -8,16 +8,16 @@ INTERVAL="3"
 $1 kill -STOP "$($1 pidof kubelet)"
 
 while :; do
-  # Elenco dei pod (sandbox) sul nodo
+  # Pod list (sandbox) on node
   mapfile -t PODS < <($CRICTL pods -q)
 
   if [ "${#PODS[@]}" -eq 0 ]; then
-    echo "Nessun pod trovato."
+    echo "No pod found."
     exit 0
   fi
 
   for POD in "${PODS[@]}"; do
-    # Trova i container appartenenti al pod
+    # Finding containers belonging to pod
     mapfile -t CIDS < <($CRICTL ps -q --pod "$POD")
     FILTERED=()
     for CID in "${CIDS[@]}"; do
@@ -27,21 +27,21 @@ while :; do
       FILTERED+=("$CID")
     done
 
-    # Se non ci sono container utili nel pod, passa oltre
+    # If there are not containers in the pod, skip
     if [ "${#FILTERED[@]}" -eq 0 ]; then
       continue
     fi
 
-    echo "Pod ${POD}: metto in stop ${#FILTERED[@]} container..."
+    echo "Pod ${POD}: stopping ${#FILTERED[@]} container..."
     for CID in "${FILTERED[@]}"; do
       if ! $CRICTL stop "$CID"; then
-        echo "WARN: stop fallito per container $CID (continuo)."
+        echo "WARN: stop failed for container $CID (continuing)."
       fi
     done
 
-    echo "Pod ${POD}: fatto."
+    echo "Pod ${POD}: done"
   done
 
-  echo "Tutti i pod sono stati gestiti."
+  echo "Every pod stopped"
   sleep "$INTERVAL"
 done

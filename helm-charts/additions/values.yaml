@@ -130,3 +130,7 @@ RBAC:
 namespaces:
   enabled: false
   list: "app, tst, dmz, dat, pay, mem"
+
+pool:
+  enabled: false
+  ips: "172.18.0.200-172.18.0.250"

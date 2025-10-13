@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API_SERVER="${API_SERVER:-https://kind-cluster-control-plane:6443}"
+API_SERVER="https://$CLUSTER_NAME-control-plane:6443"
 MODE="${MODE:-ready}"                    # ready | notready
 BASE="$DATA_PATH/KC5"
 LOG_DIR="$BASE/logs"

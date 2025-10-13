@@ -18,5 +18,4 @@ else
 fi
 
 log "Running skaffold deployment..."
-#skaffold run --tag "$IMAGE_VERSION" --port-forward=user "$@"
 skaffold run --tag "$IMAGE_VERSION" "$@"

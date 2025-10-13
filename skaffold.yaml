@@ -30,7 +30,7 @@ build:
           LOG_NS: "{{.MEM_NAMESPACE}}"
           ATTACKED_NS: "{{.DMZ_NAMESPACE}}"
           AUTH_NS: "{{.APP_NAMESPACE}}"
-          MIRRORADDR: "{{.ATTACKER}}:8080"
+          ATTACKERADDR: "{{.ATTACKER}}"
           CALDERA_URL: "http://{{.CALDERA_SERVER}}:8888"
     - image: registry:5000/auth
       context: src/auth
@@ -205,6 +205,9 @@ deploy:
           config.enabled: "true"
           RBAC.enabled: "true"
           namespaces.enabled: "true"
+          pool.enabled: "true"
+        #Values
+          pool.ips: "{{.LOAD_BALANCER_IP}}-{{.LOAD_BALANCER_IP}}"
         valuesFiles:
           - helm-charts/additions/values.yaml
       - name: honeypot-telemetry

@@ -5,7 +5,7 @@ SPOOFED="${1:-${LOAD_BALANCER_IP:-172.18.0.200}}"
 INPUT_FILE="${2:-$DATA_PATH/KC2/iphost}"
 TCPDUMP_OUT="${3:-$DATA_PATH/KC2/node_traffic}"
 TCPDUMP_LOG="${4:-$DATA_PATH/KC2/tcpdump_stdout_err.log}"
-NAME="${5:-${ARP_VICTIM:-load-generator}}"
+NAME="${5:-${ARP_VICTIM:-proxy}}"
 PIDFILE="${6:-$DATA_PATH/KC2/arp_pids}"
 
 if [[ -z "${INPUT_FILE}" || ! -f "${INPUT_FILE}" ]]; then
@@ -35,7 +35,7 @@ IFACE="${IFACE:-eth0}"
 
 echo "[*] Spoofed       : ${SPOOFED}"
 echo "[*] Victims       : ${VICTIMS[*]}"
-echo "[*] Interfaccia   : ${IFACE}"
+echo "[*] Interface     : ${IFACE}"
 
 # Enabling IP forwarding to not interrupting the traffic
 echo "[*] Enabling IPv4 forwarding"

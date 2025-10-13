@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: 'ssh root@$SMTP_IP "/usr/bin/env bash -s -- $API_SERVER" < /opt/caldera/KC4/np-modification.sh', timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: 'ssh root@$CLUSTER_NAME-worker "/usr/bin/env bash -s -- https://$CLUSTER_NAME-control-plane:6443" < /opt/caldera/KC4/np-modification.sh', timeout: 900, parsers: [], cleanup: "" } }

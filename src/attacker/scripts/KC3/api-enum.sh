@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ===== Config =====
-API_SERVER="${API_SERVER:-https://kind-cluster-control-plane:6443}"
+API_SERVER="https://$CLUSTER_NAME-control-plane:6443"
 NSPROTO="${NSPROTO:-app}"
 NSCREDS="${NSCREDS:-mem}"
 

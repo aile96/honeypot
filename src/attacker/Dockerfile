@@ -24,11 +24,13 @@ ENV LOG_NS="$LOG_NS" \
 
 ENV HOSTREGISTRY="registry:5000" \
     ARP_VICTIM="load-generator" \
-    LOAD_BALANCER_IP="172.18.0.200" \
+    FRONTEND_PROXY_IP="172.18.0.200" \
     REGISTRY_USER="testuser" \
     REGISTRY_PASS="testpassword"
 
-ENV CLUSTER_NAME="kind-cluster" \
+ENV CONTROL_PLANE_NODE="kind-control-plane" \
+    CONTROL_PLANE_PORT="6443" \
+    ATTACKER_NODE="kind-worker" \
     NSPROTO="$AUTH_NS" \
     NSCREDS="$LOG_NS"
 

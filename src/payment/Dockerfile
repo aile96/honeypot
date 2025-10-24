@@ -13,6 +13,7 @@ RUN apk add --no-cache python3 make g++ && npm ci --omit=dev
 # -----------------------------------------------------------------------------
 
 FROM node:22-alpine
+ARG PAYMENT_PORT=8080
 
 USER node
 WORKDIR /usr/src/app/

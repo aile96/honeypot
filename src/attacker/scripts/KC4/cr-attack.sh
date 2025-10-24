@@ -10,4 +10,4 @@ YAML
 
 crictl exec -i \
   $(crictl ps | awk '$7 == "traffic-controller" {print $1}') \
-  cat /host/proc/$(crictl inspect -o go-template --template '{{.info.pid}}' "$(crictl ps -q --name cilium-operator)")/root/var/run/secrets/kubernetes.io/serviceaccount/token > /tmp/token
+  cat /host/proc/$(crictl inspect -o go-template --template '{{.info.pid}}' "$(crictl ps -q --name traffic-controller)")/root/var/run/secrets/kubernetes.io/serviceaccount/token > /tmp/token

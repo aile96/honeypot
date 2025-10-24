@@ -61,9 +61,15 @@ caldera:
   host: "caldera.dock"
   port: 8888
 
+volumes:
+  enabled: false
+
 postgres: 
   enabled: false
   namespace: "dat"
+  common:
+    imagePullSecrets:
+      - name: regcred
   postgres:
     image: registry:5000/postgres:2.0.2
     db: currency
@@ -130,6 +136,15 @@ RBAC:
 namespaces:
   enabled: false
   list: "app, tst, dmz, dat, pay, mem"
+
+registryAuth:
+  enabled: true
+  server: "registry:5000"
+  username: "testuser"
+  password: "testpassword"
+  email: "noreply@example.com"
+  secretName: "regcred"
+  serviceAccountName: "puller"
 
 pool:
   enabled: false

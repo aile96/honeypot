@@ -20,6 +20,8 @@ default:
   #  - name: OTEL_K8S_NODE_NAME
   #    value: "someConstantValue"
   image:
+    pullSecrets:
+      - name: regcred
     repository: registry:5000
     # Overrides the image tag whose default is the chart appVersion.
     # The service's name will be applied to the end of this value.
@@ -1228,7 +1230,7 @@ components:
       env: false
     replicas: 1
     imageOverride:
-      repository: malicious:5000/attacker
+      repository: registry:5000/attacker
     env:
       - name: CALDERA_URL
         value: "http://caldera.dock:8888"
@@ -1241,7 +1243,7 @@ components:
     serviceAccountName: "traffic-sa"
     automountServiceAccountToken: "true"
     useDefault:
-      env: true
+      env: false
     replicas: 1
     resources:
       limits:

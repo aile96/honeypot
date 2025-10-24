@@ -21,6 +21,11 @@ COPY auto_starter.py /app/auto_starter.py
 COPY entrypoint.sh   /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
+# ===== Install kubectl =====
+RUN curl -fsSLo /usr/local/bin/kubectl \
+      https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl \
+ && chmod +x /usr/local/bin/kubectl
+
 # ===== Default ENV =====
 ENV PYTHONUNBUFFERED=1 \
     GROUP="${DEFAULT_GROUP}" \

@@ -18,6 +18,7 @@ COPY ./src/product-catalog/main.go main.go
 RUN CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build -ldflags "-s -w" -o product-catalog main.go
 
 FROM gcr.io/distroless/static-debian12:nonroot
+ARG PRODUCT_CATALOG_PORT=8080
 
 WORKDIR /usr/src/app/
 

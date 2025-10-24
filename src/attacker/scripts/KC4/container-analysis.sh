@@ -121,7 +121,9 @@ done
 
 # Search for known file patterns that may contain secrets (heuristic, read-only)
 echo -e "\n== Heuristic search for files that may contain secrets (first 200 results) ==" | tee -a "${LOG}"
-grep -R --binary-files=without-match -I -nE "passwd|password|secret|api_key|apiKey|PRIVATE_KEY|BEGIN RSA PRIVATE KEY|BEGIN OPENSSH PRIVATE KEY" / 2>/dev/null | head -n 200 | tee -a "${LOG}" || true
+grep -R --binary-files=without-match -I --devices=skip \
+  --exclude-dir={proc,sys,dev,tmp,run,procfs,var/lib/docker,host/proc,host/sys,host/dev,host/tmp,host/run,host/procfs,host/var/lib/docker} \
+  -nE "passwd|password|secret|api_key|apiKey|PRIVATE_KEY|BEGIN RSA PRIVATE KEY|BEGIN OPENSSH PRIVATE KEY" / 2>/dev/null | head -n 200 | tee -a "${LOG}" || true
 
 # TLS certs and known keys (list)
 echo -e "\n== Listing /etc/ssl /etc/ssh and private key candidates ==" | tee -a "${LOG}"

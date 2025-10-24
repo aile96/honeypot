@@ -58,4 +58,4 @@ remove_registry() {
 
 echo "Deleting cluster k8s" && skaffold delete && echo "Deletion completed" || echo "Deletion ended with errors"
 echo "Deleting dockers (no kind)" && docker compose -f pb/docker/docker-compose.yml down && echo "Deletion completed" || echo "Deletion ended with errors"
-echo "Deleting kind" && kind delete cluster --name $CLUSTER_NAME && docker network rm kind && echo "Deletion completed" || echo "Deletion ended with errors"
+echo "Deleting kind" && kind delete cluster && docker network rm kind && echo "Deletion completed" || echo "Deletion ended with errors"

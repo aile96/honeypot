@@ -12,7 +12,10 @@ if [ -f /root/.ssh/authorized_keys ]; then
   chmod 0600 /root/.ssh/authorized_keys
 fi
 
-# Start sshd in background
+# Start sshd in background in 4222 port
+if ! grep -qP '^\s*Port\s+4222\b' /etc/ssh/sshd_config 2>/dev/null; then
+  echo "Port 4222" >> /etc/ssh/sshd_config
+fi
 /usr/sbin/sshd
 
 # Start the Python server (foreground)

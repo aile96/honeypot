@@ -1,0 +1,204 @@
+{{- if .Values.networkPolicies.enabled -}}
+{{- $root := . -}}
+
+{{- range $key, $cfg := .Values.networkPolicies.rules -}}
+{{- $ns := (default $key $cfg.name) | trim -}}
+{{- $allowWorldEgress := (default false $cfg.allowInternetEgress) -}}
+{{- $allowWorldIngress := (default false $cfg.allowInternetIngress) -}}
+
+{{- /* Build lists of namespace peers */ -}}
+{{- $ingList := splitList "," (default "" $cfg.ingress) -}}
+{{- $ingPeers := list -}}
+{{- range $ingList }}
+  {{- $p := trim . -}}
+  {{- if $p }}{{- $ingPeers = append $ingPeers $p }}{{- end -}}
+{{- end -}}
+{{- $egList := splitList "," (default "" $cfg.egress) -}}
+{{- $egPeers := list -}}
+{{- range $egList }}
+  {{- $p := trim . -}}
+  {{- if $p }}{{- $egPeers = append $egPeers $p }}{{- end -}}
+{{- end -}}
+
+{{- $hasIngressCidrs := and (hasKey $root.Values.networkPolicies "internet") ($root.Values.networkPolicies.internet.ingressCidrs) -}}
+{{- $hasEgressCidrs  := and (hasKey $root.Values.networkPolicies "internet") ($root.Values.networkPolicies.internet.egressCidrs) -}}
+
+{{- $emitIngress := or (gt (len $ingPeers) 0) $hasIngressCidrs $root.Values.networkPolicies.allowSameNamespace $allowWorldIngress -}}
+{{- $emitEgress  := or (gt (len $egPeers) 0) $hasEgressCidrs  $root.Values.networkPolicies.allowSameNamespace $allowWorldEgress  -}}
+
+{{- if or $emitIngress $emitEgress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-allow" $ns | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $ns }}
+spec:
+  {{- if $root.Values.networkPolicies.podSelector }}
+  podSelector:
+{{ toYaml $root.Values.networkPolicies.podSelector | indent 4 }}
+  {{- else }}
+  podSelector: {}
+  {{- end }}
+
+  {{- if $emitIngress }}
+  ingress:
+    - from:
+        {{- /* namespace peers for ingress */}}
+        {{- range $ingPeers }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+          podSelector: {}
+        {{- end }}
+        {{- if $root.Values.networkPolicies.allowSameNamespace }}
+        - podSelector: {}
+        {{- end }}
+
+        {{- if $allowWorldIngress }}
+          {{- $mode := (default "world" $root.Values.networkPolicies.internet.mode) -}}
+          {{- if eq $mode "world" }}
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+        - ipBlock:
+            cidr: "::/0"
+          {{- else if eq $mode "cidr" }}
+            {{- with $root.Values.networkPolicies.internet }}
+              {{- with .ingressCidrs }}
+                {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+                {{- end }}
+              {{- end }}
+              {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
+              {{- if $except }}
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+            except:
+              {{- range $ex := $except }}
+              - {{ $ex | quote }}
+              {{- end }}
+              {{- end }}
+            {{- end }}
+          {{- else }}
+        # Unknown internet.mode -> no Internet ingress opened
+          {{- end }}
+        {{- end }}
+
+        {{- /* global legacy Internet (if defined but not enabled per-namespace) */}}
+        {{- with $root.Values.networkPolicies.internet }}
+          {{- with .ingressCidrs }}
+            {{- if and (gt (len .) 0) (not $allowWorldIngress) }}
+              {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+          {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
+          {{- if and $except (not $allowWorldIngress) }}
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+            except:
+              {{- range $ex := $except }}
+              - {{ $ex | quote }}
+              {{- end }}
+          {{- end }}
+        {{- end }}
+  {{- end }}
+
+  {{- if $emitEgress }}
+  egress:
+    - to:
+        {{- /* namespace peers for egress */}}
+        {{- range $egPeers }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+          podSelector: {}
+        {{- end }}
+        {{- if $root.Values.networkPolicies.allowSameNamespace }}
+        - podSelector: {}
+        {{- end }}
+
+        {{- if $root.Values.networkPolicies.allowKubeAPIServer }}
+        # NOTE: Kubernetes NetworkPolicy cannot express Cilium `toServices`.
+        # Add control-plane ipBlocks below or match APIServer pods if self-hosted.
+        {{- end }}
+
+        {{- if $allowWorldEgress }}
+          {{- $mode := (default "world" $root.Values.networkPolicies.internet.mode) -}}
+          {{- if eq $mode "world" }}
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+        - ipBlock:
+            cidr: "::/0"
+          {{- else if eq $mode "cidr" }}
+            {{- with $root.Values.networkPolicies.internet }}
+              {{- with .egressCidrs }}
+                {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+                {{- end }}
+              {{- end }}
+              {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
+              {{- if $except }}
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+            except:
+              {{- range $ex := $except }}
+              - {{ $ex | quote }}
+              {{- end }}
+              {{- end }}
+            {{- end }}
+          {{- else }}
+        # Unknown internet.mode -> no Internet egress opened
+          {{- end }}
+        {{- end }}
+
+        {{- with $root.Values.networkPolicies.internet }}
+          {{- with .egressCidrs }}
+            {{- if and (gt (len .) 0) (not $allowWorldEgress) }}
+              {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+          {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
+          {{- if and $except (not $allowWorldEgress) }}
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+            except:
+              {{- range $ex := $except }}
+              - {{ $ex | quote }}
+              {{- end }}
+          {{- end }}
+        {{- end }}
+  {{- end }}
+
+  policyTypes:
+  {{- if $emitIngress }}
+    - Ingress
+  {{- end }}
+  {{- if $emitEgress }}
+    - Egress
+  {{- end }}
+{{- end }}
+
+{{- if $root.Values.networkPolicies.defaultDeny }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-default-deny" $ns | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $ns }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}
+
+{{- end }}{{/* range rules */}}
+{{- end }}{{/* if enabled */}}

@@ -7,7 +7,7 @@ HOST_BIND_PORT="${HOST_BIND_PORT:-16443}"       # HTTPS port exposed from epheme
 NAME="${NAME:-k8s-apiserver-ephem}"
 CERT_DIR="${CERT_DIR:-$(pwd)/apiserver-certs}"
 FORWARD_LOCAL_PORT="${FORWARD_LOCAL_PORT:-2379}"   # local port in host where socat listen
-FORWARD_TARGET_HOST="$CLUSTER_NAME-control-plane"
+FORWARD_TARGET_HOST="$CONTROL_PLANE_NODE"
 FORWARD_TARGET_PORT="${FORWARD_TARGET_PORT:-12379}" # HTTP port of real etcd
 
 ### === Helper: installing minimal dependencies (socat, curl, jq, xxd) ===

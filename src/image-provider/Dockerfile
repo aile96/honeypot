@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 FROM nginx:1.27.0-otel
+ARG IMAGE_PROVIDER_PORT=8081
+ARG OTEL_COLLECTOR_HOST="otel-collector"
+ARG OTEL_COLLECTOR_PORT_GRPC=4317
+ARG OTEL_SERVICE_NAME=4318
 
 RUN apt-get update ; apt-get install lsb-release --no-install-recommends --no-install-suggests -y
 

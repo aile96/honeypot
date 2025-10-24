@@ -172,17 +172,14 @@ build:
       docker:
         dockerfile: src/traffic-translator/Dockerfile
 deploy:
+  statusCheck: false
   helm:
+    flags:
+      install:
+        - --timeout=1h
+      upgrade:
+        - --timeout=1h
     releases:
-      - name: cilium
-        remoteChart: cilium
-        repo: https://helm.cilium.io
-        namespace: kube-system
-        createNamespace: false
-        wait: true
-        setValueTemplates:
-          operator.replicas: "{{.NUM_OPERATORS}}"
-        version: "{{.CILIUM_HELM_VERSION}}"
       - name: metallb
         remoteChart: metallb
         repo: https://metallb.github.io/metallb
@@ -206,8 +203,9 @@ deploy:
           RBAC.enabled: "true"
           namespaces.enabled: "true"
           pool.enabled: "true"
+          volumes.enabled: "true"
         #Values
-          pool.ips: "{{.LOAD_BALANCER_IP}}-{{.LOAD_BALANCER_IP}}"
+          pool.ips: "{{.FRONTEND_PROXY_IP}}-{{.FRONTEND_PROXY_IP}}"
         valuesFiles:
           - helm-charts/additions/values.yaml
       - name: honeypot-telemetry
@@ -251,7 +249,6 @@ deploy:
           components.smtp.enabled: "true"
           components.kafka.enabled: "true"
         #Values
-          components.frontend-proxy.service.loadBalancerIP: "{{.LOAD_BALANCER_IP}}"
-          components.smtp.service.loadBalancerIP: "{{.SMTP_IP}}"
+          components.frontend-proxy.service.loadBalancerIP: "{{.FRONTEND_PROXY_IP}}"
         valuesFiles:
           - helm-charts/astronomy-shop/values.yaml

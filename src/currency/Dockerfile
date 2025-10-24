@@ -10,7 +10,7 @@ RUN apk update && apk add --no-cache \
     postgresql-dev openssl-dev zlib-dev \
     wget
 
-ARG OPENTELEMETRY_CPP_VERSION
+ARG OPENTELEMETRY_CPP_VERSION="1.20.0"
 
 # build opentelemetry-cpp with OTLP gRPC
 RUN git clone --depth 1 --branch v${OPENTELEMETRY_CPP_VERSION} https://github.com/open-telemetry/opentelemetry-cpp \
@@ -41,6 +41,9 @@ RUN cd /currency \
 
 
 FROM alpine:3.18 AS release
+
+ARG CURRENCY_PORT=8080
+ARG EXPOSE_HTTP_PORT=8081
 
 # minimal runtime
 RUN apk update && apk add --no-cache \

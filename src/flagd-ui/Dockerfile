@@ -20,6 +20,7 @@ RUN npm run build
 # -----------------------------------------------------------------------------
 
 FROM node:22-alpine
+ARG FLAGD_UI_PORT=4000
 
 WORKDIR /app
 

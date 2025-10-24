@@ -4,9 +4,9 @@ services:
   registry:
     container_name: ${REGISTRY_NAME}
     image: registry:2
-    hostname: ${REGISTRY_NAME:-caldera.cont}
+    hostname: ${REGISTRY_NAME:-registry}
     restart: always
-    networks: [kind]
+    networks: [net]
     ports:
       - "${REGISTRY_PORT}:${REGISTRY_PORT}"
     environment:
@@ -20,71 +20,71 @@ services:
     volumes:
       - "./registry:/auth"
       
-  load-generator:
-    container_name: ${LOAD_GENERATOR:-load-generator}
-    image: load-generator:${IMAGE_VERSION:-2.0.2}
-    hostname: ${LOAD_GENERATOR:-load-generator}
-    restart: unless-stopped
-    networks: [kind]
-    build:
-      context: ../../src/load-generator
-      dockerfile: ../../src/load-generator/Dockerfile
-    environment:
-      PLAYWRIGHT_BROWSERS_PATH: "/opt/pw-browsers"
-      LOCUST_WEB_HOST: "0.0.0.0"
-      LOCUST_WEB_PORT: "8089"
-      LOCUST_USERS: "20"
-      LOCUST_SPAWN_RATE: "10" 
-      LOCUST_HOST: "http://proxy:8080" 
-      LOCUST_HEADLESS: "true" 
-      LOCUST_AUTOSTART: "true" 
-      LOCUST_BROWSER_TRAFFIC_ENABLED: "true"
+#  load-generator:
+#    container_name: load-generator
+#    image: load-generator:${IMAGE_VERSION:-2.0.2}
+#    hostname: load-generator
+#    restart: unless-stopped
+#    networks: [net]
+#    build:
+#      context: ../../src/load-generator
+#      dockerfile: ../../src/load-generator/Dockerfile
+#    environment:
+#      PLAYWRIGHT_BROWSERS_PATH: "/opt/pw-browsers"
+#      LOCUST_WEB_HOST: "0.0.0.0"
+#      LOCUST_WEB_PORT: "8089"
+#      LOCUST_USERS: "20"
+#      LOCUST_SPAWN_RATE: "10" 
+#      LOCUST_HOST: "http://proxy:8080" 
+#      LOCUST_HEADLESS: "true" 
+#      LOCUST_AUTOSTART: "true" 
+#      LOCUST_BROWSER_TRAFFIC_ENABLED: "true"
 
-  samba:
-    container_name: samba-pv
-    image: samba:${IMAGE_VERSION:-2.0.2}
-    hostname: samba-pv
-    restart: unless-stopped
-    networks: [kind]
-    build:
-      context: ../../src/samba
-      dockerfile: Dockerfile
-    environment:
-      TZ: Europe/Rome
-      SAMBA_USER: k8s
-      SAMBA_PASS: password
-      SAMBA_UID: "10001"
-      SAMBA_GID: "10001"
-      SHARE_NAME: pvroot
-      SHARE_PATH: /share
-      HOSTS_ALLOW: "127. 172.18.0. 172.19.0."
-      ENCRYPTION: required
-      LOG_LEVEL: "1"
-    cap_add:
-      - NET_BIND_SERVICE
-      - CHOWN
-    read_only: false
-    tmpfs:
-      - /run/samba:size=16m,mode=0755
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 445"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
+#  samba:
+#    container_name: samba-pv
+#    image: samba:${IMAGE_VERSION:-2.0.2}
+#    hostname: samba-pv
+#    restart: unless-stopped
+#    networks: [net]
+#    build:
+#      context: ../../src/samba
+#      dockerfile: Dockerfile
+#    environment:
+#      TZ: Europe/Rome
+#      SAMBA_USER: k8s
+#      SAMBA_PASS: password
+#      SAMBA_UID: "10001"
+#      SAMBA_GID: "10001"
+#      SHARE_NAME: pvroot
+#      SHARE_PATH: /share
+#      HOSTS_ALLOW: "127. 172.18.0. 172.19.0."
+#      ENCRYPTION: required
+#      LOG_LEVEL: "1"
+#    cap_add:
+#      - NET_BIND_SERVICE
+#      - CHOWN
+#    read_only: false
+#    tmpfs:
+#      - /run/samba:size=16m,mode=0755
+#    healthcheck:
+#      test: ["CMD-SHELL", "nc -z localhost 445"]
+#      interval: 10s
+#      timeout: 3s
+#      retries: 10
+#      start_period: 10s
 
   proxy:
     container_name: proxy
     image: nginx:1.27-alpine
     hostname: proxy
     restart: unless-stopped
-    networks: [kind]
+    networks: [net]
     ports:
       - "0.0.0.0:8888:8888"
       - "0.0.0.0:8080:8080"
     environment:
       CALDERA_SERVER: ${CALDERA_SERVER}
-      FRONTEND_PROXY: ${LOAD_BALANCER_IP}
+      FRONTEND_PROXY: ${FRONTEND_PROXY_IP}
       NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
     volumes:
       - ./proxy/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
@@ -99,23 +99,26 @@ services:
 
   # ===== Caldera =====
   caldera-controller:
-    container_name: ${CALDERA_CONTROLLER:-caldera.cont}
+    container_name: caldera.cont
     image: caldera-controller:${IMAGE_VERSION:-2.0.2}
-    hostname: ${CALDERA_CONTROLLER:-caldera.cont}
+    hostname: caldera.cont
     restart: unless-stopped
-    networks: [kind]
+    networks: [net]
     build:
       context: ../../src/caldera-controller
       dockerfile: ../../src/caldera-controller/Dockerfile
     environment:
       CALDERA_URL: "http://${CALDERA_SERVER}:8888"
+      KUBECONFIG: /kube/kubeconfig
+    volumes:
+      - ./controller:/kube:ro
 
   attacker:
     container_name: ${CALDERA_OUTSIDE:-caldera.outs}
     image: attacker:${IMAGE_VERSION:-2.0.2}
     hostname: ${ATTACKER:-caldera.outs}
     restart: unless-stopped
-    networks: [kind]
+    networks: [net]
     build:
       context: ../../src/attacker
       dockerfile: ../../src/attacker/Dockerfile
@@ -127,13 +130,16 @@ services:
     environment:
       WAIT: "0"
       HOSTREGISTRY: "$REGISTRY_NAME:$REGISTRY_PORT"
-      ARP_VICTIM: "load-generator"
-      LOAD_BALANCER_IP: ${LOAD_BALANCER_IP}
-      CLUSTER_NAME: ${CLUSTER_NAME:-kind-cluster}
+      ARP_VICTIM: "proxy"
+      FRONTEND_PROXY_IP: ${FRONTEND_PROXY_IP}
+      CONTROL_PLANE_NODE: ${CONTROL_PLANE_NODE:-kind-control-plane}
+      CONTROL_PLANE_PORT: ${KUBESERVER_PORT:-6443}
+      ATTACKER_NODE: ${ATTACKER_NODE:-kind-worker}
       REGISTRY_USER: ${REGISTRY_USER:-testuser}
       REGISTRY_PASS: ${REGISTRY_PASS:-testpassword}
     volumes:
-      - ./apiserver:/apiserver
+      - ./attacker/apiserver:/apiserver
+      - ./attacker/iphost:/tmp/iphost
     depends_on:
       caldera-server:
         condition: service_healthy
@@ -143,7 +149,7 @@ services:
     image: ghcr.io/mitre/caldera:5.2.0
     hostname: ${CALDERA_SERVER:-caldera.dock}
     restart: unless-stopped
-    networks: [kind]
+    networks: [net]
     volumes:
       - ./caldera/local.yml:/usr/src/app/conf/local.yml
       - ./caldera/adversaries:/usr/src/app/plugins/stockpile/data/adversaries/personal
@@ -156,6 +162,6 @@ services:
       start_period: 15s
 
 networks:
-  kind:
+  net:
     external: true
-    name: kind
+    name: ${CP_NETWORK:-kind}

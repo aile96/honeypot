@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ===== Config =====
-API_SERVER="${API_SERVER:-https://kind-cluster-control-plane:6443}"
+API_SERVER="${API_SERVER:-https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT}"
 CERT_PATH="${CERT_PATH:-/tmp/KCData/KC5/kubelet-client-current-kind-cluster-worker.pem}"
 CACERT_OPT="${CACERT_OPT:---insecure}"           # use --cacert /path/ca.crt if you prefer
 MODE="${MODE:-ready}"                             # ready | notready

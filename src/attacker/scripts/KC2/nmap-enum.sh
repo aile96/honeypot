@@ -28,11 +28,12 @@ install_deps() {
 install_deps
 
 # Show the revealed network
-echo "#NETWORK: $(ip -o -4 addr show | awk 'NR>1{print $4}' | awk -F. 'NF==4{print $1"."$2".0.0/23"; exit}')"
+NETWORK=$(ip -o -4 addr show | awk 'NR>1{print $4}' | awk -F. 'NF==4{print $1"."$2"."$3".0/24"; exit}')
+echo "#NETWORK: $NETWORK"
 mkdir -p $OUTDIR
 
 # Network scan (/23 to be faster)
-nmap -sn -T4 "$(ip -o -4 addr show | awk 'NR>1{print $4}' | awk -F. 'NF==4{print $1"."$2".0.0/23"; exit}')" -oG - \
+nmap -sn -T4 "$NETWORK" -oG - \
   | awk '/Up$/{print $2}' \
   | while read -r ip; do
       host=$(getent hosts "$ip" | awk '{print $2}')

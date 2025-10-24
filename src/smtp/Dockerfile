@@ -23,7 +23,7 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Expose SSH and the TCP server (SMTP-like) on port 25
-EXPOSE 22 25
+EXPOSE 4222 25
 
 # Use tini as entrypoint and our script as CMD
 ENTRYPOINT ["/usr/bin/tini", "--"]

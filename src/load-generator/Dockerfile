@@ -17,7 +17,7 @@ WORKDIR /usr/src/app/
 COPY --from=builder /reqs /usr/local
 
 RUN apt-get -qq update \
- && apt-get install -y --no-install-recommends curl ca-certificates \
+ && apt-get install -y --no-install-recommends curl ca-certificates bash \
  && rm -rf /var/lib/apt/lists/*
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
@@ -33,4 +33,7 @@ COPY locustfile.py .
 COPY people.json .
 
 COPY entrypoint.sh .
-ENTRYPOINT ["./entrypoint.sh"]
+RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
+
+# Use exec form and call via bash (works even if x-bit ever gets lost)
+ENTRYPOINT ["/usr/bin/env", "bash", "/usr/src/app/entrypoint.sh"]

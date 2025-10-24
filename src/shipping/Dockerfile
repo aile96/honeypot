@@ -56,6 +56,7 @@ RUN wget -qO/bin/grpc_health_probe https://github.com/grpc-ecosystem/grpc-health
     chmod +x /bin/grpc_health_probe
 
 FROM debian:bookworm-slim AS release
+ARG SHIPPING_PORT=8080
 
 WORKDIR /app
 COPY --from=builder /app/target/release/shipping /app/shipping

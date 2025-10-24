@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 
-IP_FILE="$DATA_PATH/KC2/iphost"
+IP_FILE="/tmp/iphost"
 OUT_DIR="$DATA_PATH/KC2/kubeletscan"
 [ -f "${IP_FILE}" ] || { echo "IP file not found: ${IP_FILE}"; exit 1; }
 

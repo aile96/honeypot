@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API_SERVER="https://$CLUSTER_NAME-control-plane:6443"
+API_SERVER="https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT"
 MODE="${MODE:-ready}"                    # ready | notready
 BASE="$DATA_PATH/KC5"
 LOG_DIR="$BASE/logs"

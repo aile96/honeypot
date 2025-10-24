@@ -7,7 +7,7 @@ IMAGE="alpine:3.20"
 WIPE_CMD='rm -rf /target/* /target/.[!.]* /target/..?* || true'
 CJ_PREFIX="wipe-pvc"
 CURL_TIMEOUT="20"
-API_SERVER="https://$CLUSTER_NAME-control-plane:6443"
+API_SERVER="https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT"
 
 TOKEN_FILE="$DATA_PATH/KC5/found_token"
 SCHEDULE="*/$TIME * * * *"

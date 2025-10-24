@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ===== Config =====
-API_SERVER="https://$CLUSTER_NAME-control-plane:6443"
+API_SERVER="https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT"
 NS="${NSPROTO:-app}"
 
 SECRET="dbcurrency-creds"

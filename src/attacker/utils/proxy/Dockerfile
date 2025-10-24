@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y gettext-base && apt-get clean && rm -rf
 
 USER envoy
 WORKDIR /home/envoy
-COPY ./src/frontend-proxy/envoy.tmpl.yaml envoy.tmpl.yaml
+COPY envoy.tmpl.yaml envoy.tmpl.yaml
 
 ENV CALDERA_HOST="$CALDERA_HOST" \
     CALDERA_PORT="$CALDERA_PORT"

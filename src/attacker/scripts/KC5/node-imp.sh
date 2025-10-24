@@ -1,29 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-FILE_IP="$DATA_PATH/KC5/iphost"
+FILE_IP="/tmp/iphost"
 KEY_PATH="$DATA_PATH/KC5/ssh/ssh-key"
 
-list_node_hostnames() {
+list_node_ips() {
   if [[ ! -f "$FILE_IP" ]]; then
     echo "Error: file '$FILE_IP' not found" >&2
     return 1
   fi
 
   echo ">> Recover IPs list (file: $FILE_IP)..." >&2
-  grep -E '[-]' "$FILE_IP" \
-   | cut -d'-' -f2- \
-   | sed -E 's/^[[:space:]]+|[[:space:]\r]+$//g' \
-   | grep worker \
-   | cut -d'.' -f1 \
-   | sort -u
+  awk -F'-' '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    NF >= 2 {
+      ip=$1; host=$2
+      gsub(/^[ \t]+|[ \t\r]+$/, "", ip)
+      gsub(/^[ \t]+|[ \t\r]+$/, "", host)
+      if (host ~ /^worker([0-9]+)?$/ && ip ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
+        print ip
+      }
+    }
+  ' "$FILE_IP" | sort -u
 }
 
 # Install kubectl
 curl -fsSLo /usr/local/bin/kubectl https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
-mapfile -t nodes < <(list_node_hostnames | sed '/^$/d')
+mapfile -t nodes < <(list_node_ips | sed '/^$/d')
 if [[ "${#nodes[@]}" -eq 0 ]]; then
   echo "No node found"; exit 1
 fi
@@ -46,7 +52,7 @@ if [ -n "$f" ]; then
   cat "$f"
 fi
 REMOTE
-    kubectl --server="https://$CLUSTER_NAME-control-plane:6443" \
+    kubectl --server="https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT" \
       --insecure-skip-tls-verify=true \
       --client-certificate="$CERT_PATH" \
       --client-key="$CERT_PATH" auth can-i --list

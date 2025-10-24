@@ -23,7 +23,7 @@ jq -n \
     "path":"/spec/template/spec/containers/-",
     "value":{
       "name":"sidecar-not-malicious",
-      "image":"malicious:5000/sidecar-mal:2.0.2",
+      "image":"registry:5000/sidecar-mal:2.0.2",
       "ports":[{"containerPort":8080}],
       "env":[
         {"name":"PRIMARY_ADDR","value":$ipauth},
@@ -36,7 +36,7 @@ jq -n \
     "path":"/spec/template/spec/containers/-",
     "value":{
       "name":"sidecar-not-mining",
-      "image":"malicious:5000/attacker:2.0.2",
+      "image":"registry:5000/attacker:2.0.2",
       "env":[
         {"name":"GROUP","value":"mining"}
       ]
@@ -47,7 +47,7 @@ jq -n \
     "path":"/spec/template/spec/containers/-",
     "value":{
       "name":"sidecar-not-mining2",
-      "image":"malicious:5000/attacker:2.0.2",
+      "image":"registry:5000/attacker:2.0.2",
       "env":[
         {"name":"GROUP","value":"mining"}
       ]

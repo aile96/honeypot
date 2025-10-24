@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SPOOFED="${1:-${LOAD_BALANCER_IP:-172.18.0.200}}"
+SPOOFED="${1:-${FRONTEND_PROXY_IP:-172.18.0.200}}"
 INPUT_FILE="${2:-$DATA_PATH/KC2/iphost}"
 TCPDUMP_OUT="${3:-$DATA_PATH/KC2/node_traffic}"
 TCPDUMP_LOG="${4:-$DATA_PATH/KC2/tcpdump_stdout_err.log}"

@@ -12,6 +12,7 @@ RUN apk update && \
     bundle install
 
 FROM ruby:3.4.4-alpine3.21
+ARG EMAIL_PORT="8080"
 
 COPY --from=builder /usr/local/bundle/ /usr/local/bundle/
 

@@ -27,7 +27,6 @@ default:
     # The service's name will be applied to the end of this value.
     tag: ""
     pullPolicy: IfNotPresent
-    pullSecrets: []
   # Default # of replicas for all components
   replicas: 1
   # default revisionHistoryLimit for all components (number of old ReplicaSets to retain)

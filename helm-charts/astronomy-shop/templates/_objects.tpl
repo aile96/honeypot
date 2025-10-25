@@ -32,12 +32,10 @@ spec:
         {{- toYaml .podAnnotations | nindent 8 }}
       {{- end }}
     spec:
-      #{{- if or .defaultValues.image.pullSecrets ((.imageOverride).pullSecrets) }}
-      #imagePullSecrets:
-      #  {{- ((.imageOverride).pullSecrets) | default .defaultValues.image.pullSecrets | toYaml | nindent 8}}
-      #{{- end }}
+      {{- if or .defaultValues.image.pullSecrets ((.imageOverride).pullSecrets) }}
       imagePullSecrets:
-      - name: regcred
+        {{- ((.imageOverride).pullSecrets) | default .defaultValues.image.pullSecrets | toYaml | nindent 8}}
+      {{- end }}
       serviceAccountName: {{ default "default" .serviceAccountName }}
       {{- if .hostNetwork }}
       hostNetwork: true

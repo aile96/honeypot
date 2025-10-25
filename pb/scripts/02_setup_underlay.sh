@@ -44,7 +44,7 @@ kubectl_ctx() {
   kubectl --context "$KUBE_CONTEXT" "$@"
 }
 
-# Get node IPv4 InternalIP only  # <<< CHANGED
+# Get node IPv4 InternalIP only
 node_internal_ip() {
   local node="$1"
   # list all InternalIP addresses and pick the first one that is NOT IPv6
@@ -157,7 +157,7 @@ if [[ -z "${ATTACKER_NODE:-}" || -z "${NOT_ATTACKER_NODE:-}" ]]; then
 fi
 
 log "Patching kube-apiserver to exclude application pods..."
-kubectl taint nodes $CONTROL_PLANE_NODE node-role.kubernetes.io/control-plane=:NoSchedule
+kubectl taint nodes $CONTROL_PLANE_NODE node-role.kubernetes.io/control-plane=:NoSchedule --overwrite=true
 kubectl_ctx label node "$ATTACKER_NODE" "group"="$LABEL_NODE_ATTACKER" --overwrite >/dev/null
 log "Labeled $ATTACKER_NODE group=$LABEL_NODE_ATTACKER"
 kubectl_ctx label node "$NOT_ATTACKER_NODE" "group"="$LABEL_NOT_ATTACKER" --overwrite >/dev/null

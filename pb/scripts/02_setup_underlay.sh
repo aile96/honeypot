@@ -78,8 +78,6 @@ find_container_by_ip() {
 : "${OUT_DIR:=./pb/docker/attacker/apiserver}"
 : "${ATTACKER_DIR:=./pb/docker/attacker}"
 : "${ETCD_DOCKER_IMAGE:=quay.io/coreos/etcd:v3.5.10}"
-: "${LABEL_NODE_ATTACKER:=NodeAttacker}"
-: "${LABEL_NOT_ATTACKER:=NotAttacker}"
 : "${PLAIN_PORT:=12379}"
 
 # --------------------------
@@ -146,27 +144,15 @@ log "Control-plane docker network(s): $CP_NETWORKS"
 log "Primary docker network chosen: $CP_NETWORK"
 
 # --------------------------
-# 3) Label first two workers and the control plane
+# 3) Label control-plane container and copy apiserver certs
 # --------------------------
-if [[ -z "${ATTACKER_NODE:-}" || -z "${NOT_ATTACKER_NODE:-}" ]]; then
-  if (( ${#WORKER_NODES[@]} < 2 )); then
-    die "Need at least 2 worker nodes to label but found ${#WORKER_NODES[@]}."
-  fi
-  ATTACKER_NODE="${ATTACKER_NODE:-${WORKER_NODES[0]}}"
-  NOT_ATTACKER_NODE="${NOT_ATTACKER_NODE:-${WORKER_NODES[1]}}"
+if (( ${#WORKER_NODES[@]} < 2 )); then
+  die "Need at least 2 worker nodes to label but found ${#WORKER_NODES[@]}."
 fi
 
 log "Patching kube-apiserver to exclude application pods..."
 kubectl taint nodes $CONTROL_PLANE_NODE node-role.kubernetes.io/control-plane=:NoSchedule --overwrite=true
-kubectl_ctx label node "$ATTACKER_NODE" "group"="$LABEL_NODE_ATTACKER" --overwrite >/dev/null
-log "Labeled $ATTACKER_NODE group=$LABEL_NODE_ATTACKER"
-kubectl_ctx label node "$NOT_ATTACKER_NODE" "group"="$LABEL_NOT_ATTACKER" --overwrite >/dev/null
-log "Labeled $NOT_ATTACKER_NODE group=$LABEL_NOT_ATTACKER"
-export ATTACKER_NODE
 
-# --------------------------
-# 4) Copy apiserver certs from control-plane container
-# --------------------------
 mkdir -p "$OUT_DIR"
 log "Copying apiserver.crt and apiserver.key from $CP_CONTAINER to $OUT_DIR"
 if docker cp "$CP_CONTAINER":/etc/kubernetes/pki/apiserver.crt "$OUT_DIR/apiserver.crt" >/dev/null 2>&1 && \
@@ -183,7 +169,7 @@ else
 fi
 
 # --------------------------
-# 5) Determine docker network IPv4 subnet and construct IP with .200
+# 4) Determine docker network IPv4 subnet and construct IP with .200
 # --------------------------
 log "Inspecting Docker network '$CP_NETWORK' for IPv4 subnet."
 NET_JSON="$(docker network inspect "$CP_NETWORK" --format '{{json .IPAM.Config}}' 2>/dev/null || true)"
@@ -206,7 +192,7 @@ log "Constructed frontend-proxy IPv4: $FRONTEND_PROXY_IP (.200)."
 export FRONTEND_PROXY_IP
 
 # --------------------------
-# 6) Build IP - HOST lines and write to file (control-plane, worker1..N)
+# 5) Build IP - HOST lines and write to file (control-plane, worker1..N)
 # --------------------------
 mkdir -p "$ATTACKER_DIR"
 IPHOST_FILE="$ATTACKER_DIR/iphost"
@@ -251,7 +237,7 @@ log "Wrote iphost file:"
 sed -n '1,200p' "$IPHOST_FILE"
 
 # --------------------------
-# 7) Enable kubelet read-only port on all worker nodes (address=0.0.0.0, readOnlyPort=10255)
+# 6) Enable kubelet read-only port on all worker nodes (address=0.0.0.0, readOnlyPort=10255)
 # --------------------------
 
 enable_ro_port_on_worker() {
@@ -344,7 +330,7 @@ done
 log "Finished configuring read-only port on worker nodes."
 
 # --------------------------
-# 8) Open etcd port 12379
+# 7) Open etcd port 12379
 # --------------------------
 
 NS=kube-system
@@ -411,7 +397,7 @@ log "Applying patch inside the node container..."
 docker exec -i "$NODE_CTN" bash -lc "$PATCH_CMD"
 
 # --------------------------
-# 9) Insert anonymous authentication
+# 8) Insert anonymous authentication
 # --------------------------
 
 log "Enabling anonymous-auth on kube-apiserver..."
@@ -448,7 +434,7 @@ sleep 60
 log "Done."
 
 # --------------------------
-# 10) Generation of certificates and route for host
+# 9) Generation of certificates and route for host
 # --------------------------
 if [ ! -f "./pb/docker/registry/htpasswd" ]; then
   log "Generating htpasswd file..."
@@ -500,7 +486,7 @@ fi
 ensure_registry_hosts
 
 # --------------------------
-# 11) Adding CA + AUTH for registry to the nodes
+# 10) Adding CA + AUTH for registry to the nodes
 # --------------------------
 REGISTRY_CA_FILE="${REGISTRY_CA_FILE:-pb/docker/registry/certs/rootca.crt}"
 : "${REGISTRY_NAME:?REGISTRY_NAME required}"
@@ -566,7 +552,7 @@ done
 log "Registry CA/auth installation step completed."
 
 # --------------------------
-# 12) Running docker compose and waiting for registry to login
+# 11) Running docker compose and waiting for registry to login
 # --------------------------
 KUBESERVER_PORT="$(kubectl -n default get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || echo 6443)"
 export KUBESERVER_PORT

@@ -454,6 +454,7 @@ components:
   currency:
     enabled: false
     namespace: "app"
+    labelAffinity: "dbpair"
     serviceAccountName: "currency-sa"
     automountServiceAccountToken: "true"
     useDefault:
@@ -465,13 +466,16 @@ components:
         value: 8081
     schedulingRules:
       affinity:
-        nodeAffinity:
+        podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-              - matchExpressions:
-                - key: group
-                  operator: In
-                  values: ["NodeAttacker"]
+          - labelSelector:
+              matchExpressions:
+              - key: appGroup
+                operator: In
+                values:
+                - "dbpair"
+            namespaceSelector: {} 
+            topologyKey: kubernetes.io/hostname
     env:
       - name: CURRENCY_PORT
         value: "8080"
@@ -1059,6 +1063,7 @@ components:
   smtp:
     enabled: false
     namespace: "dmz"
+    labelAffinity: "dbpair"
     hostNetwork: true
     useDefault:
       env: false
@@ -1069,13 +1074,16 @@ components:
       type: Recreate
     schedulingRules:
       affinity:
-        nodeAffinity:
+        podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-              - matchExpressions:
-                - key: group
-                  operator: In
-                  values: ["NodeAttacker"]
+          - labelSelector:
+              matchExpressions:
+              - key: appGroup
+                operator: In
+                values:
+                - "dbpair"
+            namespaceSelector: {} 
+            topologyKey: kubernetes.io/hostname
     volumeMounts:
       - name: socket
         mountPath: /host/run/containerd/containerd.sock
@@ -1240,6 +1248,7 @@ components:
   traffic-controller:
     enabled: false
     namespace: "mem"
+    labelAffinity: "dbpair"
     serviceAccountName: "traffic-sa"
     automountServiceAccountToken: "true"
     useDefault:
@@ -1256,13 +1265,16 @@ components:
       - value: 8080
     schedulingRules:
       affinity:
-        nodeAffinity:
+        podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-              - matchExpressions:
-                - key: group
-                  operator: In
-                  values: ["NodeAttacker"]
+          - labelSelector:
+              matchExpressions:
+              - key: appGroup
+                operator: In
+                values:
+                - "dbpair"
+            namespaceSelector: {} 
+            topologyKey: kubernetes.io/hostname
     volumeMounts:
       - name: hostroot
         mountPath: /host

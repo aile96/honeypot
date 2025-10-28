@@ -5,7 +5,7 @@ BASE="$DATA_PATH/KC5"
 FILE_IP="/tmp/iphost"
 KEY_PATH="$BASE/ssh/ssh-key"
 PID_LIST="$BASE/pids"
-WAITING_TIME="120"
+WAITING_TIME="10"
 
 echo "DOS for all services of the cluster for $WAITING_TIME s"
 sleep $WAITING_TIME

@@ -12,6 +12,9 @@ metadata:
   {{- end }}
   labels:
     {{- include "otel-demo.labels" . | nindent 4 }}
+    {{- if .labelAffinity }}
+    appGroup: {{ .labelAffinity }}
+    {{- end }}
 spec:
   replicas: {{ .replicas | default .defaultValues.replicas }}
   {{- if .strategy }}

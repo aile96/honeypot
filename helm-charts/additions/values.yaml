@@ -58,8 +58,8 @@ networkPolicies:
 volumes:
   enabled: false
 
-postgres: 
-  enabled: false
+postgres:
+  enabled: true
   namespace: "dat"
   common:
     imagePullSecrets:
@@ -68,26 +68,26 @@ postgres:
     image: postgres
     db: currency
     secretName: dbcurrency
-    nodeGroup: NotAttacker
+    separateFromGroup: "dbpair"
   postgres-auth:
     image: postgres-auth
     db: users
     secretName: dbauth
-    nodeGroup: NodeAttacker
+    cohostGroup: "dbpair"
   postgres-payment:
     image: postgres-payment
     db: payments
     secretName: dbpayment
-    nodeGroup: NodeAttacker
+    cohostGroup: "dbpair"
 
 config:
   enabled: false
   configmaps:
     flagd-credentials-ui:
       namespace: "mem"
-      data: 
-        FLAGD_UI_USER: "admin" 
-        FLAGD_UI_PASS: "elia" 
+      data:
+        FLAGD_UI_USER: "admin"
+        FLAGD_UI_PASS: "elia"
     proto:
       namespace: "app"
       dataFromFile: "files/demo.proto"
@@ -100,23 +100,23 @@ config:
   secrets:
     dbcurrency-creds:
       namespace: "app"
-      data: 
-        username: "postgres" 
+      data:
+        username: "postgres"
         password: "yourpassword"
     dbcurrency:
       namespace: "dat"
-      data: 
-        username: "postgres" 
+      data:
+        username: "postgres"
         password: "yourpassword"
     dbpayment:
       namespace: "dat"
-      data: 
-        username: "payments_rw" 
+      data:
+        username: "payments_rw"
         password: "payments_rw_pwd"
     dbauth:
       namespace: "dat"
-      data: 
-        username: "testuser" 
+      data:
+        username: "testuser"
         password: "testpassword"
     smb-creds:
       namespace: "mem"

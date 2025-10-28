@@ -11,12 +11,11 @@ metadata:
 
 {{- if and .Values.namespaces.enabled .Values.registryAuth.enabled }}
 {{- $list := splitList "," .Values.namespaces.list }}
-{{- $server := required "registryAuth.server is required" .Values.registryAuth.server }}
+{{- $server := required "default.image.repository is required" .Values.defaultValues.image.repository }}
 {{- $user := required "registryAuth.username is required" .Values.registryAuth.username }}
 {{- $pass := required "registryAuth.password is required" .Values.registryAuth.password }}
 {{- $email := default "noreply@example.com" .Values.registryAuth.email }}
 {{- $secretName := default "regcred" .Values.registryAuth.secretName }}
-{{- $saName := default "puller" .Values.registryAuth.serviceAccountName }}
 
 {{- $auth := printf "%s:%s" $user $pass | b64enc }}
 {{- $dockercfg := printf "{\"auths\":{\"%s\":{\"username\":\"%s\",\"password\":\"%s\",\"email\":\"%s\",\"auth\":\"%s\"}}}" $server $user $pass $email $auth }}

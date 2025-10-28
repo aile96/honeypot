@@ -34,7 +34,7 @@ opentelemetry-collector:
         targets:
           - endpoint: http://frontend-proxy.dmz:8080
       redis:
-        endpoint: "valkey-cart:6379"
+        endpoint: "valkey-cart.dat:6379"
         collection_interval: 10s
 
     exporters:
@@ -103,7 +103,7 @@ opentelemetry-collector:
                 exporter:
                   otlp:
                     protocol: grpc
-                    endpoint: otel-collector.mem.svc.cluster.local:4318
+                    endpoint: otel-collector:4318
 
 jaeger:
   enabled: false

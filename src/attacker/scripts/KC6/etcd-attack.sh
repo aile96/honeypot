@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ### === Parameters ===
-APISERVER_IMAGE="${APISERVER_IMAGE:-registry.k8s.io/kube-apiserver:v1.30.0}"
+K8S_IMAGE="${K8S_IMAGE:-registry.k8s.io/kube-apiserver:v1.30.0}"
 HOST_BIND_PORT="${HOST_BIND_PORT:-16443}"       # HTTPS port exposed from ephemeral APIServer on host
 NAME="${NAME:-k8s-apiserver-ephem}"
 CERT_DIR="${CERT_DIR:-$(pwd)/apiserver-certs}"
@@ -89,7 +89,7 @@ docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" \
   -p "127.0.0.1:${HOST_BIND_PORT}:6443" \
   -v "$CERT_DIR":/certs:ro \
-  "$APISERVER_IMAGE" \
+  "$K8S_IMAGE" \
   kube-apiserver \
     --secure-port=6443 \
     --tls-cert-file=/certs/tls.crt \

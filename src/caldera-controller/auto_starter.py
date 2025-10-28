@@ -13,6 +13,8 @@ Supported ENVs:
                        - "KC1@grpA, KC2:grpB, KC3"  (use @ or :)
   ADV_NAME      (str)   single fallback if ADV_LIST is empty (uses GROUP)
 
+  ENABLEKC1, ENABLEKC2, ...  (optional)  per-item enable flags.
+                              If not set -> enabled. Set to 0/false/no/off to disable.
   PLANNER       (str)   planner (default: batch) e.g., atomic
   AUTONOMOUS    (0/1)   default 1
   AUTO_CLOSE    (0/1)   default 1
@@ -177,7 +179,7 @@ def wait_operation_done(op_id: str, timeout_s: int) -> Tuple[bool, str]:
         time.sleep(POLL_INTERVAL)
     return False, last or "timeout"
 
-# ---------- New ADV_LIST parsing with group mapping ----------
+# ---------- ADV_LIST parsing with group mapping ----------
 def parse_adv_list(raw: str, default_group: str) -> List[Tuple[str, str]]:
     """
     Accepts comma-separated items.
@@ -199,6 +201,36 @@ def parse_adv_list(raw: str, default_group: str) -> List[Tuple[str, str]]:
         if name:
             items.append((name, group))
     return items
+
+# ---------- Filtering by ENABLEKC<N> env vars ----------
+def _is_disabled_by_env(value: Optional[str]) -> bool:
+    if value is None:
+        return False  # not set => enabled by default
+    v = value.strip().lower()
+    return v in ("0", "false", "no", "off")
+
+def filter_by_enable(adversaries: List[Tuple[str,str]]) -> List[Tuple[str,str]]:
+    """
+    Given a list of (name, group) pairs, check environment variables:
+      ENABLEKC1, ENABLEKC2, ...
+    The index is 1-based and corresponds to the position in the adv list.
+    If ENABLEKC<N> is unset -> item is enabled.
+    If ENABLEKC<N> in (0,false,no,off) -> disabled (skipped).
+    """
+    filtered: List[Tuple[str,str]] = []
+    for idx, (name, group) in enumerate(adversaries, start=1):
+        env_name = f"ENABLEKC{idx}"
+        env_val = os.getenv(env_name)
+        if _is_disabled_by_env(env_val):
+            log(f"auto-starter: {env_name}={env_val!r} -> SKIP adversary '{name}' (group={group})")
+            continue
+        # enabled
+        if env_val is not None:
+            log(f"auto-starter: {env_name}={env_val!r} -> RUN adversary '{name}' (group={group})")
+        else:
+            log(f"auto-starter: {env_name} not set -> RUN adversary '{name}' (group={group})")
+        filtered.append((name, group))
+    return filtered
 
 def run_sequence(adversaries_with_groups: List[Tuple[str, str]]) -> int:
     wait_caldera()
@@ -252,6 +284,13 @@ def main():
     if not adv_with_groups:
         # single fallback
         adv_with_groups = [(FALLBACK_ADV, GROUP_DEFAULT)]
+
+    # Filter by ENABLEKC<N> variables (index is 1-based)
+    adv_with_groups = filter_by_enable(adv_with_groups)
+
+    if not adv_with_groups:
+        log("auto-starter: no adversaries enabled -> exiting")
+        sys.exit(0)
 
     exit_code = run_sequence(adv_with_groups)
     # If you want the pod to exit when it finishes, comment the line below and leave sys.exit:

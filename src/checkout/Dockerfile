@@ -21,6 +21,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w" -o checkout main.go
 FROM gcr.io/distroless/static-debian12:nonroot
 ARG CHECKOUT_PORT=8080
 
+ENV CHECKOUT_PORT=${CHECKOUT_PORT}
+
 WORKDIR /usr/src/app/
 
 COPY --from=builder /usr/src/app/checkout/ ./

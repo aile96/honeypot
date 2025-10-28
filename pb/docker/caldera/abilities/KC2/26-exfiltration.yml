@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "echo \"[SIM] Exfiltration of data by proxy inside image\"", timeout: 30 } }
+    linux: { sh: { command: "sleep $W206 && echo \"[SIM] Exfiltration of data by proxy inside image\"", timeout: 30 } }

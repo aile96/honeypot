@@ -33,7 +33,7 @@ SSH_OPTS=(
   -i "$SSH_KEY"
   -o BatchMode=yes
   -o ConnectTimeout=8
-  -o StrictHostKeyChecking=accept-new
+  -o StrictHostKeyChecking=no
   -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
   -o IdentitiesOnly=yes
 )

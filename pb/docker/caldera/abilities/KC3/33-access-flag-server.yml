@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "cat $DATA_PATH/KC3/credentials", timeout: 30 } }
+    linux: { sh: { command: "sleep $W303 && cat $DATA_PATH/KC3/credentials", timeout: 30 } }

@@ -5,7 +5,7 @@ FROM nginx:1.27.0-otel
 ARG IMAGE_PROVIDER_PORT=8081
 ARG OTEL_COLLECTOR_HOST="otel-collector"
 ARG OTEL_COLLECTOR_PORT_GRPC=4317
-ARG OTEL_SERVICE_NAME=4318
+ARG OTEL_SERVICE_NAME="otel-collector"
 
 RUN apt-get update ; apt-get install lsb-release --no-install-recommends --no-install-suggests -y
 
@@ -22,6 +22,11 @@ EXPOSE ${IMAGE_PROVIDER_PORT}
 STOPSIGNAL SIGQUIT
 
 COPY src/image-provider/nginx.conf.template /nginx.conf.template
+
+ENV OTEL_COLLECTOR_HOST=${OTEL_COLLECTOR_HOST} \
+    IMAGE_PROVIDER_PORT=${IMAGE_PROVIDER_PORT} \
+    OTEL_COLLECTOR_PORT_GRPC=${OTEL_COLLECTOR_PORT_GRPC} \
+    OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME}
 
 # Start nginx
 CMD ["/bin/sh","-c","envsubst '$$OTEL_COLLECTOR_HOST $$IMAGE_PROVIDER_PORT $$OTEL_COLLECTOR_PORT_GRPC $$OTEL_SERVICE_NAME' < /nginx.conf.template > /tmp/nginx.conf \

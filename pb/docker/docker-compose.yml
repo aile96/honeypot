@@ -40,38 +40,38 @@ services:
 #      LOCUST_AUTOSTART: "true" 
 #      LOCUST_BROWSER_TRAFFIC_ENABLED: "true"
 
-#  samba:
-#    container_name: samba-pv
-#    image: samba:${IMAGE_VERSION:-2.0.2}
-#    hostname: samba-pv
-#    restart: unless-stopped
-#    networks: [net]
-#    build:
-#      context: ../../src/samba
-#      dockerfile: Dockerfile
-#    environment:
-#      TZ: Europe/Rome
-#      SAMBA_USER: k8s
-#      SAMBA_PASS: password
-#      SAMBA_UID: "10001"
-#      SAMBA_GID: "10001"
-#      SHARE_NAME: pvroot
-#      SHARE_PATH: /share
-#      HOSTS_ALLOW: "127. 172.18.0. 172.19.0."
-#      ENCRYPTION: required
-#      LOG_LEVEL: "1"
-#    cap_add:
-#      - NET_BIND_SERVICE
-#      - CHOWN
-#    read_only: false
-#    tmpfs:
-#      - /run/samba:size=16m,mode=0755
-#    healthcheck:
-#      test: ["CMD-SHELL", "nc -z localhost 445"]
-#      interval: 10s
-#      timeout: 3s
-#      retries: 10
-#      start_period: 10s
+  samba:
+    container_name: samba-pv
+    image: samba:${IMAGE_VERSION:-2.0.2}
+    hostname: samba-pv
+    restart: unless-stopped
+    networks: [net]
+    build:
+      context: ../../src/samba
+      dockerfile: Dockerfile
+    environment:
+      TZ: Europe/Rome
+      SAMBA_USER: k8s
+      SAMBA_PASS: password
+      SAMBA_UID: "10001"
+      SAMBA_GID: "10001"
+      SHARE_NAME: pvroot
+      SHARE_PATH: /share
+      HOSTS_ALLOW: "127. 172.18.0. 172.19.0."
+      ENCRYPTION: required
+      LOG_LEVEL: "1"
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+    read_only: false
+    tmpfs:
+      - /run/samba:size=16m,mode=0755
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 445"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   proxy:
     container_name: proxy
@@ -109,7 +109,14 @@ services:
       dockerfile: ../../src/caldera-controller/Dockerfile
     environment:
       CALDERA_URL: "http://${CALDERA_SERVER}:8888"
-      KUBECONFIG: /kube/kubeconfig
+      KUBECONFIG: "/kube/kubeconfig"
+      ADV_LIST: "KC1 – Image@cluster, KC2 – WiFi@outside, KC3 – FlagATT@outside, KC4 – CRSocket@outside, KC5 – Certificate@outside, KC6 – Etcd@outside"
+      ENABLEKC1: ${ENABLEKC1:-true}
+      ENABLEKC2: ${ENABLEKC2:-true}
+      ENABLEKC3: ${ENABLEKC3:-true}
+      ENABLEKC4: ${ENABLEKC4:-true}
+      ENABLEKC5: ${ENABLEKC5:-true}
+      ENABLEKC6: ${ENABLEKC6:-true}
     volumes:
       - ./controller:/kube:ro
 
@@ -126,6 +133,7 @@ services:
         DOCKER_DAEMON: "1"
         CALDERA_URL: "http://${CALDERA_SERVER}:8888"
         GROUP: "outside"
+        ATTACKERADDR: "${ATTACKER}"
     privileged: true
     environment:
       WAIT: "0"
@@ -134,9 +142,59 @@ services:
       FRONTEND_PROXY_IP: ${FRONTEND_PROXY_IP}
       CONTROL_PLANE_NODE: ${CONTROL_PLANE_NODE:-kind-control-plane}
       CONTROL_PLANE_PORT: ${KUBESERVER_PORT:-6443}
-      ATTACKER_NODE: ${ATTACKER_NODE:-kind-worker}
+      K8S_IMAGE: ${K8S_IMAGE:-registry.k8s.io/kube-apiserver:v1.30.0}
       REGISTRY_USER: ${REGISTRY_USER:-testuser}
       REGISTRY_PASS: ${REGISTRY_PASS:-testpassword}
+      # KC2
+      W201: ${W201:-10}
+      W202: ${W202:-10}
+      W203: ${W203:-10}
+      W204: ${W204:-10}
+      W205: ${W205:-10}
+      W206: ${W206:-10}
+      W207: ${W207:-10}
+      W208: ${W208:-10}
+      # KC3
+      W301: ${W301:-10}
+      W302: ${W302:-10}
+      W303: ${W303:-10}
+      W304: ${W304:-10}
+      W305: ${W305:-10}
+      W306: ${W306:-10}
+      W307: ${W307:-10}
+      W308: ${W308:-10}
+      # KC4
+      W401: ${W401:-10}
+      W402: ${W402:-10}
+      W403: ${W403:-10}
+      W404: ${W404:-10}
+      W405: ${W405:-10}
+      W406: ${W406:-10}
+      W407: ${W407:-10}
+      W408: ${W408:-10}
+      # KC5
+      W501: ${W501:-10}
+      W502: ${W502:-10}
+      W503: ${W503:-10}
+      W504: ${W504:-10}
+      W505: ${W505:-10}
+      W506: ${W506:-10}
+      W507: ${W507:-10}
+      W508: ${W508:-10}
+      W509: ${W509:-10}
+      W510: ${W510:-10}
+      # KC6
+      W601: ${W601:-10}
+      W602: ${W602:-10}
+      W603: ${W603:-10}
+      W604: ${W604:-10}
+      W605: ${W605:-10}
+      W606: ${W606:-10}
+      W607: ${W607:-10}
+      W608: ${W608:-10}
+      W609: ${W609:-10}
+      W610: ${W610:-10}
+      W611: ${W611:-10}
     volumes:
       - ./attacker/apiserver:/apiserver
       - ./attacker/iphost:/tmp/iphost

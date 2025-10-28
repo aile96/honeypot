@@ -72,7 +72,7 @@ echo ">> Nodes found (${#nodes[@]}): ${nodes[*]}"
 
 for n in "${nodes[@]}"; do
   # Wait for SSH to become reachable
-  if ! wait_for_ssh "$n" 300; then
+  if ! wait_for_ssh "$n" 600; then
     echo "SKIP: $n is not reachable, moving on" >&2
     continue
   fi

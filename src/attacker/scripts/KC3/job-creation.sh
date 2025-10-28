@@ -55,7 +55,7 @@ JOB_JSON="$(
         containers: [
           {
             name: "psql",
-            image: "postgres:16",
+            image: "postgres:16-alpine",
             env: [
               { name: "PGHOST", value: $pghost },
               { name: "PGPORT", value: $pgport },

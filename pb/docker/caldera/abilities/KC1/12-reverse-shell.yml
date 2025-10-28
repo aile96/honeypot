@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "echo \"[SIM] reverse shell opened to C&C server (caldera)\"", timeout: 30 } }
+    linux: { sh: { command: "sleep $W102 && echo \"[SIM] reverse shell opened to C&C server (caldera)\"", timeout: 30 } }

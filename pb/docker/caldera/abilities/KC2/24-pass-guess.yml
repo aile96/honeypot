@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "/opt/caldera/KC2/pass-enum.sh", timeout: 1200, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "sleep $W204 && /opt/caldera/KC2/pass-enum.sh", timeout: 1200, parsers: [], cleanup: "" } }

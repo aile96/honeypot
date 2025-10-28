@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "/opt/caldera/KC3/job-creation.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "sleep $W307 && /opt/caldera/KC3/job-creation.sh", timeout: 900, parsers: [], cleanup: "" } }

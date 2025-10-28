@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "echo \"[SIM] order with free products sent\"", timeout: 30 } }
+    linux: { sh: { command: "sleep $W308 && echo \"[SIM] order with free products sent\"", timeout: 30 } }

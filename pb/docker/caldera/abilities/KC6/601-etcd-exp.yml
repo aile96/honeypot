@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "echo \"[SIM] execution of code in the control plane that expose etcd server\"", timeout: 30 } }
+    linux: { sh: { command: "sleep $W601 && echo \"[SIM] execution of code in the control plane that expose etcd server\"", timeout: 30 } }

@@ -136,7 +136,9 @@ if command -v skaffold >/dev/null 2>&1; then
   fi
 
   log "Running skaffold deployment and building..."
-  skaffold run --tag "${IMAGE_VERSION:-latest}" "$@"
+  skaffold run --tag "${IMAGE_VERSION:-2.0.2}" \
+  --default-repo="${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}" \
+  --verbosity error "$@"
 else
   warn "Skaffold not found — skipping skaffold config and run."
 fi

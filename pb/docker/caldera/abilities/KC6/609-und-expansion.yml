@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "/opt/caldera/KC6/und-expansion.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "sleep $W609 && /opt/caldera/KC6/und-expansion.sh", timeout: 900, parsers: [], cleanup: "" } }

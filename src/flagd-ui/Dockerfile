@@ -33,7 +33,8 @@ COPY --from=builder /app/next.config.mjs ./next.config.mjs
 
 COPY --from=builder /app/.next ./.next
 
-ENV FLAGD_UI_JWT_SECRET="abcdefghijk0123456789lmnopqrstuv"
+ENV FLAGD_UI_JWT_SECRET="abcdefghijk0123456789lmnopqrstuv" \
+    FLAGD_UI_PORT=${FLAGD_UI_PORT}
 
 EXPOSE ${FLAGD_UI_PORT}
 

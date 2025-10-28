@@ -17,7 +17,8 @@ ARG PAYMENT_PORT=8080
 
 USER node
 WORKDIR /usr/src/app/
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    PAYMENT_PORT=${PAYMENT_PORT}
 
 COPY --chown=node:node --from=build /usr/src/app/node_modules/ ./node_modules/
 COPY ./src/payment/ ./

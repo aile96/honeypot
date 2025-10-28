@@ -32,5 +32,6 @@ RUN composer install \
     --prefer-dist
 
 FROM base AS final
+ENV QUOTE_PORT=${QUOTE_PORT}
 COPY --from=vendor /tmp/vendor/ ./vendor/
 COPY ./src/quote/ /var/www

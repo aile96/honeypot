@@ -24,5 +24,7 @@ WORKDIR /usr/src/app/
 
 COPY --from=builder /usr/src/app/product-catalog/ ./
 
+ENV PRODUCT_CATALOG_PORT=${PRODUCT_CATALOG_PORT}
+
 EXPOSE ${PRODUCT_CATALOG_PORT}
 ENTRYPOINT [ "./product-catalog" ]

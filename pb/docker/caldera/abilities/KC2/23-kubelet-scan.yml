@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "/opt/caldera/KC2/kubelet-scan.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "sleep $W203 && /opt/caldera/KC2/kubelet-scan.sh", timeout: 900, parsers: [], cleanup: "" } }

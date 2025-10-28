@@ -54,7 +54,9 @@ RUN apk update && apk add --no-cache \
 # binaries/libraries installed from the builder stage
 COPY --from=builder /usr/local /usr/local
 
-ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/lib"
+ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/lib" \
+    CURRENCY_PORT=${CURRENCY_PORT} \
+    EXPOSE_HTTP_PORT=${EXPOSE_HTTP_PORT}
 
 # copy two files into /tmp
 COPY ./src/currency/data/log.txt ./src/currency/data/debug.txt /tmp/

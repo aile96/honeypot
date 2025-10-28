@@ -570,6 +570,8 @@ log "Registry CA/auth installation step completed."
 # --------------------------
 KUBESERVER_PORT="$(kubectl -n default get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || echo 6443)"
 export KUBESERVER_PORT
+K8S_IMAGE="$(kubectl get pod -n kube-system -l component=kube-apiserver -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}')"
+export K8S_IMAGE
 log "Running docker compose..."
 docker compose -f ./pb/docker/docker-compose.yml up -d --build
 wait_registry_ready "${REGISTRY_NAME}" "${REGISTRY_PORT}" 300 || exit 1

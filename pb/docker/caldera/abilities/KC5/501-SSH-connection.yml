@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "echo \"[SIM] initial access with SSH connection\"", timeout: 30 } }
+    linux: { sh: { command: "sleep $W501 && echo \"[SIM] initial access with SSH connection\"", timeout: 30 } }

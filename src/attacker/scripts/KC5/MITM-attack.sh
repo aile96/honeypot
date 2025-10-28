@@ -23,7 +23,8 @@ cleanup() {
 trap cleanup EXIT
 
 # 1) Setup
-apt update >/dev/null 2>&1 && apt install -y sslsplit inotify-tools jq iptables iproute2 ca-certificates >/dev/null 2>&1
+apt update >/dev/null 2>&1
+apt install -y sslsplit inotify-tools jq iptables iproute2 ca-certificates >/dev/null 2>&1
 mkdir -p $LOGDIR
 
 # 2) Modification ip status

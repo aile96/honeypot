@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "/opt/caldera/KC5/service-rerun.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "sleep $W510 && /opt/caldera/KC5/service-rerun.sh", timeout: 900, parsers: [], cleanup: "" } }

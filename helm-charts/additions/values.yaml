@@ -1,4 +1,4 @@
-default:
+defaultValues:
   image:
     repository: registry:5000
     version: "2.0.2"
@@ -55,12 +55,6 @@ networkPolicies:
       allowInternetEgress: true
       allowInternetIngress: false
 
-caldera:
-  enabled: false
-  namespace: "dmz"
-  host: "caldera.dock"
-  port: 8888
-
 volumes:
   enabled: false
 
@@ -71,17 +65,17 @@ postgres:
     imagePullSecrets:
       - name: regcred
   postgres:
-    image: registry:5000/postgres:2.0.2
+    image: postgres
     db: currency
     secretName: dbcurrency
     nodeGroup: NotAttacker
   postgres-auth:
-    image: registry:5000/postgres-auth:2.0.2
+    image: postgres-auth
     db: users
     secretName: dbauth
     nodeGroup: NodeAttacker
   postgres-payment:
-    image: registry:5000/postgres-payment:2.0.2
+    image: postgres-payment
     db: payments
     secretName: dbpayment
     nodeGroup: NodeAttacker
@@ -138,13 +132,11 @@ namespaces:
   list: "app, tst, dmz, dat, pay, mem"
 
 registryAuth:
-  enabled: true
-  server: "registry:5000"
+  enabled: false
   username: "testuser"
   password: "testpassword"
   email: "noreply@example.com"
   secretName: "regcred"
-  serviceAccountName: "puller"
 
 pool:
   enabled: false

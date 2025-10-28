@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "echo \"[SIM] destruction of all data\"", timeout: 30 } }
+    linux: { sh: { command: "sleep $W509 && echo \"[SIM] destruction of all data\"", timeout: 30 } }

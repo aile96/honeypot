@@ -62,5 +62,7 @@ WORKDIR /app
 COPY --from=builder /app/target/release/shipping /app/shipping
 COPY --from=builder /bin/grpc_health_probe /bin/grpc_health_probe
 
+ENV SHIPPING_PORT=${SHIPPING_PORT}
+
 EXPOSE ${SHIPPING_PORT}
 ENTRYPOINT ["/app/shipping"]

@@ -1,6 +1,7 @@
 {{- if .Values.postgres.enabled }}
 {{- $ns := default .Release.Namespace .Values.postgres.namespace }}
 {{- $common := default dict .Values.postgres.common }}
+{{- $img := default dict .Values.defaultValues.image }}
 {{- $instances := omit .Values.postgres "enabled" "namespace" "common" }}
 {{- range $name, $pg := $instances }}
 {{- if (default true $pg.enabled) }}
@@ -88,7 +89,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: postgres
-          image: {{ required (printf "missing .postgres.%s.image" $name) $pg.image }}
+          image: "{{ $img.repository }}/{{ $pg.image }}:{{ $img.version }}"
           imagePullPolicy: {{ default "IfNotPresent" $common.imagePullPolicy }}
           {{- with (coalesce $pg.resources $common.resources) }}
           resources:

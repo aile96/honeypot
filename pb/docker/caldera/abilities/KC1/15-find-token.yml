@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "cat $DATA_PATH/KC1/token", timeout: 30 } }
+    linux: { sh: { command: "sleep $W105 && cat $DATA_PATH/KC1/token", timeout: 30 } }

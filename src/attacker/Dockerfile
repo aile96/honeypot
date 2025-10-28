@@ -9,13 +9,29 @@ ARG AUTH_NS="app"
 ARG ATTACKERADDR="prova.dmz.svc.cluster.local"
 ARG DATA_PATH="/tmp/KCData"
 ARG WAIT="1"
+ARG W101="10"
+ARG W102="10"
+ARG W103="10"
+ARG W104="10"
+ARG W105="10"
+ARG W106="10"
+ARG W107="10"
+ARG W108="10"
 
 # Building
 ENV WAIT="$WAIT" \
     CALDERA_URL="$CALDERA_URL" \
     GROUP="$GROUP" \
     DATA_PATH="$DATA_PATH" \
-    DOCKER_DAEMON="$DOCKER_DAEMON"
+    DOCKER_DAEMON="$DOCKER_DAEMON" \
+    W101="$W101" \
+    W102="$W102" \
+    W103="$W103" \
+    W104="$W104" \
+    W105="$W105" \
+    W106="$W106" \
+    W107="$W107" \
+    W108="$W108"
 
 ENV LOG_NS="$LOG_NS" \
     ATTACKED_NS="$ATTACKED_NS" \
@@ -30,7 +46,7 @@ ENV HOSTREGISTRY="registry:5000" \
 
 ENV CONTROL_PLANE_NODE="kind-control-plane" \
     CONTROL_PLANE_PORT="6443" \
-    ATTACKER_NODE="kind-worker" \
+    K8S_IMAGE="registry.k8s.io/kube-apiserver:v1.30.0" \
     NSPROTO="$AUTH_NS" \
     NSCREDS="$LOG_NS"
 

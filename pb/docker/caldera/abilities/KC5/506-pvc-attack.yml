@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "/opt/caldera/KC5/pvc-attack.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "sleep $W506 && /opt/caldera/KC5/pvc-attack.sh", timeout: 900, parsers: [], cleanup: "" } }

@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "/opt/caldera/KC5/MITM-attack.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "sleep $W502 && /opt/caldera/KC5/MITM-attack.sh", timeout: 900, parsers: [], cleanup: "" } }

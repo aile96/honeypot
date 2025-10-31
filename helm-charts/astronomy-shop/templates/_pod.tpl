@@ -36,11 +36,35 @@ should be last.
 {{-   end }}
 {{- end }}
 
+{{- range $i, $e := .envSwitchFrom }}
+  {{- $refBody := dict "name" $e.refName "key" $e.key }}
+  {{- if hasKey $e "optional" }}
+    {{- $refBody = merge $refBody (dict "optional" $e.optional) }}
+  {{- end }}
+  {{- $valueFrom := dict }}
+  {{- if eq $e.valueFrom "secret" }}
+    {{- $valueFrom = dict "secretKeyRef" $refBody }}
+  {{- else if eq $e.valueFrom "configmap" }}
+    {{- $valueFrom = dict "configMapKeyRef" $refBody }}
+  {{- else }}
+    {{- fail (printf "envSwitchFrom[%d]: valueFrom must be 'secret' or 'configmap'" $i) }}
+  {{- end }}
+  {{- $allEnvs = append $allEnvs (dict "name" $e.name "valueFrom" $valueFrom) }}
+{{- end }}
+
 {{- if $resourceAttributesEnv }}
 {{-   $allEnvs = append $allEnvs $resourceAttributesEnv }}
 {{- end }}
 
-{{- tpl (toYaml $allEnvs) . }}
+{{- range $e := $allEnvs }}
+- name: {{ $e.name | quote }}
+  {{- if $e.valueFrom }}
+  valueFrom:
+    {{- toYaml $e.valueFrom | nindent 4 }}
+  {{- else }}
+  value: {{ printf "%v" $e.value | quote }}
+  {{- end }}
+{{- end }}
 {{- end }}
 
 

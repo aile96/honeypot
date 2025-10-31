@@ -37,6 +37,10 @@ const (
 	defaultHeaderKey = headerAuth
 )
 
+// Env knobs:
+//   CRYPTO_USE_FLAGD=true|false  -> switch between flagd and static default
+//   CRYPTO_DEFAULT_WORD=<string> -> the static word and the OpenFeature default
+
 type encPayload struct {
 	Nonce      string `json:"nonce"`
 	Ciphertext string `json:"ciphertext"`
@@ -47,8 +51,10 @@ type proxy struct {
 	listenAddr  string
 	upstreamURL *url.URL
 
-	flagKey   string
-	headerKey string
+	flagKey     string
+	useFlagd    bool
+	defaultWord string
+	headerKey   string
 
 	ofClient *of.Client
 
@@ -71,6 +77,14 @@ func getenvInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+func getenvBool(key string, def bool) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if v == "" {
+		return def
+	}
+	return v == "1" || v == "true" || v == "yes" || v == "on"
 }
 
 func deriveKey(word string) ([]byte, error) {
@@ -145,57 +159,74 @@ func newProxy() (*proxy, error) {
 	if up == "" {
 		return nil, fmt.Errorf("UPSTREAM_URL required")
 	}
-
 	if !strings.Contains(up, "://") {
-	    up = "http://" + up
+		up = "http://" + up
 	}
-
 	u, err := url.Parse(up)
 	if err != nil {
 		return nil, fmt.Errorf("invalid UPSTREAM_URL: %w", err)
 	}
 
-	// flagd provider (gRPC 8013 by default)
-	flagdHost := mustEnv("FLAGD_HOST", "flagd")
-	flagdPort := uint16(getenvInt("FLAGD_PORT", 8013))
-	provider, err := flagd.NewProvider(flagd.WithHost(flagdHost), flagd.WithPort(flagdPort))
-	if err != nil {
-		return nil, fmt.Errorf("flagd provider: %w", err)
-	}
+	// Decide source for the crypto word
+	useFlagd := getenvBool("CRYPTO_USE_FLAGD", true)
+	defWord := mustEnv("CRYPTO_DEFAULT_WORD", "")
 
-	// exponential retry to initialize OpenFeature (flagd may not be ready yet)
-	var lastErr error
-	for i, d := range []time.Duration{0, time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second} {
-		if d > 0 {
-			time.Sleep(d)
+	var client *of.Client
+	if useFlagd {
+		// flagd provider (gRPC 8013 by default)
+		flagdHost := mustEnv("FLAGD_HOST", "flagd")
+		flagdPort := uint16(getenvInt("FLAGD_PORT", 8013))
+		provider, err := flagd.NewProvider(flagd.WithHost(flagdHost), flagd.WithPort(flagdPort))
+		if err != nil {
+			return nil, fmt.Errorf("flagd provider: %w", err)
 		}
-		if err := of.SetProviderAndWait(provider); err != nil {
-			lastErr = err
-			log.Printf("[crypto-proxy] openfeature provider not ready (attempt %d): %v", i+1, err)
-			continue
-		}
-		lastErr = nil
-		break
-	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("openfeature set provider (after retries): %w", lastErr)
-	}
 
-	client := of.NewClient("crypto-proxy")
+		// exponential retry to initialize OpenFeature (flagd may not be ready yet)
+		var lastErr error
+		for i, d := range []time.Duration{0, time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second} {
+			if d > 0 {
+				time.Sleep(d)
+			}
+			if err := of.SetProviderAndWait(provider); err != nil {
+				lastErr = err
+				log.Printf("[crypto-proxy] openfeature provider not ready (attempt %d): %v", i+1, err)
+				continue
+			}
+			lastErr = nil
+			break
+		}
+		if lastErr != nil {
+			return nil, fmt.Errorf("openfeature set provider (after retries): %w", lastErr)
+		}
+		client = of.NewClient("crypto-proxy")
+	}
 
 	return &proxy{
 		mode:        mode,
 		listenAddr:  listen,
 		upstreamURL: u,
+
 		flagKey:     mustEnv("FLAG_KEY", defaultFlagKey),
+		useFlagd:    useFlagd,
+		defaultWord: defWord,
 		headerKey:   mustEnv("HEADER_NAME", defaultHeaderKey),
-		ofClient:    client,
+
+		ofClient: client,
 	}, nil
 }
 
 func (p *proxy) currentWord(ctx context.Context) string {
-	// Ask every time; the provider handles caching/eventing. Default "" => transparent.
-	val, err := p.ofClient.StringValue(ctx, p.flagKey, "", of.EvaluationContext{})
+	// Static mode: always use configured default
+	if !p.useFlagd {
+		if strings.TrimSpace(p.defaultWord) != "" {
+			p.lastWord = p.defaultWord
+			p.lastAt = time.Now()
+		}
+		return p.defaultWord
+	}
+
+	// Flagd mode: ask provider; default to configured static word
+	val, err := p.ofClient.StringValue(ctx, p.flagKey, p.defaultWord, of.EvaluationContext{})
 	if err != nil {
 		// best-effort fallback to the last non-empty value
 		return p.lastWord
@@ -431,8 +462,11 @@ func (p *proxy) serve() error {
 		Handler:           h2cHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.Printf("[crypto-proxy] mode=%s listen=%s upstream=%s flagKey=%s",
-		p.mode, p.listenAddr, p.upstreamURL.String(), p.flagKey)
+	log.Printf(
+		"[crypto-proxy] mode=%s listen=%s upstream=%s flagKey=%s useFlagd=%t defaultWordSet=%t",
+		p.mode, p.listenAddr, p.upstreamURL.String(), p.flagKey,
+		p.useFlagd, strings.TrimSpace(p.defaultWord) != "",
+	)
 	return server.ListenAndServe()
 }
 

@@ -265,3 +265,35 @@ EOF
 
 chmod 600 "${OUT_FILE}"
 log "Kubeconfig ready: ${OUT_FILE}"
+
+# --------------------------
+# 6) Setting CoreDNS to non-recursive mode
+# --------------------------
+if [[ "${RECURSIVE_DNS:-true}" != "true" ]]; then
+  log "Checking CoreDNS ConfigMap for 'forward'..."
+  if kubectl -n kube-system get configmap coredns -o yaml | grep -q '^[[:space:]]*forward[[:space:]]'; then
+    log "Disabling recursion: removing 'forward' (handles block and single-line forms)..."
+    kubectl -n kube-system get configmap coredns -o yaml \
+      | awk '
+          # Start skipping when we hit: forward ... {
+          /^[[:space:]]*forward[[:space:]].*{/ { blk=1; depth=1; next }
+          # While skipping, track nested braces and skip lines
+          blk {
+            add=gsub(/{/,"{"); subc=gsub(/}/,"}")
+            depth += add - subc
+            if (depth <= 0) blk=0
+            next
+          }
+          # Skip single-line forward directives (no opening brace)
+          /^[[:space:]]*forward[[:space:]].*$/ { next }
+          # Otherwise print the line
+          { print }
+        ' \
+      | kubectl -n kube-system apply -f -
+    log "Restarting the CoreDNS deployment..."
+    kubectl -n kube-system rollout restart deployment coredns
+    log "Done! CoreDNS is now non-recursive."
+  else
+    log "No 'forward' directive found — nothing to change."
+  fi
+fi

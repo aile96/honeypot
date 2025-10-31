@@ -154,17 +154,19 @@ log "Patching kube-apiserver to exclude application pods..."
 kubectl taint nodes $CONTROL_PLANE_NODE node-role.kubernetes.io/control-plane=:NoSchedule --overwrite=true
 
 mkdir -p "$OUT_DIR"
-log "Copying apiserver.crt and apiserver.key from $CP_CONTAINER to $OUT_DIR"
-if docker cp "$CP_CONTAINER":/etc/kubernetes/pki/apiserver.crt "$OUT_DIR/apiserver.crt" >/dev/null 2>&1 && \
-   docker cp "$CP_CONTAINER":/etc/kubernetes/pki/apiserver.key "$OUT_DIR/apiserver.key" >/dev/null 2>&1; then
-  log "Certificates copied to $OUT_DIR"
-else
-  log "Failed to copy apiserver certs from $CP_CONTAINER. The path /etc/kubernetes/pki does not exist. Trying /var/lib/minikube/certs ..."
-  if docker cp "$CP_CONTAINER":/var/lib/minikube/certs/apiserver.crt "$OUT_DIR/apiserver.crt" >/dev/null 2>&1 && \
-     docker cp "$CP_CONTAINER":/var/lib/minikube/certs/apiserver.key "$OUT_DIR/apiserver.key" >/dev/null 2>&1; then
+if [[ "$API_CERT" == "true" ]]; then
+  log "Copying apiserver.crt and apiserver.key from $CP_CONTAINER to $OUT_DIR"
+  if docker cp "$CP_CONTAINER":/etc/kubernetes/pki/apiserver.crt "$OUT_DIR/apiserver.crt" >/dev/null 2>&1 && \
+     docker cp "$CP_CONTAINER":/etc/kubernetes/pki/apiserver.key "$OUT_DIR/apiserver.key" >/dev/null 2>&1; then
     log "Certificates copied to $OUT_DIR"
   else
-    warn "Failed to copy apiserver certs from $CP_CONTAINER. The path may not exist or container may not expose them."
+    log "Failed to copy apiserver certs from $CP_CONTAINER. The path /etc/kubernetes/pki does not exist. Trying /var/lib/minikube/certs ..."
+    if docker cp "$CP_CONTAINER":/var/lib/minikube/certs/apiserver.crt "$OUT_DIR/apiserver.crt" >/dev/null 2>&1 && \
+       docker cp "$CP_CONTAINER":/var/lib/minikube/certs/apiserver.key "$OUT_DIR/apiserver.key" >/dev/null 2>&1; then
+      log "Certificates copied to $OUT_DIR"
+    else
+      warn "Failed to copy apiserver certs from $CP_CONTAINER. The path may not exist or container may not expose them."
+    fi
   fi
 fi
 
@@ -323,11 +325,13 @@ curl -sS -o /dev/null -w "kubelet 10255 on localhost: %{http_code}\n" http://127
 ' || warn "Failed to patch kubelet on $node (container $name). Check logs."
 }
 
-log "Enabling kubelet read-only port (10255) on all worker nodes..."
-for n in "${WORKER_NODES[@]}"; do
-  enable_ro_port_on_worker "$n"
-done
-log "Finished configuring read-only port on worker nodes."
+if [[ "$OPEN_PORTS" == "true" ]]; then
+  log "Enabling kubelet read-only port (10255) on all worker nodes..."
+  for n in "${WORKER_NODES[@]}"; do
+    enable_ro_port_on_worker "$n"
+  done
+  log "Finished configuring read-only port on worker nodes."
+fi
 
 # --------------------------
 # 7) Open etcd port 12379
@@ -393,8 +397,10 @@ fi
 EOF
 )
 
-log "Applying patch inside the node container..."
-docker exec -i "$NODE_CTN" bash -lc "$PATCH_CMD"
+if [[ "$ETCD_EXPOSURE" == "true" ]]; then
+  log "Applying patch inside the node container..."
+  docker exec -i "$NODE_CTN" bash -lc "$PATCH_CMD"
+fi
 
 # --------------------------
 # 8) Insert anonymous authentication
@@ -424,8 +430,10 @@ fi
 EOF
 )
 
-log "Patching kube-apiserver inside the node container..."
-docker exec -i "$NODE_CTN" bash -lc "$PATCH_APISERVER_CMD"
+if [[ "$ANONYMOUS_AUTH" == "true" ]]; then
+  log "Patching kube-apiserver inside the node container..."
+  docker exec -i "$NODE_CTN" bash -lc "$PATCH_APISERVER_CMD"
+fi
 
 # Wait for kubelet to recreate the API server pod
 log "Waiting for changes to apply..."
@@ -554,6 +562,7 @@ log "Registry CA/auth installation step completed."
 # --------------------------
 # 11) Running docker compose and waiting for registry to login
 # --------------------------
+sudo rm -rf pb/docker/attacker/results
 KUBESERVER_PORT="$(kubectl -n default get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || echo 6443)"
 export KUBESERVER_PORT
 K8S_IMAGE="$(kubectl get pod -n kube-system -l component=kube-apiserver -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}')"

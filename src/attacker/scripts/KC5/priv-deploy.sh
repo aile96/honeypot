@@ -171,6 +171,7 @@ create_deployment_for_node() {
 }
 
 mkdir -p ${KEY_DIR}
+rm -f $PRIV_KEY $PUB_KEY
 ssh-keygen -t ed25519 -N '' -f "${PRIV_KEY}" -C "ultra-priv" >/dev/null
 PUB_CONTENT="$(cat "${PUB_KEY}")"
 echo "[i] Key generated: ${PRIV_KEY} / ${PUB_KEY}"

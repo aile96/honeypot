@@ -1,6 +1,9 @@
 FROM python:3.12-slim
 
 ARG CRICTL_VERSION="v1.30.0"
+ARG RCE_ENABLED="true"
+
+ENV RCE_ENABLED="$RCE_ENABLED"
 
 # Install sshd + tini for a clean PID1
 RUN apt-get update \

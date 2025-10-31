@@ -4,6 +4,12 @@ defaultValues:
     version: "2.0.2"
     pullPolicy: IfNotPresent
 
+vulnerabilities:
+  dnsGrant: true
+  deployGrant: true
+  anonymousGrant: true
+  currencyGrant: true
+
 networkPolicies:
   enabled: false
   allowKubeAPIServer: true
@@ -81,45 +87,53 @@ postgres:
     cohostGroup: "dbpair"
 
 config:
-  enabled: false
-  configmaps:
+  enabled: true
+  objects:
     flagd-credentials-ui:
-      namespace: "mem"
+      type: configmap
+      namespace: mem
       data:
         FLAGD_UI_USER: "admin"
-        FLAGD_UI_PASS: "elia"
+        FLAGD_UI_PASS: "admin"
     proto:
-      namespace: "app"
-      dataFromFile: "files/demo.proto"
+      type: configmap
+      namespace: app
+      dataFromFile: files/demo.proto
     product-catalog-products:
-      namespace: "app"
-      dataFromFile: "files/products.json"
+      type: configmap
+      namespace: app
+      dataFromFile: files/products.json
     flagd-config:
-      namespace: "mem"
-      dataFromFile: "files/demo.flagd.json"
-  secrets:
+      type: configmap
+      namespace: mem
+      dataFromFile: files/demo.flagd.json
     dbcurrency-creds:
-      namespace: "app"
+      type: secret
+      namespace: app
       data:
         username: "postgres"
         password: "yourpassword"
     dbcurrency:
-      namespace: "dat"
+      type: secret
+      namespace: dat
       data:
         username: "postgres"
         password: "yourpassword"
     dbpayment:
-      namespace: "dat"
+      type: secret
+      namespace: dat
       data:
         username: "payments_rw"
         password: "payments_rw_pwd"
     dbauth:
-      namespace: "dat"
+      type: secret
+      namespace: dat
       data:
         username: "testuser"
         password: "testpassword"
     smb-creds:
-      namespace: "mem"
+      type: secret
+      namespace: mem
       data:
         username: "k8s"
         password: "password"

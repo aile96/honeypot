@@ -150,7 +150,7 @@ build:
 #      docker:
 #        dockerfile: src/traffic-translator/Dockerfile
 deploy:
-  statusCheck: false
+  statusCheck: true
   helm:
     flags:
       install:
@@ -205,19 +205,25 @@ deploy:
           networkPolicies.rules.tst.ingress: "{{.MEM_NAMESPACE}}\\, {{.DMZ_NAMESPACE}}\\, kube-system"
           networkPolicies.rules.tst.egress: "{{.MEM_NAMESPACE}}\\, {{.DMZ_NAMESPACE}}\\, kube-system"
           postgres.namespace: "{{.DAT_NAMESPACE}}"
-          config.configmaps.flagd-credentials-ui.namespace: "{{.MEM_NAMESPACE}}"
-          config.configmaps.proto.namespace: "{{.APP_NAMESPACE}}"
-          config.configmaps.product-catalog-products.namespace: "{{.APP_NAMESPACE}}"
-          config.configmaps.flagd-config.namespace: "{{.MEM_NAMESPACE}}"
-          config.secrets.dbcurrency-creds.namespace: "{{.APP_NAMESPACE}}"
-          config.secrets.dbcurrency.namespace: "{{.DAT_NAMESPACE}}"
-          config.secrets.dbpayment.namespace: "{{.DAT_NAMESPACE}}"
-          config.secrets.dbauth.namespace: "{{.DAT_NAMESPACE}}"
-          config.secrets.smb-creds.namespace: "{{.MEM_NAMESPACE}}"
+          config.objects.flagd-credentials-ui.namespace: "{{.MEM_NAMESPACE}}"
+          config.objects.proto.namespace: "{{.APP_NAMESPACE}}"
+          config.objects.product-catalog-products.namespace: "{{.APP_NAMESPACE}}"
+          config.objects.flagd-config.namespace: "{{.MEM_NAMESPACE}}"
+          config.objects.dbcurrency-creds.namespace: "{{.APP_NAMESPACE}}"
+          config.objects.dbcurrency.namespace: "{{.DAT_NAMESPACE}}"
+          config.objects.dbpayment.namespace: "{{.DAT_NAMESPACE}}"
+          config.objects.dbauth.namespace: "{{.DAT_NAMESPACE}}"
+          config.objects.smb-creds.namespace: "{{.MEM_NAMESPACE}}"
           namespaces.list: '{{.APP_NAMESPACE}}\, {{.DMZ_NAMESPACE}}\, {{.DAT_NAMESPACE}}\, {{.PAY_NAMESPACE}}\, {{.MEM_NAMESPACE}}\, {{.TST_NAMESPACE}}'
           registryAuth.username: "{{.REGISTRY_USER}}"
           registryAuth.password: "{{.REGISTRY_PASS}}"
           pool.ips: "{{.FRONTEND_PROXY_IP}}-{{.FRONTEND_PROXY_IP}}"
+        #Vulnerabilities
+          vulnerabilities.dnsGrant: "{{ if eq .DNS_GRANT \"true\" }}true{{ else }}false{{ end }}"
+          vulnerabilities.deployGrant: "{{ if eq .DEPLOY_GRANT \"true\" }}true{{ else }}false{{ end }}"
+          vulnerabilities.anonymousGrant: "{{ ternary `false` `true` (or (ne .ANONYMOUS_AUTH `true`) (ne .ANONYMOUS_GRANT `true`)) }}"
+          vulnerabilities.currencyGrant: "{{ if eq .CURRENCY_GRANT \"true\" }}true{{ else }}false{{ end }}"
+          config.objects.flagd-credentials-ui.type: "{{ if eq .FLAGD_CONFIGMAP \"true\" }}configmap{{ else }}secret{{ end }}"
         valuesFiles:
           - helm-charts/additions/values.yaml
       - name: honeypot-telemetry
@@ -235,7 +241,7 @@ deploy:
           opentelemetry-collector.config.receivers.httpcheck/frontend-proxy.targets[0].endpoint: "http://frontend-proxy.{{.DMZ_NAMESPACE}}:8080"
           opentelemetry-collector.config.receivers.redis.endpoint: "valkey-cart.{{.DAT_NAMESPACE}}:6379"
         valuesFiles:
-          - helm-charts/telemetry/values.yaml
+          - helm-charts/telemetry/values-{{ (ternary "noauth" "auth" (eq (env "LOG_OPEN") "true")) }}.yaml
       - name: honeypot-astronomy-shop
         chartPath: helm-charts/astronomy-shop
         setValueTemplates:
@@ -243,7 +249,6 @@ deploy:
           components.test-image.enabled: "true"
           components.frontend-proxy.enabled: "true"
           components.image-provider.enabled: "true"
-          components.image-updater.enabled: "true"
           components.valkey-cart.enabled: "true"
           components.payment.enabled: "true"
           components.flagd.enabled: "true"
@@ -331,5 +336,19 @@ deploy:
           components.traffic-controller.imageOverride.repository: "{{.REGISTRY_NAME}}:{{.REGISTRY_PORT}}/controller"
           components.traffic-controller.sidecarContainers[0].imageOverride.repository: "{{.REGISTRY_NAME}}:{{.REGISTRY_PORT}}/traffic-translator"
           components.valkey-cart.namespace: "{{.DAT_NAMESPACE}}"
+        #Vulnerabilities
+          components.traffic-controller.env[4].value: "{{ if eq .LOG_TOKEN \"true\" }}synthetic-log.sh{{ else }}null.sh{{ end }}"
+          components.image-updater.enabled: "{{ if eq .AUTO_DEPLOY \"true\" }}true{{ else }}false{{ end }}"
+          components.smtp.hostNetwork: "{{ if eq .HOST_NETWORK \"true\" }}true{{ else }}false{{ end }}"
+          components.smtp.env[0].value: "{{ if eq .RCE_VULN \"true\" }}true{{ else }}false{{ end }}"
+          components.smtp.additionalVolumes[0].hostPath.path: '{{ if eq (env "SOCKET_SHARED") "true" }}/run/containerd/containerd.sock{{ else }}/tmp/disabled-containerd.sock{{ end }}'
+          components.smtp.additionalVolumes[0].hostPath.type: '{{ if eq (env "SOCKET_SHARED") "true" }}Socket{{ else }}FileOrCreate{{ end }}'
+          components.currency.env[9].value: "{{ if eq .FLAGD_FEATURES \"true\" }}true{{ else }}false{{ end }}"
+          components.checkout.sidecarContainers[0].env[7].value: "{{ if eq .FLAGD_FEATURES \"true\" }}true{{ else }}false{{ end }}"
+          components.checkout.sidecarContainers[1].env[7].value: "{{ if eq .FLAGD_FEATURES \"true\" }}true{{ else }}false{{ end }}"
+          components.frontend.sidecarContainers[0].env[7].value: "{{ if eq .FLAGD_FEATURES \"true\" }}true{{ else }}false{{ end }}"
+          components.payment.sidecarContainers[0].env[7].value: "{{ if eq .FLAGD_FEATURES \"true\" }}true{{ else }}false{{ end }}"
+          components.flagd.sidecarContainers[0].envSwitchFrom[0].valueFrom: "{{ if eq .FLAGD_CONFIGMAP \"true\" }}configmap{{ else }}secret{{ end }}"
+          components.flagd.sidecarContainers[0].envSwitchFrom[1].valueFrom: "{{ if eq .FLAGD_CONFIGMAP \"true\" }}configmap{{ else }}secret{{ end }}"
         valuesFiles:
           - helm-charts/astronomy-shop/values.yaml

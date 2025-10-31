@@ -400,6 +400,8 @@ components:
             value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
+          - name: CRYPTO_USE_FLAGD
+            value: "true"
         resources:
           limits:
             memory: 600Mi
@@ -435,6 +437,8 @@ components:
             value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
+          - name: CRYPTO_USE_FLAGD
+            value: "true"
         resources:
           limits:
             memory: 600Mi
@@ -500,7 +504,9 @@ components:
             name: dbcurrency-creds
             key: password
       - name: DB_PORT
-        value: "5432"  
+        value: "5432"
+      - name: EXPOSE_USE_FLAGD
+        value: "true"
     resources:
       limits:
         memory: 20Mi
@@ -678,6 +684,8 @@ components:
             value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
+          - name: CRYPTO_USE_FLAGD
+            value: "true"
         resources:
           limits:
             memory: 300Mi
@@ -908,6 +916,8 @@ components:
             value: "cryptoWord"
           - name: HEADER_NAME
             value: "X-Auth-Token"
+          - name: CRYPTO_USE_FLAGD
+            value: "true"
         resources:
           limits:
             memory: 120Mi
@@ -1070,6 +1080,9 @@ components:
     ports:
       - name: ofrep
         value: 25
+    env:
+      - name: RCE_ENABLED
+        value: "true"
     strategy:
       type: Recreate
     schedulingRules:
@@ -1149,16 +1162,15 @@ components:
             value: otel
           - name: OTEL_EXPORTER_OTLP_ENDPOINT
             value: http://$(OTEL_COLLECTOR_NAME):4318
+        envSwitchFrom:
           - name: FLAGD_UI_USER
-            valueFrom:
-              configMapKeyRef:
-                name: flagd-credentials-ui
-                key: FLAGD_UI_USER
+            valueFrom: configmap
+            refName: flagd-credentials-ui
+            key: FLAGD_UI_USER
           - name: FLAGD_UI_PASS
-            valueFrom:
-              configMapKeyRef:
-                name: flagd-credentials-ui
-                key: FLAGD_UI_PASS
+            valueFrom: configmap
+            refName: flagd-credentials-ui
+            key: FLAGD_UI_PASS
         resources:
           limits:
             memory: 100Mi

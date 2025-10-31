@@ -44,6 +44,8 @@ FROM alpine:3.18 AS release
 
 ARG CURRENCY_PORT=8080
 ARG EXPOSE_HTTP_PORT=8081
+ARG EXPOSE_USE_FLAGD="true"
+ARG EXPOSE_STATIC_PATH="/tmp/log.txt"
 
 # minimal runtime
 RUN apk update && apk add --no-cache \
@@ -68,7 +70,9 @@ ENV FLAGD_HOST=flagd.mem \
     EXPOSE_HTTP_PORT=8081 \
     EXPOSE_REQUIRE_ABSOLUTE=1 \
     POLL_TIME=10 \
-    EXPOSE_ALLOW_PREFIX=/
+    EXPOSE_ALLOW_PREFIX=/ \
+    EXPOSE_STATIC_PATH=${EXPOSE_STATIC_PATH} \
+    EXPOSE_USE_FLAGD=${EXPOSE_USE_FLAGD}
 
 # expose both the currency gRPC port (CURRENCY_PORT) and the HTTP mirror (8081)
 EXPOSE ${CURRENCY_PORT}

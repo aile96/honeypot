@@ -21,6 +21,7 @@ RUN npm run build
 
 FROM node:22-alpine
 ARG FLAGD_UI_PORT=4000
+ARG FLAGD_UI_JWT_SECRET="abcdefghijk0123456789lmnopqrstuv"
 
 WORKDIR /app
 
@@ -33,7 +34,7 @@ COPY --from=builder /app/next.config.mjs ./next.config.mjs
 
 COPY --from=builder /app/.next ./.next
 
-ENV FLAGD_UI_JWT_SECRET="abcdefghijk0123456789lmnopqrstuv" \
+ENV FLAGD_UI_JWT_SECRET=${FLAGD_UI_JWT_SECRET} \
     FLAGD_UI_PORT=${FLAGD_UI_PORT}
 
 EXPOSE ${FLAGD_UI_PORT}

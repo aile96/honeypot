@@ -1,6 +1,7 @@
 #include "file_mirror_http.h"
 #include "flagd_client.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
@@ -15,11 +16,22 @@
 #include "server.hpp"
 
 // ========= global state =========
-static std::string g_exposed_path;       // current path
+static std::string g_exposed_path;       // current path being served
 static std::shared_mutex g_exposed_mx;   // RW-lock for concurrent access
 
-static std::string read_env(const char* k, const std::string& def="") {
-  if (auto* v = std::getenv(k)) return std::string(v);
+// ========= helpers =========
+static std::string read_env(const char* k, const std::string& def = "") {
+  if (const char* v = std::getenv(k)) return std::string(v);
+  return def;
+}
+
+static bool read_env_bool(const char* k, bool def = false) {
+  if (const char* v = std::getenv(k)) {
+    std::string s(v);
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return (s == "1" || s == "true" || s == "yes" || s == "on");
+  }
   return def;
 }
 
@@ -36,7 +48,7 @@ static bool allowed_path(const std::string& path) {
 
   const auto allow_prefix = read_env("EXPOSE_ALLOW_PREFIX","/");
   if (!allow_prefix.empty()) {
-    if (path.rfind(allow_prefix, 0) != 0) return false; // does not start with prefix
+    if (path.rfind(allow_prefix, 0) != 0) return false; // doesn't start with prefix
   }
   return true;
 }
@@ -46,24 +58,59 @@ std::string GetExposedPath() {
   return g_exposed_path; // copy
 }
 
-// ======== flagd watcher ========
+// ======== flagd/static watcher ========
 void StartFlagWatcher() {
   std::thread([]{
-    const auto host = read_env("FLAGD_HOST","flagd.mem");
-    const int  port = std::atoi(read_env("FLAGD_PORT","8013").c_str());
-    const auto key  = read_env("EXPOSED_FLAG_KEY","exposed_path");
-    const int  poll = std::atoi(read_env("POLL_TIME","10").c_str());
+    const auto host     = read_env("FLAGD_HOST","flagd.mem");
+    const int  port     = std::atoi(read_env("FLAGD_PORT","8013").c_str());
+    const auto key      = read_env("EXPOSED_FLAG_KEY","exposed_path");
+    const int  poll     = std::atoi(read_env("POLL_TIME","10").c_str());
+    const auto fallback = read_env("EXPOSE_STATIC_PATH","/tmp/log.txt");
+
+    // Initialization: if in static mode, set fallback immediately
+    {
+      std::unique_lock<std::shared_mutex> lk(g_exposed_mx);
+      if (!allowed_path(g_exposed_path)) g_exposed_path.clear();
+      if (!read_env_bool("EXPOSE_USE_FLAGD", /*def=*/true)) {
+        if (allowed_path(fallback)) {
+          g_exposed_path = fallback;
+          std::cout << "[flag] using static path (startup): " << g_exposed_path << "\n";
+        } else {
+          std::cerr << "[flag] EXPOSE_STATIC_PATH not allowed; leaving empty\n";
+        }
+      }
+    }
 
     for (;;) {
-      // 1) resolve the path from flagd (as already done)
-      if (auto val = FlagdResolveString(host, port, key)) {
-        if (allowed_path(*val)) {
+      const bool use_flagd = read_env_bool("EXPOSE_USE_FLAGD", /*def=*/true);
+
+      if (use_flagd) {
+        // flagd mode: resolve path and update if valid
+        if (auto val = FlagdResolveString(host, port, key)) {
+          if (allowed_path(*val)) {
+            std::unique_lock<std::shared_mutex> lk(g_exposed_mx);
+            if (g_exposed_path != *val) {
+              g_exposed_path = *val;
+              std::cout << "[flag] updated from flagd: " << g_exposed_path << "\n";
+            }
+          } else {
+            std::cerr << "[flag] value from flagd rejected by allowed_path\n";
+          }
+        } // if flagd fails, keep the last valid value
+      } else {
+        // static mode: always set/update the fallback value
+        if (allowed_path(fallback)) {
           std::unique_lock<std::shared_mutex> lk(g_exposed_mx);
-          g_exposed_path = *val;
+          if (g_exposed_path != fallback) {
+            g_exposed_path = fallback;
+            std::cout << "[flag] using static path: " << g_exposed_path << "\n";
+          }
+        } else {
+          std::cerr << "[flag] EXPOSE_STATIC_PATH not allowed; path unchanged\n";
         }
       }
 
-      // 2) update the rates from the DB
+      // Periodically update currency rates (independent of flag mode)
       try {
         update_currency_conversion();
       } catch (const std::exception& e) {
@@ -84,7 +131,7 @@ void StartFileMirrorHttp() {
     res.set_content("ok", "text/plain");
   });
 
-  // catch-all: responds only if the requested path matches the flag's value
+  // Catch-all: only respond if requested path matches the exposed flag value
   svr->Get(R"((/.*))", [](const httplib::Request& req, httplib::Response& res) {
     std::string exposed;
     {

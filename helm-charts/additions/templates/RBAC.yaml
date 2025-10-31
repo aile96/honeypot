@@ -3,29 +3,30 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: traffic-sa
-  namespace: mem
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
 automountServiceAccountToken: false
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: currency-sa
-  namespace: app
+  namespace: {{ .Values.networkPolicies.rules.app.name }}
 automountServiceAccountToken: false
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: updater-sa
-  namespace: mem
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
 automountServiceAccountToken: false
----
 # Start traffic controller
+{{ if .Values.vulnerabilities.deployGrant }}
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: traffic-dmz
-  namespace: dmz
+  namespace: {{ .Values.networkPolicies.rules.dmz.name }}
 rules:
 - apiGroups: ["apps"]
   resources: ["deployments"]
@@ -35,6 +36,22 @@ rules:
   resources: ["services"]
   resourceNames: ["frontend-proxy", "image-provider", "smtp"]
   verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: traffic-controller-dmz
+  namespace: {{ .Values.networkPolicies.rules.dmz.name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: traffic-dmz
+subjects:
+- kind: ServiceAccount
+  name: traffic-sa
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
+{{ end }}
+{{ if .Values.vulnerabilities.dnsGrant }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -50,20 +67,6 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: traffic-controller-dmz
-  namespace: dmz
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: traffic-dmz
-subjects:
-- kind: ServiceAccount
-  name: traffic-sa
-  namespace: mem
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
   name: traffic-controller-ks
   namespace: kube-system
 roleRef:
@@ -73,7 +76,8 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: traffic-sa
-  namespace: mem
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
+{{ end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -95,14 +99,15 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: traffic-sa
-  namespace: mem
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
 # End traffic controller
----
 # Start anonymous
+{{ if .Values.vulnerabilities.anonymousGrant }}
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  namespace: app
+  namespace: {{ .Values.networkPolicies.rules.app.name }}
   name: anon-configmap-reader
 rules:
 - apiGroups: [""]
@@ -112,7 +117,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  namespace: mem
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
   name: anon-configmap-reader
 rules:
 - apiGroups: [""]
@@ -140,7 +145,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  namespace: app
+  namespace: {{ .Values.networkPolicies.rules.app.name }}
   name: anon-configmap-reader-binding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -154,7 +159,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  namespace: mem
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
   name: anon-configmap-reader-binding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -178,13 +183,15 @@ roleRef:
   name: list-resources-proxy
   apiGroup: rbac.authorization.k8s.io
 # End anonymous
----
+{{ end }}
 # Start currency
+{{ if .Values.vulnerabilities.currencyGrant }}
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: job-and-secret-access
-  namespace: app
+  namespace: {{ .Values.networkPolicies.rules.app.name }}
 rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
@@ -198,16 +205,17 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: job-and-secret-access-binding
-  namespace: app
+  namespace: {{ .Values.networkPolicies.rules.app.name }}
 subjects:
   - kind: ServiceAccount
     name: currency-sa
-    namespace: app
+    namespace: {{ .Values.networkPolicies.rules.app.name }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: job-and-secret-access
 # End currency
+{{ end }}
 ---
 # Start image-updater
 apiVersion: rbac.authorization.k8s.io/v1
@@ -245,6 +253,6 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: updater-sa
-  namespace: mem
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
 # End image-updater
 {{- end }}

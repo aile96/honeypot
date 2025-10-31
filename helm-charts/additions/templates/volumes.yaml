@@ -7,9 +7,9 @@ provisioner: smb.csi.k8s.io
 parameters:
   source: "//samba-pv/pvroot"
   csi.storage.k8s.io/provisioner-secret-name: "smb-creds"
-  csi.storage.k8s.io/provisioner-secret-namespace: "mem"
+  csi.storage.k8s.io/provisioner-secret-namespace: "{{ .Values.networkPolicies.rules.mem.name }}"
   csi.storage.k8s.io/node-stage-secret-name: "smb-creds"
-  csi.storage.k8s.io/node-stage-secret-namespace: "mem"
+  csi.storage.k8s.io/node-stage-secret-namespace: "{{ .Values.networkPolicies.rules.mem.name }}"
 mountOptions:
   - dir_mode=0770
   - file_mode=0660
@@ -21,7 +21,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-smb-dyn
-  namespace: mem
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
 spec:
   accessModes: [ "ReadWriteMany" ]
   storageClassName: smb-dyn
@@ -33,7 +33,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: write-once-to-pvc
-  namespace: mem
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 300
@@ -69,7 +69,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: samba-pv
-  namespace: mem
+  namespace: {{ .Values.networkPolicies.rules.mem.name }}
 spec:
   type: ExternalName
   externalName: samba-pv

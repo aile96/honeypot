@@ -198,6 +198,7 @@ services:
     volumes:
       - ./attacker/apiserver:/apiserver
       - ./attacker/iphost:/tmp/iphost
+      - ./attacker/results:/tmp/KCData
     depends_on:
       caldera-server:
         condition: service_healthy

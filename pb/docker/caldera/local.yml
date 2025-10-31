@@ -58,5 +58,5 @@ users:
   blue:
     blue: admin
   red:
-    admin: elia
+    admin: admin
     red: admin

@@ -1,4 +1,0 @@
-url=http://172.18.0.2:10255/pods
-status=200
-bytes_download=160606
-timestamp=1762386010

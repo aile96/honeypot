@@ -507,6 +507,8 @@ components:
         value: "5432"
       - name: EXPOSE_USE_FLAGD
         value: "true"
+      - name: FLAGD_HOST
+        value: "flagd.mem"
     resources:
       limits:
         memory: 20Mi

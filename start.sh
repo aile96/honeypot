@@ -1,19 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# === Ask for sudo password once ===
-if sudo -v; then
-  # Keep sudo alive while the script runs
-  while true; do sudo -n true; sleep 60; done 2>/dev/null &
-  SUDO_KEEPALIVE_PID=$!
-  trap 'kill $SUDO_KEEPALIVE_PID' EXIT
-else
-  echo "You must have sudo privileges or provide the correct password." >&2
-  exit 1
-fi
-
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PROJECT_ROOT
+IMAGE_VERSION=2.0.2
+export PROJECT_ROOT IMAGE_VERSION
 
 # === Load variables from config file ===
 ENV_FILE="${PROJECT_ROOT}/configuration.conf"
@@ -91,12 +81,8 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   echo "Warning: ignoring unrecognized line: $line" >&2
 done < "$ENV_FILE"
 
-#source "${PROJECT_ROOT}/pb/scripts/00_install_deps.sh"
-if [[ "$KIND_CLUSTER" == "0" ]]; then
-  source "${PROJECT_ROOT}/pb/scripts/01_minikube_cluster.sh"
-else
-  source "${PROJECT_ROOT}/pb/scripts/01_kind_cluster.sh"
-fi
+source "${PROJECT_ROOT}/pb/scripts/00_ensure_deps.sh"
+source "${PROJECT_ROOT}/pb/scripts/01_kind_cluster.sh"
 source "${PROJECT_ROOT}/pb/scripts/02_setup_underlay.sh"
 source "${PROJECT_ROOT}/pb/scripts/03_run_underlay.sh"
 source "${PROJECT_ROOT}/pb/scripts/04_build_deploy.sh"

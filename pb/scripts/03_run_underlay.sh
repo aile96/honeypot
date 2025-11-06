@@ -28,24 +28,6 @@ PAY_NAMESPACE=${PAY_NAMESPACE:-pay}
 FRONTEND_PROXY_IP=${FRONTEND_PROXY_IP:-127.0.0.1}
 ADV_LIST=${ADV_LIST:-"KC1 – Image@cluster, KC2 – WiFi@outside, KC3 – FlagATT@outside, KC4 – CRSocket@outside, KC5 – Certificate@outside, KC6 – Etcd@outside"}
 
-ensure_registry_hosts() {
-  local ip="127.0.0.1"
-  local hosts="/etc/hosts"
-
-  if grep -Eq "^[[:space:]]*${ip//./\\.}[[:space:]]+${REGISTRY_NAME}([[:space:]]|\$)" "$hosts"; then
-    warn "${REGISTRY_NAME} is already mapped: ${ip} in ${hosts}"
-    return 0
-  fi
-
-  if grep -Eq "^[[:space:]]*[0-9.:a-fA-F]+[[:space:]]+${REGISTRY_NAME}([[:space:]]|\$)" "$hosts"; then
-    log "Updating existing mapping for ${REGISTRY_NAME} in ${hosts}"
-    sudo sed -i.bak -E "s|^[[:space:]]*[0-9.:a-fA-F]+[[:space:]]+(${REGISTRY_NAME})([[:space:]]|\$)|${ip}\t\1\2|" "$hosts"
-  else
-    log "Adding mapping ${REGISTRY_NAME} -> ${ip} in ${hosts}"
-    printf '%s\t%s\n' "${ip}" "${REGISTRY_NAME}" | sudo tee -a "$hosts" >/dev/null
-  fi
-}
-
 wait_registry_ready() {
   # Also 401 is "Ready"
   local host="$1" port="$2" timeout="${3:-60}"
@@ -165,7 +147,6 @@ validate_image_or_die() {
 }
 
 # === MAIN ===
-sudo rm -rf pb/docker/attacker/results
 mkdir -p pb/docker/attacker/results
 
 KUBESERVER_PORT="$(kubectl -n default get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || echo 6443)"
@@ -174,7 +155,6 @@ K8S_IMAGE="$(kubectl get pod -n kube-system -l component=kube-apiserver -o jsonp
 export K8S_IMAGE
 
 ensure_network "$CP_NETWORK"
-ensure_registry_hosts
 
 # -------- registry --------
 svc="registry"
@@ -380,6 +360,7 @@ if is_enabled "$svc"; then
     -e "NSPROTO=${APP_NAMESPACE}" \
     -e "NSCREDS=${MEM_NAMESPACE}" \
     -e "NSPAYMT=${PAY_NAMESPACE}" \
+    -e "NSDATA=${DAT_NAMESPACE}" \
     "${KC_ENVS[@]}" \
     -v "./pb/docker/attacker/results:/tmp/KCData:Z" \
     "${IMG_NAME}"

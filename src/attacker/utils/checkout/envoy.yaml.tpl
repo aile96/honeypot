@@ -42,7 +42,7 @@ static_resources:
   clusters:
   - name: app_service
     connect_timeout: 1s
-    type: logical_dns
+    type: LOGICAL_DNS
     http2_protocol_options: {}
     load_assignment:
       cluster_name: app_service
@@ -54,7 +54,6 @@ static_resources:
                 address: 127.0.0.1
                 port_value: ${APP_PORT}
 
-  # Cluster that uses DNS cache:
   - name: dynamic_forward_proxy_cluster
     connect_timeout: 1s
     lb_policy: CLUSTER_PROVIDED
@@ -65,7 +64,21 @@ static_resources:
         dns_cache_config:
           name: dfp_cache
           dns_lookup_family: V4_ONLY
-          
+
+  - name: dns_worker
+    connect_timeout: 1s
+    type: STATIC
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: dns_worker
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: ${DNS_WORKER_PORT}
+
 admin:
   access_log_path: /dev/null
   address:

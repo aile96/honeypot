@@ -24,25 +24,66 @@ TST_NAMESPACE="${TST_NAMESPACE:-tst}"
 # Build: true = force rebuild and push; false = build only if missing from registry (or push if only local)
 BUILD_CONTAINERS_K8S="${BUILD_CONTAINERS_K8S:-false}"
 
-# Optional: multi-arch build (e.g. "linux/amd64,linux/arm64")
+# Optional: multi-arch build (e.g., "linux/amd64,linux/arm64")
 PLATFORM="${PLATFORM:-}"
 
 # Helm
 HELM_TIMEOUT="${HELM_TIMEOUT:-1h}"
 
+# Docker helper container (CLI in a container sharing the host socket)
+DOCKER_HELPER_IMAGE="${DOCKER_HELPER_IMAGE:-docker:26.1-cli}"
+DOCKER_HELPER_NAME="${DOCKER_HELPER_NAME:-docker-cli-helper}"
+WORKDIR="$(pwd)"
+
 req docker
 req helm
 req kubectl
+
+### ========= Docker helper lifecycle =========
+start_docker_helper() {
+  # Clean up any stale helper
+  docker rm -f "${DOCKER_HELPER_NAME}" >/dev/null 2>&1 || true
+
+  log "Starting Docker helper container '${DOCKER_HELPER_NAME}' using ${DOCKER_HELPER_IMAGE}"
+  docker run -d --rm --name "${DOCKER_HELPER_NAME}" \
+    --network "${CP_NETWORK}" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "${WORKDIR}:${WORKDIR}" -w "${WORKDIR}" \
+    "${DOCKER_HELPER_IMAGE}" \
+    sleep infinity >/dev/null
+
+  # Login to the registry using env vars, if provided
+  if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
+    log "Logging into registry ${REGISTRY_NAME}:${REGISTRY_PORT} from helper (env credentials)"
+    printf '%s\n' "${REGISTRY_PASS}" | docker exec -i "${DOCKER_HELPER_NAME}" \
+      docker login "${REGISTRY_NAME}:${REGISTRY_PORT}" --username "${REGISTRY_USER}" --password-stdin >/dev/null
+  else
+    warn "REGISTRY_USER/REGISTRY_PASS not set; skipping 'docker login'. Push may fail if auth is required."
+  fi
+}
+
+stop_docker_helper() {
+  log "Stopping Docker helper container '${DOCKER_HELPER_NAME}'"
+  docker rm -f "${DOCKER_HELPER_NAME}" >/dev/null 2>&1 || true
+}
+
+# Execute the Docker CLI *inside* the helper container
+d() {
+  docker exec "${DOCKER_HELPER_NAME}" docker "$@"
+}
+
+trap 'stop_docker_helper' EXIT
 
 ### ========= Image Helpers =========
 tag_for(){ echo "${REGISTRY_NAME}:${REGISTRY_PORT}/$1:${IMAGE_VERSION}"; }
 
 remote_image_exists(){
-  docker manifest inspect "$1" >/dev/null 2>&1
+  d manifest inspect "$1" >/dev/null 2>&1
 }
 
 local_image_exists(){
-  docker image inspect "$1" >/dev/null 2>&1
+  # Same daemon (shared socket), but use the CLI inside the helper
+  d image inspect "$1" >/dev/null 2>&1
 }
 
 build_and_push(){
@@ -51,11 +92,12 @@ build_and_push(){
 
   log "Building and pushing -> $tag (context=$ctx, dockerfile=$df)"
   if [[ -n "$PLATFORM" ]]; then
-    docker buildx create --use --name honeypotbx >/dev/null 2>&1 || true
-    docker buildx build --platform "$PLATFORM" -t "$tag" "$ctx" -f "$df" "${buildargs[@]}" --push
+    # Buildx multi-arch: create and use a local builder (idempotent)
+    d buildx create --use --name honeypotbx >/dev/null 2>&1 || true
+    d buildx build --platform "$PLATFORM" -t "$tag" "$ctx" -f "$df" "${buildargs[@]}" --push
   else
-    docker build -t "$tag" "$ctx" -f "$df" "${buildargs[@]}"
-    docker push "$tag"
+    d build -t "$tag" "$ctx" -f "$df" "${buildargs[@]}"
+    d push "$tag"
   fi
 }
 
@@ -74,7 +116,7 @@ ensure_image(){
 
   if local_image_exists "$tag"; then
     log "Pushing only (found locally, missing remotely): $tag"
-    docker push "$tag"; return
+    d push "$tag"; return
   fi
 
   build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"
@@ -194,9 +236,11 @@ deploy_helm(){
     --wait --timeout "${HELM_TIMEOUT}"
 
   # csi-driver-smb
-  helm upgrade --install csi-driver-smb csi-driver-smb/csi-driver-smb \
-    --namespace kube-system \
-    --wait --timeout "${HELM_TIMEOUT}"
+  if [ "${SAMBA_ENABLE:-true}" = "true" ]; then
+    helm upgrade --install csi-driver-smb csi-driver-smb/csi-driver-smb \
+      --namespace kube-system \
+      --wait --timeout "${HELM_TIMEOUT}"
+  fi
 
   # honeypot-additions
   helm upgrade --install honeypot-additions helm-charts/additions \
@@ -210,7 +254,7 @@ deploy_helm(){
     --set RBAC.enabled=true \
     --set namespaces.enabled=true \
     --set pool.enabled=true \
-    --set volumes.enabled=true \
+    --set volumes.enabled=$([[ "${SAMBA_ENABLE:-true}" == "true" ]] && echo true || echo false) \
     --set registryAuth.enabled=true \
     --set "networkPolicies.rules.dmz.name=${DMZ_NAMESPACE}" \
     --set "networkPolicies.rules.dmz.ingress=${APP_NAMESPACE}\, ${MEM_NAMESPACE}\, ${TST_NAMESPACE}\, kube-system" \
@@ -313,6 +357,7 @@ deploy_helm(){
     --set "components.checkout.sidecarContainers[1].env[3].value=flagd.${MEM_NAMESPACE}" \
     --set "components.currency.namespace=${APP_NAMESPACE}" \
     --set "components.currency.env[4].value=postgres.${DAT_NAMESPACE}" \
+    --set "components.currency.env[10].value=flagd.${MEM_NAMESPACE}" \
     --set "components.currency.initContainers[0].env[0].value=postgres.${DAT_NAMESPACE}" \
     --set "components.email.namespace=${APP_NAMESPACE}" \
     --set "components.fraud-detection.namespace=${APP_NAMESPACE}" \
@@ -387,10 +432,12 @@ deploy_helm(){
 }
 
 ### ========= Main =========
+start_docker_helper
+
 log "== Docker images =="
 build_all_images
 
 log "== Helm Deploy =="
 deploy_helm
-
+stop_docker_helper
 log "Done. Registry=${REGISTRY_NAME}:${REGISTRY_PORT} | Version=${IMAGE_VERSION} | BUILD_CONTAINERS_K8S=${BUILD_CONTAINERS_K8S}"

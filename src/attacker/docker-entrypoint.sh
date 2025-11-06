@@ -8,13 +8,16 @@ DOCKER_PIDFILE="/var/run/docker.pid"             # PID file for dockerd
 DOCKER_LOG="/var/log/dockerd.log"                # Log file for dockerd
 
 # Directory + files for dns + http logger
-MYLOG_DIR="/var/log/myservices"
+MYLOG_DIR="$DATA_PATH/KC2/myservices"
 DNS_CONF="/etc/dnsmasq.d/99-all-respond.conf"
 DNS_LOG="${MYLOG_DIR}/dnsmasq.log"
 HTTP_LOG="${MYLOG_DIR}/8080_requests.log"
 SERVER_SCRIPT="/usr/local/bin/server_8080.py"
 
 log() { printf '%s %s\n' "$(date -Is)" "$*"; }
+
+# Clean previous results
+rm -rf $DATA_PATH/*
 
 # helper: detect container IPv4 (first non-loopback)
 detect_container_ip() {
@@ -109,7 +112,7 @@ cleanup_before_exit() {
 if [[ "${DOCKER_DAEMON:-0}" == "1" ]]; then
 
   # Ensure basic log dir exists and sane perms (and ensure cleanup)
-  mkdir -p "$MYLOG_DIR" /var/run
+  mkdir -p "$MYLOG_DIR" "$(dirname "$DOCKER_LOG")" /var/run
   touch "$DNS_LOG" "$HTTP_LOG" || true
   chmod 0644 "$DNS_LOG" "$HTTP_LOG" || true
   trap cleanup_before_exit INT TERM

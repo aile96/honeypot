@@ -1,4 +1,0 @@
-url=http://172.18.0.2:10255/stats/summary
-status=200
-bytes_download=62066
-timestamp=1762386011

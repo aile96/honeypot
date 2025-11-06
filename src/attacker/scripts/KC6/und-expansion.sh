@@ -6,3 +6,6 @@ SSH_KEY="$DATA_PATH/KC6/ssh/ssh-key"
 OUT_FILE="$DATA_PATH/KC6/underlaynetwork"
 
 ssh -i "$SSH_KEY" -p 122 root@$CONTROL_PLANE_NODE '/usr/bin/env bash -s -- "/tmp/data" 1' < /opt/caldera/KC2/nmap-enum.sh > $OUT_FILE
+
+echo "Done -- Underlay network details saved in $OUT_FILE:"
+cat $OUT_FILE

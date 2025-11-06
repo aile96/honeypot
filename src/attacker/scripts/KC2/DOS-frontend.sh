@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PIDFILE="$DATA_PATH/KC2/arp_pids"
-TIME_DOS=60
+TIME_DOS=10
 
 # Installing dependencies
 apt-get update >/dev/null 2>&1

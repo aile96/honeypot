@@ -188,7 +188,7 @@ docker cp ./pb/docker/controller/kube ${CALDERA_CONTROLLER}:/kube
 log "Kubeconfig ready: ${OUT_FILE}"
 
 # --------------------------
-# 6) Setting CoreDNS to non-recursive mode
+# 6) Setting CoreDNS to non-recursive mode OR inserting attacker zone
 # --------------------------
 if [[ "${RECURSIVE_DNS:-true}" != "true" ]]; then
   log "Checking CoreDNS ConfigMap for 'forward'..."
@@ -217,4 +217,100 @@ if [[ "${RECURSIVE_DNS:-true}" != "true" ]]; then
   else
     log "No 'forward' directive found — nothing to change."
   fi
+else
+  ZONE="${ATTACKER}"
+  CONTAINER_NAME="${ATTACKER}"
+
+  # get docker IP (first network IP)
+  DOCKER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null || true)
+  if [[ -z "${DOCKER_IP}" ]]; then
+    err "Could not determine IP for docker container '${CONTAINER_NAME}'. Aborting."
+    exit 1
+  fi
+
+  # Build the zone block (no leading indentation)
+  read -r -d '' ZONE_BLOCK <<EOF || true
+${ZONE}:53 {
+    errors
+    cache 30
+    forward . ${DOCKER_IP}
+    reload
+}
+EOF
+
+  # Fetch current Corefile via JSON to avoid YAML block marker problems
+  CURRENT_COREFILE=$(kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' 2>/dev/null || true)
+  if [[ -z "${CURRENT_COREFILE}" ]]; then
+    err "Failed to read kube-system/coredns Corefile. Aborting."
+    exit 1
+  fi
+
+  # If the zone block already exists (top-level "zone" optionally with :port), exit
+  if printf '%s\n' "${CURRENT_COREFILE}" | grep -qE "^[[:space:]]*${ZONE}(:[0-9]+)?[[:space:]]*\\{" ; then
+    log "Zone block for '${ZONE}' already present in Corefile. Nothing to do."
+    exit 0
+  fi
+
+  # Remove any pre-existing occurrences of the same zone block (balanced-brace removal),
+  # then insert the zone block before the main .:53 block (if present) or prepend.
+  TMPDIR="$(mktemp -d)"
+  trap 'rm -rf "${TMPDIR}"' EXIT
+  printf '%s\n' "${CURRENT_COREFILE}" > "${TMPDIR}/corefile.orig"
+
+  # remove pre-existing zone blocks for the same zone (balanced braces)
+  awk -v zone="$ZONE" '
+    BEGIN { skip=0; depth=0 }
+    {
+      if (skip) {
+        add = gsub(/\{/, "{")
+        subc = gsub(/\}/, "}")
+        depth += add - subc
+        if (depth <= 0) skip=0
+        next
+      }
+      line=$0
+      sub(/^[[:space:]]+/, "", line)
+      regex = "^" zone "(:[0-9]+)?[[:space:]]*\\{"
+      if (line ~ regex) { skip=1; depth=1; next }
+      print $0
+    }
+  ' "${TMPDIR}/corefile.orig" > "${TMPDIR}/corefile.cleaned"
+
+  # Insert the zone block before the .:53 block if present, otherwise prepend
+  if grep -qE '^[[:space:]]*\.?:53[[:space:]]*\{' "${TMPDIR}/corefile.cleaned"; then
+    awk -v block="${ZONE_BLOCK}" '
+      BEGIN { inserted=0 }
+      {
+        if (!inserted && $0 ~ /^[[:space:]]*\.?:53[[:space:]]*\{/) {
+          printf "%s\n\n", block
+          inserted=1
+        }
+        print $0
+      }
+      END {
+        if (!inserted) printf "%s\n", block
+      }
+    ' "${TMPDIR}/corefile.cleaned" > "${TMPDIR}/corefile.new"
+  else
+    printf "%s\n\n%s\n" "${ZONE_BLOCK}" "$(cat "${TMPDIR}/corefile.cleaned")" > "${TMPDIR}/corefile.new"
+  fi
+
+  # Read the NEW corefile content into a variable (preserve newlines)
+  NEW_COREFILE=$(cat "${TMPDIR}/corefile.new")
+
+  # Use jq to patch the ConfigMap JSON safely (this avoids depending on YAML block markers).
+  # Note: jq must be available. If jq is missing, print an error and abort.
+  if ! command -v jq >/dev/null 2>&1; then
+    err "jq is required to safely patch the ConfigMap but was not found. Install jq and retry."
+    exit 1
+  fi
+
+  kubectl -n kube-system get cm coredns -o json \
+    | jq --arg cf "$NEW_COREFILE" '.data.Corefile = $cf' \
+    | kubectl -n kube-system apply -f - >/dev/null
+
+  log "Inserted zone block for '${ZONE}' forwarding to ${DOCKER_IP} into kube-system/coredns ConfigMap."
+  log "Restarting the CoreDNS deployment..."
+  kubectl -n kube-system rollout restart deployment coredns
+  log "Done."
 fi

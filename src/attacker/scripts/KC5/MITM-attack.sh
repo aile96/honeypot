@@ -22,6 +22,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# 0) Increase inotify limits to avoid errors
+sysctl -w fs.inotify.max_user_instances=1024
+
 # 1) Setup
 apt update >/dev/null 2>&1
 apt install -y sslsplit inotify-tools jq iptables iproute2 ca-certificates >/dev/null 2>&1

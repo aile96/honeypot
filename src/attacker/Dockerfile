@@ -49,7 +49,8 @@ ENV CONTROL_PLANE_NODE="kind-control-plane" \
     K8S_IMAGE="registry.k8s.io/kube-apiserver:v1.30.0" \
     NSPROTO="$AUTH_NS" \
     NSCREDS="$LOG_NS" \
-    NSPAYMT="pay"
+    NSPAYMT="pay" \
+    NSDATA="dat"
 
 # Install utilities and dnsmasq + python deps
 RUN apt-get update && \

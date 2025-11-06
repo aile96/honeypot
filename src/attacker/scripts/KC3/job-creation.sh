@@ -7,7 +7,7 @@ NS="${NSPROTO:-app}"
 
 SECRET="dbcurrency-creds"
 JOB_NAME="insert-currency-rate-$(date +%Y%m%d%H%M%S)"
-PGHOST="postgres.dat.svc.cluster.local"
+PGHOST="postgres.$NSDATA.svc.cluster.local"
 PGPORT="5432"
 PGDATABASE="currency"
 SQL_STMT="INSERT INTO currency (code, rate) VALUES ('NUL', 0);"

@@ -6,40 +6,6 @@ warn() { printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
 err()  { printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
 die()  { echo -e "[ERROR] $*" >&2; exit 1; }
 
-ensure_registry_hosts() {
-  local ip="127.0.0.1"
-  local hosts="/etc/hosts"
-
-  if grep -Eq "^[[:space:]]*${ip//./\\.}[[:space:]]+${REGISTRY_NAME}([[:space:]]|\$)" "$hosts"; then
-    warn "${REGISTRY_NAME} is already mapped: ${ip} in ${hosts}"
-    return 0
-  fi
-
-  # if exists one line for 'registry' with another IP, substituting
-  if grep -Eq "^[[:space:]]*[0-9.:a-fA-F]+[[:space:]]+${REGISTRY_NAME}([[:space:]]|\$)" "$hosts"; then
-    log "Updating existing mapping for ${REGISTRY_NAME} in ${hosts}"
-    sudo sed -i.bak -E "s|^[[:space:]]*[0-9.:a-fA-F]+[[:space:]]+(${REGISTRY_NAME})([[:space:]]|\$)|${ip}\t\1\2|" "$hosts"
-  else
-    log "Adding mapping ${REGISTRY_NAME} -> ${ip} in ${hosts}"
-    echo -e "${ip}\t${REGISTRY_NAME}" | sudo tee -a "$hosts" >/dev/null
-  fi
-}
-
-wait_registry_ready() {
-  # Also 401 is "Ready"
-  local host="$1" port="$2" timeout="${3:-60}"
-  local i=0 code=000
-  while [[ $i -lt $timeout ]]; do
-    code="$(curl -sk -o /dev/null -w '%{http_code}' "https://${host}:${port}/v2/")" || true
-    if [[ "$code" == "200" || "$code" == "401" ]]; then
-      return 0
-    fi
-    sleep 1; i=$((i+1))
-  done
-  echo "Timeout: registry ${host}:${port} not ready (last HTTP: ${code})" >&2
-  return 1
-}
-
 kubectl_ctx() {
   kubectl --context "$KUBE_CONTEXT" "$@"
 }
@@ -403,11 +369,15 @@ if [[ "$ETCD_EXPOSURE" == "true" ]]; then
 fi
 
 # --------------------------
-# 8) Insert anonymous authentication
+# 8) Insert anonymous authentication in kube-apiserver
 # --------------------------
 
-log "Enabling anonymous-auth on kube-apiserver..."
+: "${NODE_CTN:?NODE_CTN must be set (control-plane node container name)}"
+APISERVER_WAIT_TIMEOUT="${APISERVER_WAIT_TIMEOUT:-300}"  # seconds
+ANONYMOUS_AUTH="${ANONYMOUS_AUTH:-false}"
 
+# The patch script to run *inside* the node container.
+# It enables --anonymous-auth=true in /etc/kubernetes/manifests/kube-apiserver.yaml if not already enabled.
 PATCH_APISERVER_CMD=$(cat <<'EOF'
 set -euo pipefail
 mf="/etc/kubernetes/manifests/kube-apiserver.yaml"
@@ -427,22 +397,89 @@ else
   sed -i -E '/^[[:space:]]*- --authorization-mode=/a\    - --anonymous-auth=true' "$mf" || \
   sed -i -E '/^[[:space:]]*- --kubelet-client-certificate=/a\    - --anonymous-auth=true' "$mf"
 fi
+echo "Manifest updated: --anonymous-auth=true added/enforced."
 EOF
 )
 
-if [[ "$ANONYMOUS_AUTH" == "true" ]]; then
-  log "Patching kube-apiserver inside the node container..."
-  docker exec -i "$NODE_CTN" bash -lc "$PATCH_APISERVER_CMD"
-fi
+# --- Helpers ---
+_get_apiserver_identity() {
+  # Returns "podName|podUID" or empty if API is not reachable
+  kubectl -n kube-system get pod -l component=kube-apiserver \
+    -o jsonpath='{.items[0].metadata.name}{"|"}{.items[0].metadata.uid}' 2>/dev/null || true
+}
 
-# Wait for kubelet to recreate the API server pod
-log "Waiting for changes to apply..."
-sleep 60
+_wait_api_reachable_short() {
+  local deadline=$(( $(date +%s) + 10 ))
+  while true; do
+    if kubectl version --request-timeout=5s >/dev/null 2>&1; then
+      return 0
+    fi
+    (( $(date +%s) > deadline )) && return 1
+    sleep 1
+  done
+}
+
+_wait_new_apiserver_ready() {
+  local prev_uid="$1"
+  local deadline=$(( $(date +%s) + APISERVER_WAIT_TIMEOUT ))
+  while true; do
+    _wait_api_reachable_short || true
+
+    local id pod uid
+    id="$(_get_apiserver_identity)"
+    pod="${id%%|*}"
+    uid="${id##*|}"
+
+    if [[ -n "$pod" && -n "$uid" && "$uid" != "$prev_uid" ]]; then
+      log "Detected new kube-apiserver pod: $pod (UID changed). Waiting for Ready..."
+      if kubectl -n kube-system wait --for=condition=Ready "pod/$pod" --timeout=180s >/dev/null 2>&1; then
+        log "kube-apiserver is Ready: $pod"
+        return 0
+      else
+        warn "New kube-apiserver pod did not become Ready within 180s; continuing until overall timeout."
+      fi
+    fi
+
+    (( $(date +%s) > deadline )) && {
+      err "Timeout (${APISERVER_WAIT_TIMEOUT}s) waiting for kube-apiserver to be recreated and Ready."
+      echo "=== kubectl get pods -n kube-system -o wide (apiserver) ==="
+      kubectl -n kube-system get pod -o wide | grep -i apiserver || true
+      [[ -n "$pod" ]] && { echo "=== describe $pod ==="; kubectl -n kube-system describe pod "$pod" || true; }
+      echo "=== last 200 lines of $NODE_CTN logs ==="
+      docker logs --tail 200 "$NODE_CTN" 2>/dev/null || true
+      return 1
+    }
+
+    sleep 2
+  done
+}
+
+# --- Main: patch + conditional wait ---
+if [[ "$ANONYMOUS_AUTH" == "true" ]]; then
+  # Capture current apiserver UID (if API is reachable)
+  prev_id="$(_get_apiserver_identity)"
+  prev_uid="${prev_id##*|}"
+
+  log "Patching kube-apiserver manifest inside the node container..."
+  # Run the patch script inside the node container and capture output safely
+  PATCH_OUT="$(docker exec -i "$NODE_CTN" bash -lc "$PATCH_APISERVER_CMD" 2>&1 || true)"
+  printf "%s\n" "$PATCH_OUT"
+
+  # If the patch was a no-op, skip the wait (no restart expected)
+  if printf "%s" "$PATCH_OUT" | grep -qi "already accepts anonymous requests"; then
+    log "Patch skipped (already enabled). Not waiting for restart."
+  else
+    log "Waiting for the kube-apiserver to restart and become Ready..."
+    _wait_new_apiserver_ready "$prev_uid" || die "kube-apiserver did not become Ready after patch."
+  fi
+else
+  warn "ANONYMOUS_AUTH is not 'true' — skipping kube-apiserver patch."
+fi
 
 log "Done."
 
 # --------------------------
-# 9) Generation of certificates and route for host
+# 9) Generation of certificates
 # --------------------------
 if [ ! -f "./pb/docker/registry/htpasswd" ]; then
   log "Generating htpasswd file..."
@@ -489,9 +526,6 @@ EOF
 else
   warn "TLS server certificate already exists, no action needed"
 fi
-
-
-ensure_registry_hosts
 
 # --------------------------
 # 10) Adding CA + AUTH for registry to the nodes
@@ -558,19 +592,3 @@ for n in "${ALL_NODES[@]}"; do
   install_on_node_container "$n" || warn "Registry setup failed on $n"
 done
 log "Registry CA/auth installation step completed."
-
-# --------------------------
-# 11) Running docker compose and waiting for registry to login
-# --------------------------
-#sudo rm -rf pb/docker/attacker/results
-#mkdir -p pb/docker/attacker/results
-#KUBESERVER_PORT="$(kubectl -n default get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || echo 6443)"
-#export KUBESERVER_PORT
-#K8S_IMAGE="$(kubectl get pod -n kube-system -l component=kube-apiserver -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}')"
-#export K8S_IMAGE
-#log "Running docker compose..."
-#BUILD_FLAG=""
-#if [[ "$BUILD_CONTAINERS_DOCKER" != "true" ]]; then BUILD_FLAG="--build"; fi
-#docker compose -f ./pb/docker/docker-compose.yml up -d $BUILD_FLAG
-#wait_registry_ready "${REGISTRY_NAME}" "${REGISTRY_PORT}" 300 || exit 1
-#docker login ${REGISTRY_NAME}:${REGISTRY_PORT} -u "$REGISTRY_USER" -p "$REGISTRY_PASS"

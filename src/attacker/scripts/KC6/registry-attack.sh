@@ -10,3 +10,5 @@ ssh -i "$SSH_KEY" -p 122 "root@$CONTROL_PLANE_NODE" \
   < /opt/caldera/KC2/pass-enum.sh > "$OUT_FILE"
 scp -i "$SSH_KEY" -P 122 root@$CONTROL_PLANE_NODE:/tmp/user /tmp/user
 scp -i "$SSH_KEY" -P 122 root@$CONTROL_PLANE_NODE:/tmp/pass /tmp/pass
+
+cat "$OUT_FILE"

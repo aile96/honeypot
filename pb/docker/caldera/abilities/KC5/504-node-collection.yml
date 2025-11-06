@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W504 && /opt/caldera/KC5/node-collection.sh", timeout: 1800, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0504", timeout: 1800, parsers: [], cleanup: "" } }

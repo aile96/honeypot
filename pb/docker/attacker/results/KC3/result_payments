@@ -1,0 +1,10 @@
+{"userId":"1","cardHolderName":"Alice Smith","cardNumber":"4111111111111111","expMonth":12,"expYear":2030,"cvv":"123"}
+{"userId":"2","cardHolderName":"Bob Johnson","cardNumber":"5555555555554444","expMonth":7,"expYear":2029,"cvv":"456"}
+{"userId":"3","cardHolderName":"Carol Williams","cardNumber":"378282246310005","expMonth":3,"expYear":2031,"cvv":"1234"}
+{"userId":"4","cardHolderName":"David Brown","cardNumber":"6011111111111117","expMonth":11,"expYear":2028,"cvv":"321"}
+{"userId":"5","cardHolderName":"Eva Davis","cardNumber":"4000056655665556","expMonth":6,"expYear":2032,"cvv":"777"}
+{"userId":"6","cardHolderName":"Frank Miller","cardNumber":"5105105105105100","expMonth":1,"expYear":2030,"cvv":"999"}
+{"userId":"7","cardHolderName":"Grace Wilson","cardNumber":"6011000990139424","expMonth":5,"expYear":2029,"cvv":"555"}
+{"userId":"8","cardHolderName":"Henry Moore","cardNumber":"3530111333300000","expMonth":10,"expYear":2031,"cvv":"314"}
+{"userId":"9","cardHolderName":"Isabel Taylor","cardNumber":"4111111111111111","expMonth":2,"expYear":2033,"cvv":"042"}
+{"userId":"10","cardHolderName":"Jack Anderson","cardNumber":"5555555555554444","expMonth":9,"expYear":2030,"cvv":"876"}

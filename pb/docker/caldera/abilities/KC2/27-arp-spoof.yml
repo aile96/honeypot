@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W207 && /opt/caldera/KC2/arp-spoof.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0207", timeout: 900, parsers: [], cleanup: "" } }

@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W606 && echo \"[SIM] name masqueration of the DaemonSet\"", timeout: 30 } }
+    linux: { sh: { command: "eval $KC0606", timeout: 30 } }

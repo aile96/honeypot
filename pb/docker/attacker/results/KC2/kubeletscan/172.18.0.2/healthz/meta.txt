@@ -1,0 +1,4 @@
+url=http://172.18.0.2:10255/healthz
+status=200
+bytes_download=2
+timestamp=1762386011

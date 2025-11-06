@@ -26,9 +26,13 @@ Supported ENVs:
   STOP_ON_FAIL      (bool)     "true"/"false" default true
   RECENT_WINDOW_MIN (int)      minutes for dedup (default: 5)
   REQUIRE_AGENT     (bool)     waits for an agent in the group (default true)
+
+  SCRIPT_PRE_KC1,  SCRIPT_PRE_KC2,  ... (str)  script/command to run *before* KC<N>
+  SCRIPT_POST_KC1, SCRIPT_POST_KC2, ... (str)  script/command to run *after*  KC<N>
+  # NOTE: if empty or unset -> not executed. Executed from cwd=/scripts with shell.
 """
 
-import json, os, signal, sys, time, urllib.request
+import json, os, signal, sys, time, urllib.request, subprocess, shlex, stat
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE = os.getenv("CALDERA_URL", "http://localhost:8888").rstrip("/")
@@ -232,6 +236,59 @@ def filter_by_enable(adversaries: List[Tuple[str,str]]) -> List[Tuple[str,str]]:
         filtered.append((name, group))
     return filtered
 
+# ---------- Hook runner for pre/post scripts ----------
+def _run_hook(var_name: str, idx: int, phase: str) -> None:
+    """Executes the command in env var var_name if set and non-empty.
+    Runs with shell from cwd=/scripts so relative paths work.
+    If the first token is a file in /scripts, ensure it's executable first.
+    Never raises; logs return code and output.
+    """
+    raw = os.getenv(var_name)
+    if raw is None or not raw.strip():
+        log(f"auto-starter: {phase} hook {var_name} not set -> skip")
+        return
+
+    # Normalize quotes the env var might include
+    cmd = raw.strip().strip('"').strip("'")
+
+    # If it's a bare filename (no spaces and no slash), make it ./<name>
+    if "/" not in cmd and " " not in cmd:
+        cmd = f"./{cmd}"
+
+    # Try to make the first token executable when it's a local file
+    try:
+        # shlex.split is good enough to get the program token
+        first_token = shlex.split(cmd, posix=True)[0] if cmd else ""
+        # Resolve to a file under /scripts if relative
+        if first_token and not os.path.isabs(first_token):
+            candidate = os.path.normpath(os.path.join("/scripts", first_token))
+        else:
+            candidate = first_token
+
+        # Only attempt chmod if it points to a real file (not a shell builtin or program in PATH)
+        if candidate and os.path.isfile(candidate):
+            st = os.stat(candidate)
+            # Add user-execute if missing
+            if not (st.st_mode & stat.S_IXUSR):
+                os.chmod(candidate, st.st_mode | stat.S_IXUSR)
+                log(f"auto-starter: {phase} hook {var_name}: added +x to {candidate}")
+    except Exception as e:
+        # Don't fail the hook; just log why we couldn't chmod
+        log(f"auto-starter: {phase} hook {var_name}: pre-exec chmod skipped: {e!r}")
+
+    log(f"auto-starter: {phase} hook {var_name} -> running: {cmd!r} (cwd=/scripts)")
+    try:
+        proc = subprocess.run(
+            cmd, shell=True, cwd="/scripts", capture_output=True, text=True
+        )
+        if proc.stdout:
+            log(f"auto-starter: {phase} hook stdout:\n{proc.stdout.rstrip()}")
+        if proc.stderr:
+            log(f"auto-starter: {phase} hook stderr:\n{proc.stderr.rstrip()}")
+        log(f"auto-starter: {phase} hook {var_name} exited with code {proc.returncode}")
+    except Exception as e:
+        log(f"auto-starter: {phase} hook {var_name} failed to start: {e!r}")
+
 def run_sequence(adversaries_with_groups: List[Tuple[str, str]]) -> int:
     wait_caldera()
 
@@ -242,6 +299,7 @@ def run_sequence(adversaries_with_groups: List[Tuple[str, str]]) -> int:
         # waits for an agent in the specific group (if required)
         wait_agent_in_group(group)
 
+        # Resolve adversary id
         adv_id = None
         for _ in range(120):  # ~6 min
             adv_id = get_adversary_id_by_name(adv_name)
@@ -254,6 +312,10 @@ def run_sequence(adversaries_with_groups: List[Tuple[str, str]]) -> int:
             if STOP_ON_FAIL: break
             continue
 
+        # ---------- PRE hook for this KC ----------
+        _run_hook(f"SCRIPT_PRE_KC{i}", i, "pre")
+
+        # Start / reuse operation
         try:
             op_id = create_and_start_operation_once(adv_id, group)
         except SystemExit as e:
@@ -264,6 +326,10 @@ def run_sequence(adversaries_with_groups: List[Tuple[str, str]]) -> int:
         ok, st = wait_operation_done(op_id, OP_TIMEOUT)
         results.append((adv_name, ok, st, group))
         log(f"auto-starter: adversary '{adv_name}' done -> ok={ok} state={st} (group={group})")
+
+        # ---------- POST hook for this KC ----------
+        _run_hook(f"SCRIPT_POST_KC{i}", i, "post")
+
         if i < len(adversaries_with_groups): time.sleep(DELAY_BETWEEN)
 
     log("\n=== SEQUENCE SUMMARY ===")

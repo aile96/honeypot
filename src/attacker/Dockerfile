@@ -9,14 +9,14 @@ ARG AUTH_NS="app"
 ARG ATTACKERADDR="prova.dmz.svc.cluster.local"
 ARG DATA_PATH="/tmp/KCData"
 ARG WAIT="1"
-ARG W101="10"
-ARG W102="10"
-ARG W103="10"
-ARG W104="10"
-ARG W105="10"
-ARG W106="10"
-ARG W107="10"
-ARG W108="10"
+ARG KC0101="sleep 1"
+ARG KC0102="sleep 1"
+ARG KC0103="sleep 1"
+ARG KC0104="sleep 1"
+ARG KC0105="sleep 1"
+ARG KC0106="sleep 1"
+ARG KC0107="sleep 1"
+ARG KC0108="sleep 1"
 
 # Building
 ENV WAIT="$WAIT" \
@@ -24,14 +24,14 @@ ENV WAIT="$WAIT" \
     GROUP="$GROUP" \
     DATA_PATH="$DATA_PATH" \
     DOCKER_DAEMON="$DOCKER_DAEMON" \
-    W101="$W101" \
-    W102="$W102" \
-    W103="$W103" \
-    W104="$W104" \
-    W105="$W105" \
-    W106="$W106" \
-    W107="$W107" \
-    W108="$W108"
+    KC0101="$KC0101" \
+    KC0102="$KC0102" \
+    KC0103="$KC0103" \
+    KC0104="$KC0104" \
+    KC0105="$KC0105" \
+    KC0106="$KC0106" \
+    KC0107="$KC0107" \
+    KC0108="$KC0108"
 
 ENV LOG_NS="$LOG_NS" \
     ATTACKED_NS="$ATTACKED_NS" \
@@ -48,7 +48,8 @@ ENV CONTROL_PLANE_NODE="kind-control-plane" \
     CONTROL_PLANE_PORT="6443" \
     K8S_IMAGE="registry.k8s.io/kube-apiserver:v1.30.0" \
     NSPROTO="$AUTH_NS" \
-    NSCREDS="$LOG_NS"
+    NSCREDS="$LOG_NS" \
+    NSPAYMT="pay"
 
 # Install utilities and dnsmasq + python deps
 RUN apt-get update && \

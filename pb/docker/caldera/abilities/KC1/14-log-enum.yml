@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W104 && /opt/caldera/KC1/scan-opensearch.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0104", timeout: 900, parsers: [], cleanup: "" } }

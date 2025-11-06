@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W106 && /opt/caldera/KC1/deploy-containers.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0106", timeout: 900, parsers: [], cleanup: "" } }

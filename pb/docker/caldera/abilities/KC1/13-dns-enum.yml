@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W103 && /opt/caldera/KC1/dns-enum.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0103", timeout: 900, parsers: [], cleanup: "" } }

@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W507 && /opt/caldera/KC5/state-update.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0507", timeout: 900, parsers: [], cleanup: "" } }

@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W302 && /opt/caldera/KC3/api-enum.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0302", timeout: 900, parsers: [], cleanup: "" } }

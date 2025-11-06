@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W202 && /opt/caldera/KC2/nmap-enum.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0202", timeout: 900, parsers: [], cleanup: "" } }

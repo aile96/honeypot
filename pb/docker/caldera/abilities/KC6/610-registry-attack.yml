@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W610 && /opt/caldera/KC6/registry-attack.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0610", timeout: 900, parsers: [], cleanup: "" } }

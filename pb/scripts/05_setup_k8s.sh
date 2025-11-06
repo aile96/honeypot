@@ -19,21 +19,8 @@ require_bin() {
 SA_NAMESPACE="kube-system"
 SA_NAME="controller-admin"
 CRB_NAME="controller-admin"
-OUT_DIR="pb/docker/controller"
+OUT_DIR="pb/docker/controller/kube"
 OUT_FILE="${OUT_DIR}/kubeconfig"
-
-# ==========================
-# Optional .env loader
-# ==========================
-if [[ -n "${ENV_FILE:-}" && -f "$ENV_FILE" ]]; then
-  log "Loading vars from $ENV_FILE..."
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
-else
-  [[ -n "${ENV_FILE:-}" ]] && err "No file $ENV_FILE found"
-fi
 
 # ==========================
 # Helpers
@@ -79,75 +66,9 @@ require_bin kubectl
 command -v docker >/dev/null 2>&1 || warn "Docker not found — some Docker-backed cluster detection may fail"
 
 # --------------------------
-# 0) Build artifacts via Skaffold
-# --------------------------
-
-# Discover current context and its details (fail fast if missing)
-CTX="$(kubectl config current-context || true)"
-[[ -n "${CTX:-}" ]] || die "kubectl has no current-context set."
-
-CLUSTER="$(jsonpath_val "$CTX" cluster || true)"
-USER="$(jsonpath_val "$CTX" user || true)"
-NS="$(jsonpath_val "$CTX" namespace || true)"
-[[ -n "${CLUSTER:-}" && -n "${USER:-}" ]] || die "Unable to resolve cluster/user for context '$CTX'."
-
-NS_EFFECTIVE="${NS:-default}"
-log "Current context: $CTX | cluster=$CLUSTER | user=$USER | namespace=$NS_EFFECTIVE"
-
-TARGET_CTX="honeypot"
-
-# Create or update the honeypot context only if needed
-if ctx_exists "$TARGET_CTX"; then
-  EXIST_CLUSTER="$(jsonpath_val "$TARGET_CTX" cluster || true)"
-  EXIST_USER="$(jsonpath_val "$TARGET_CTX" user || true)"
-  EXIST_NS="$(jsonpath_val "$TARGET_CTX" namespace || true)"
-  EXIST_NS_EFFECTIVE="${EXIST_NS:-default}"
-
-  if [[ "$EXIST_CLUSTER" == "$CLUSTER" && "$EXIST_USER" == "$USER" && "$EXIST_NS_EFFECTIVE" == "$NS_EFFECTIVE" ]]; then
-    log "Context '$TARGET_CTX' already matches desired settings — skipping set-context."
-  else
-    log "Updating context '$TARGET_CTX' to cluster=$CLUSTER user=$USER namespace=$NS_EFFECTIVE ..."
-    kubectl config set-context "$TARGET_CTX" \
-      --cluster="$CLUSTER" --user="$USER" --namespace="$NS_EFFECTIVE" >/dev/null
-  fi
-else
-  log "Creating context '$TARGET_CTX' (cluster=$CLUSTER user=$USER namespace=$NS_EFFECTIVE) ..."
-  kubectl config set-context "$TARGET_CTX" \
-    --cluster="$CLUSTER" --user="$USER" --namespace="$NS_EFFECTIVE" >/dev/null
-fi
-
-# Switch to honeypot only if not current
-CURRENT_CTX="$(kubectl config current-context || true)"
-if [[ "$CURRENT_CTX" != "$TARGET_CTX" ]]; then
-  log "Switching kubectl context to '$TARGET_CTX' ..."
-  kubectl config use-context "$TARGET_CTX" >/dev/null
-else
-  log "Already using context '$TARGET_CTX' — skipping switch."
-fi
-
-# Skaffold: set local-cluster=false only if needed (and if installed)
-if command -v skaffold >/dev/null 2>&1; then
-  CURRENT_VAL="$(skaffold config list --kube-context "$TARGET_CTX" 2>/dev/null | awk '$1=="local-cluster"{print $2; exit}')"
-  if [[ "${CURRENT_VAL:-}" == "false" ]]; then
-    log "skaffold: 'local-cluster' already false for '$TARGET_CTX' — skipping."
-  else
-    log "skaffold: setting local-cluster=false for '$TARGET_CTX' ..."
-    skaffold config set --kube-context "$TARGET_CTX" local-cluster false >/dev/null
-  fi
-
-  log "Running skaffold deployment and building..."
-  skaffold run --tag "${IMAGE_VERSION:-2.0.2}" \
-  --default-repo="${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}" \
-  --verbosity error "$@"
-else
-  warn "Skaffold not found — skipping skaffold config and run."
-fi
-
-mkdir -p "${OUT_DIR}"
-
-# --------------------------
 # 1) Ensure ServiceAccount and ClusterRoleBinding
 # --------------------------
+mkdir -p "${OUT_DIR}"
 log "Ensuring ServiceAccount and ClusterRoleBinding exist..."
 kubectl_get get sa "${SA_NAME}" -n "${SA_NAMESPACE}" >/dev/null 2>&1 || \
   kubectl_get create sa "${SA_NAME}" -n "${SA_NAMESPACE}"
@@ -263,7 +184,7 @@ users:
     token: ${TOKEN}
 EOF
 
-chmod 600 "${OUT_FILE}"
+docker cp ./pb/docker/controller/kube ${CALDERA_CONTROLLER}:/kube
 log "Kubeconfig ready: ${OUT_FILE}"
 
 # --------------------------

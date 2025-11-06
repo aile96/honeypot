@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: 'sleep $W407 && ssh -p 4222 root@$(cat $DATA_PATH/KC4/attackaddr) "/usr/bin/env bash -s" < /opt/caldera/KC4/container-admin1.sh && ssh -p 4222 root@$(cat $DATA_PATH/KC4/attackaddr) "/usr/bin/env bash -s" < /opt/caldera/KC4/container-admin2.sh', timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0407", timeout: 900, parsers: [], cleanup: "" } }

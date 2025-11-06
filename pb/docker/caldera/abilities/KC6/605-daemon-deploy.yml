@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W605 && /opt/caldera/KC6/daemon-deploy.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0605", timeout: 900, parsers: [], cleanup: "" } }

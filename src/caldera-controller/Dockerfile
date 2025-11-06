@@ -36,6 +36,8 @@ ENV PYTHONUNBUFFERED=1 \
     OP_NAME_PREFIX="${DEFAULT_OP_NAME_PREFIX}" \
     CALDERA_KEY="${DEFAULT_CALDERA_KEY}"
 
+RUN mkdir -p /scripts
+
 # ===== Healthcheck to Caldera =====
 HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=10 \
   CMD curl -fsS "$CALDERA_URL" || exit 1

@@ -1,0 +1,4 @@
+url=http://172.18.0.2:10255/spec
+status=404
+bytes_download=19
+timestamp=1762386011

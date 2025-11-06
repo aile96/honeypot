@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W401 && /opt/caldera/KC4/rce-attack.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0401", timeout: 900, parsers: [], cleanup: "" } }

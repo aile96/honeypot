@@ -1,0 +1,57 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "name": "insert-currency-rate-20251106000508",
+    "namespace": "aaa",
+    "labels": {
+      "app.kubernetes.io/name": "insert-currency-rate"
+    }
+  },
+  "spec": {
+    "backoffLimit": 0,
+    "ttlSecondsAfterFinished": 300,
+    "template": {
+      "spec": {
+        "restartPolicy": "Never",
+        "containers": [
+          {
+            "name": "psql",
+            "image": "postgres:16-alpine",
+            "env": [
+              {
+                "name": "PGHOST",
+                "value": "postgres.dat.svc.cluster.local"
+              },
+              {
+                "name": "PGPORT",
+                "value": "5432"
+              },
+              {
+                "name": "PGDATABASE",
+                "value": "currency"
+              },
+              {
+                "name": "PGUSER",
+                "value": "��"
+              },
+              {
+                "name": "PGPASSWORD",
+                "value": "��"
+              },
+              {
+                "name": "SQL",
+                "value": "INSERT INTO currency (code, rate) VALUES ('NUL', 0);"
+              }
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "psql \"host=$PGHOST port=$PGPORT dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD sslmode=disable\" -v ON_ERROR_STOP=1 -c \"$SQL\""
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

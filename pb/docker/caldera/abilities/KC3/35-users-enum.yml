@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W305 && /opt/caldera/KC3/users-enum.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0305", timeout: 900, parsers: [], cleanup: "" } }

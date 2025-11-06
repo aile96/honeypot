@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W201 && echo \"[SIM] initial access with stolen Wi-Fi credentials\"", timeout: 30 } }
+    linux: { sh: { command: "eval $KC0201", timeout: 30 } }

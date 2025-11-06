@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W503 && /opt/caldera/KC5/priv-deploy.sh", timeout: 1800, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0503", timeout: 1800, parsers: [], cleanup: "" } }

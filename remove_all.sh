@@ -4,16 +4,75 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # === Load variables from config file ===
-ENV_FILE="${PROJECT_ROOT}/skaffold.env"
+ENV_FILE="${PROJECT_ROOT}/configuration.conf"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Configuration file not found: $ENV_FILE" >&2
   exit 1
 fi
 
-while IFS= read -r line; do
-  [[ -z "$line" ]] && continue         # skip empty lines
-  [[ "$line" =~ ^# ]] && continue      # skip comments
-  export "$line"
+while IFS= read -r line || [[ -n "$line" ]]; do
+  # Skip blank lines and comments (optionally indented)
+  [[ -z "${line//[[:space:]]/}" ]] && continue
+  [[ "${line#"${line%%[![:space:]]*}"}" =~ ^# ]] && continue
+
+  # ---- Here-doc style: KEY<<MARKER ----
+  if [[ "$line" == *'<<'* ]]; then
+    # split at the first '<<'
+    lhs="${line%%<<*}"
+    rhs="${line#*<<}"
+
+    # trim spaces around key and marker
+    key="${lhs#"${lhs%%[![:space:]]*}"}"; key="${key%"${key##*[![:space:]]}"}"
+    marker="${rhs#"${rhs%%[![:space:]]*}"}"; marker="${marker%"${marker##*[![:space:]]}"}"
+
+    # strip optional single/double quotes around marker
+    case "$marker" in
+      \"*\") marker="${marker#\"}"; marker="${marker%\"}" ;;
+      \'*\') marker="${marker#\'}"; marker="${marker%\'}" ;;
+    esac
+
+    value=''
+    while IFS= read -r docline; do
+      [[ "$docline" == "$marker" ]] && break
+      value+="${docline}"$'\n'
+    done
+    value="${value%$'\n'}"   # remove trailing newline (optional)
+    export "$key=$value"
+    continue
+  fi
+
+  # ---- Normal KEY=VALUE line ----
+  if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+    key="${BASH_REMATCH[1]}"
+    raw="${BASH_REMATCH[2]}"
+
+    # trim surrounding spaces
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
+
+    # Single quotes → literal
+    if [[ "$raw" =~ ^\'(.*)\'$ ]]; then
+      value="${BASH_REMATCH[1]}"
+      export "$key=$value"
+      continue
+    fi
+
+    # Double quotes → interpret \n, \t, etc.
+    if [[ "$raw" =~ ^\"(.*)\"$ ]]; then
+      inner="${BASH_REMATCH[1]}"
+      value="$(printf '%b' "$inner")"
+      export "$key=$value"
+      continue
+    fi
+
+    # Unquoted → take as-is
+    value="$raw"
+    export "$key=$value"
+    continue
+  fi
+
+  # ---- Unrecognized line ----
+  echo "Warning: ignoring unrecognized line: $line" >&2
 done < "$ENV_FILE"
 
 remove_registry() {
@@ -59,3 +118,4 @@ remove_registry() {
 echo "Deleting cluster k8s" && skaffold delete && echo "Deletion completed" || echo "Deletion ended with errors"
 echo "Deleting dockers (no kind)" && docker compose -f pb/docker/docker-compose.yml down && echo "Deletion completed" || echo "Deletion ended with errors"
 echo "Deleting kind" && kind delete cluster && docker network rm kind && echo "Deletion completed" || echo "Deletion ended with errors"
+echo "Deleting minikube" && minikube delete && docker network rm minikube && echo "Deletion completed" || echo "Deletion ended with errors"

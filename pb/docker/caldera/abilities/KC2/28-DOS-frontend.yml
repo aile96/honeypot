@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W208 && /opt/caldera/KC2/DOS-frontend.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0208", timeout: 900, parsers: [], cleanup: "" } }

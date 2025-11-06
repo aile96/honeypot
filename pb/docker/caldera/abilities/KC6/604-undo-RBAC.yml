@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W604 && /opt/caldera/KC6/undo-RBAC.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0604", timeout: 900, parsers: [], cleanup: "" } }

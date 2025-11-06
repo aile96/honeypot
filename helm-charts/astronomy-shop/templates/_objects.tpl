@@ -63,7 +63,7 @@ spec:
       {{- end}}
       containers:
         - name: {{ .name }}
-          image: '{{ ((.imageOverride).repository) | default (printf "%s/%s" (default .defaultValues.image.repository .defaultValues.image.tag) .name) }}:{{ ((.imageOverride).tag) | default .Chart.AppVersion }}'
+          image: '{{ ((.imageOverride).repository) | default (printf "%s/%s" .defaultValues.image.repository .name) }}:{{ ((.imageOverride).tag) | default .Chart.AppVersion }}'
           imagePullPolicy: {{ ((.imageOverride).pullPolicy) | default .defaultValues.image.pullPolicy }}
           {{- if .command }}
           command:
@@ -109,7 +109,7 @@ spec:
         {{- $sidecar := set . "Release" $.Release }}
         {{- $sidecar := set . "defaultValues" $.defaultValues }}
         - name: {{ .name   }}
-          image: '{{ ((.imageOverride).repository) | default (printf "%s/%s" (default .defaultValues.image.repository .defaultValues.image.tag) .name) }}:{{ ((.imageOverride).tag) | default .Chart.AppVersion }}'
+          image: '{{ ((.imageOverride).repository) | default (printf "%s/%s" .defaultValues.image.repository .name) }}:{{ ((.imageOverride).tag) | default .Chart.AppVersion }}'
           imagePullPolicy: {{ ((.imageOverride).pullPolicy) | default .defaultValues.image.pullPolicy }}
           {{- if .command }}
           command:

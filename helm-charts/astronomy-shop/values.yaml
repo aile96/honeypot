@@ -1256,6 +1256,32 @@ components:
         value: "http://caldera.dock:8888"
       - name: GROUP
         value: cluster
+      - name: LOG_NS
+        value: "mem"
+      - name: ATTACKED_NS
+        value: "dmz"
+      - name: AUTH_NS
+        value: "app"
+      - name: NSPAYMT
+        value: "pay"
+      - name: ATTACKERADDR
+        value: "http://caldera.outs:8000"
+      - name: KC0101
+        value: "echo \"[SIM] initial access with this compromised image\""
+      - name: KC0102
+        value: "echo \"[SIM] reverse shell opened to C&C server (caldera)\""
+      - name: KC0103
+        value: "/opt/caldera/KC1/dns-enum.sh"
+      - name: KC0104
+        value: "/opt/caldera/KC1/scan-opensearch.sh"
+      - name: KC0105
+        value: "cat $DATA_PATH/KC1/token"
+      - name: KC0106
+        value: "/opt/caldera/KC1/deploy-containers.sh"
+      - name: KC0107
+        value: "echo \"[SIM] name masqueration of a deployment\""
+      - name: KC0108
+        value: "/opt/caldera/KC1/dns-poisoning.sh"
 
   traffic-controller:
     enabled: false

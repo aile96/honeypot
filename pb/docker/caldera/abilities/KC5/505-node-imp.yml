@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W505 && /opt/caldera/KC5/node-imp.sh", timeout: 900, parsers: [], cleanup: "" } }
+    linux: { sh: { command: "eval $KC0505", timeout: 900, parsers: [], cleanup: "" } }

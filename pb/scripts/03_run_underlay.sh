@@ -28,21 +28,6 @@ PAY_NAMESPACE=${PAY_NAMESPACE:-pay}
 FRONTEND_PROXY_IP=${FRONTEND_PROXY_IP:-127.0.0.1}
 ADV_LIST=${ADV_LIST:-"KC1 – Image@cluster, KC2 – WiFi@outside, KC3 – FlagATT@outside, KC4 – CRSocket@outside, KC5 – Certificate@outside, KC6 – Etcd@outside"}
 
-wait_registry_ready() {
-  # Also 401 is "Ready"
-  local host="$1" port="$2" timeout="${3:-60}"
-  local i=0 code=000
-  while [[ $i -lt $timeout ]]; do
-    code="$(curl -sk -o /dev/null -w '%{http_code}' "https://${host}:${port}/v2/")" || true
-    if [[ "$code" == "200" || "$code" == "401" ]]; then
-      return 0
-    fi
-    sleep 1; i=$((i+1))
-  done
-  printf 'Timeout: registry %s:%s not ready (last HTTP: %s)\n' "$host" "$port" "$code" >&2
-  return 1
-}
-
 # Transform service name to uppercase ENV token (replace non-alnum with underscore)
 svc_env_name() {
   local svc="$1"
@@ -393,6 +378,3 @@ else
 fi
 
 log "All requested services processed."
-
-wait_registry_ready "${REGISTRY_NAME}" "${REGISTRY_PORT}" 300 || exit 1
-docker login "${REGISTRY_NAME}:${REGISTRY_PORT}" -u "$REGISTRY_USER" -p "$REGISTRY_PASS"

@@ -12,8 +12,26 @@ req(){ command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; 
 
 ### ========= Parameters =========
 IMAGE_VERSION="${IMAGE_VERSION:-2.0.2}"
+
+# Registry endpoint the HELPER will push to (must match the name used in your image tags)
 REGISTRY_NAME="${REGISTRY_NAME:-registry}"
 REGISTRY_PORT="${REGISTRY_PORT:-5000}"
+
+# Use an internal registry inside the helper (HTTP by default). Usually keep this false
+# if you already have a registry reachable as "${REGISTRY_NAME}:${REGISTRY_PORT}".
+INTERNAL_REGISTRY="${INTERNAL_REGISTRY:-false}"
+
+# If your registry is HTTP, set this true so the helper's dockerd treats it as insecure.
+INSECURE_REGISTRY="${INSECURE_REGISTRY:-false}"
+
+# Optional login (for authenticated registries)
+REGISTRY_USER="${REGISTRY_USER:-}"
+REGISTRY_PASS="${REGISTRY_PASS:-}"
+
+# Host paths to your registry certificates (CA is what the helper needs to trust HTTPS).
+HOST_REGISTRY_CA="${HOST_REGISTRY_CA:-./pb/docker/registry/certs/rootca.crt}"
+HOST_REGISTRY_CERT="${HOST_REGISTRY_CERT:-./pb/docker/registry/certs/domain.crt}"  # optional, not required by Docker client
+
 APP_NAMESPACE="${APP_NAMESPACE:-app}"
 DAT_NAMESPACE="${DAT_NAMESPACE:-dat}"
 DMZ_NAMESPACE="${DMZ_NAMESPACE:-dmz}"
@@ -24,16 +42,19 @@ TST_NAMESPACE="${TST_NAMESPACE:-tst}"
 # Build: true = force rebuild and push; false = build only if missing from registry (or push if only local)
 BUILD_CONTAINERS_K8S="${BUILD_CONTAINERS_K8S:-false}"
 
-# Optional: multi-arch build (e.g., "linux/amd64,linux/arm64")
+# Optional multi-arch build (e.g., "linux/amd64,linux/arm64")
 PLATFORM="${PLATFORM:-}"
 
 # Helm
 HELM_TIMEOUT="${HELM_TIMEOUT:-1h}"
 
-# Docker helper container (CLI in a container sharing the host socket)
-DOCKER_HELPER_IMAGE="${DOCKER_HELPER_IMAGE:-docker:26.1-cli}"
+# Docker helper (dedicated daemon/socket via docker:dind)
+DOCKER_HELPER_IMAGE="${DOCKER_HELPER_IMAGE:-docker:26.1-dind}"
 DOCKER_HELPER_NAME="${DOCKER_HELPER_NAME:-docker-cli-helper}"
 WORKDIR="$(pwd)"
+
+# Network the helper container will join (host Docker network context)
+CP_NETWORK="${CP_NETWORK:-bridge}"
 
 req docker
 req helm
@@ -41,40 +62,90 @@ req kubectl
 
 ### ========= Docker helper lifecycle =========
 start_docker_helper() {
-  # Clean up any stale helper
   docker rm -f "${DOCKER_HELPER_NAME}" >/dev/null 2>&1 || true
 
-  log "Starting Docker helper container '${DOCKER_HELPER_NAME}' using ${DOCKER_HELPER_IMAGE}"
-  docker run -d --rm --name "${DOCKER_HELPER_NAME}" \
-    --network "${CP_NETWORK}" \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    -v "${WORKDIR}:${WORKDIR}" -w "${WORKDIR}" \
-    "${DOCKER_HELPER_IMAGE}" \
-    sleep infinity >/dev/null
+  log "Starting Docker helper '${DOCKER_HELPER_NAME}' with ${DOCKER_HELPER_IMAGE}"
+  # Pass --insecure-registry if requested (for HTTP registries)
+  local dind_args=()
+  if [[ "${INSECURE_REGISTRY}" == "true" ]]; then
+    dind_args+=( "--insecure-registry=${REGISTRY_NAME}:${REGISTRY_PORT}" )
+  fi
 
-  # Login to the registry using env vars, if provided
-  if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
-    log "Logging into registry ${REGISTRY_NAME}:${REGISTRY_PORT} from helper (env credentials)"
-    printf '%s\n' "${REGISTRY_PASS}" | docker exec -i "${DOCKER_HELPER_NAME}" \
-      docker login "${REGISTRY_NAME}:${REGISTRY_PORT}" --username "${REGISTRY_USER}" --password-stdin >/dev/null
+  docker run -d --rm --name "${DOCKER_HELPER_NAME}" \
+    --privileged \
+    --network "${CP_NETWORK}" \
+    -v "${DOCKER_HELPER_NAME}-data:/var/lib/docker" \
+    "${DOCKER_HELPER_IMAGE}" \
+    "${dind_args[@]}" >/dev/null
+
+  # Wait for the helper's Docker daemon to be ready
+  log "Waiting for helper's Docker daemon..."
+  for i in {1..60}; do
+    if docker exec "${DOCKER_HELPER_NAME}" docker info >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+    [[ $i -eq 60 ]] && die "Helper Docker daemon did not become ready in time"
+  done
+
+  # Install the registry CA so pushes to HTTPS registry succeed
+  install_registry_ca
+
+  # Optionally start an internal registry inside the helper (HTTP by default)
+  if [[ "${INTERNAL_REGISTRY}" == "true" ]]; then
+    log "Ensuring internal registry (${REGISTRY_NAME}:${REGISTRY_PORT}) is running inside helper..."
+    if ! docker exec "${DOCKER_HELPER_NAME}" docker ps --format '{{.Names}}' | grep -q "^${REGISTRY_NAME}\$"; then
+      docker exec "${DOCKER_HELPER_NAME}" docker run -d --name "${REGISTRY_NAME}" \
+        -p "${REGISTRY_PORT}:5000" \
+        --restart=always registry:2 >/dev/null
+      [[ "${INSECURE_REGISTRY}" != "true" ]] && warn "Internal registry started without TLS; set INSECURE_REGISTRY=true for HTTP pushes."
+    fi
+  fi
+
+  # Login (if credentials provided). Note: internal registry is unauthenticated by default.
+  if [[ -n "${REGISTRY_USER}" && -n "${REGISTRY_PASS}" ]]; then
+    log "Logging into ${REGISTRY_NAME}:${REGISTRY_PORT} from helper"
+    if ! printf '%s\n' "${REGISTRY_PASS}" | docker exec -i "${DOCKER_HELPER_NAME}" \
+         docker login "${REGISTRY_NAME}:${REGISTRY_PORT}" --username "${REGISTRY_USER}" --password-stdin >/dev/null; then
+      warn "Login failed (registry may be unauthenticated) – continuing."
+    fi
   else
-    warn "REGISTRY_USER/REGISTRY_PASS not set; skipping 'docker login'. Push may fail if auth is required."
+    warn "REGISTRY_USER/REGISTRY_PASS not set; skipping 'docker login'."
   fi
 }
 
 stop_docker_helper() {
-  log "Stopping Docker helper container '${DOCKER_HELPER_NAME}'"
+  log "Stopping Docker helper '${DOCKER_HELPER_NAME}'"
   docker rm -f "${DOCKER_HELPER_NAME}" >/dev/null 2>&1 || true
 }
 
-# Execute the Docker CLI *inside* the helper container
+# Execute the Docker CLI inside the helper (uses its own daemon/socket)
 d() {
   docker exec "${DOCKER_HELPER_NAME}" docker "$@"
 }
 
-trap 'stop_docker_helper' EXIT
+### ========= Certificates install =========
+# Install CA into helper so Docker client trusts ${REGISTRY_NAME}:${REGISTRY_PORT} over HTTPS.
+install_registry_ca() {
+  local helper="${DOCKER_HELPER_NAME}"
+  local reg="${REGISTRY_NAME}:${REGISTRY_PORT}"
 
-### ========= Image Helpers =========
+  if [[ ! -f "${HOST_REGISTRY_CA}" ]]; then
+    warn "HOST_REGISTRY_CA not found at '${HOST_REGISTRY_CA}' — skipping CA install."
+    return 0
+  fi
+
+  log "Installing registry CA into helper trust store for ${reg}"
+  docker exec "${helper}" sh -lc "mkdir -p /etc/docker/certs.d/${reg}"
+  docker cp "${HOST_REGISTRY_CA}" "${helper}:/etc/docker/certs.d/${reg}/ca.crt"  # required
+  if [[ -f "${HOST_REGISTRY_CERT}" ]]; then
+    docker cp "${HOST_REGISTRY_CERT}" "${helper}:/etc/docker/certs.d/${reg}/domain.crt" || true  # optional
+  fi
+  # Reload dockerd trust (dockerd is PID 1 in dind)
+  docker exec "${helper}" sh -lc 'kill -SIGHUP 1 || true'
+}
+
+### ========= Image helpers =========
 tag_for(){ echo "${REGISTRY_NAME}:${REGISTRY_PORT}/$1:${IMAGE_VERSION}"; }
 
 remote_image_exists(){
@@ -82,8 +153,27 @@ remote_image_exists(){
 }
 
 local_image_exists(){
-  # Same daemon (shared socket), but use the CLI inside the helper
   d image inspect "$1" >/dev/null 2>&1
+}
+
+# JIT import: import a specific tag from the *host* into the helper, only if missing in helper.
+import_from_host_if_needed() {
+  local tag="$1"
+
+  # Already in helper? nothing to do.
+  if d image inspect "$tag" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # Present on host? import it into helper now.
+  if docker image inspect "$tag" >/dev/null 2>&1; then
+    log "Importing image from host into helper: $tag"
+    docker save "$tag" | docker exec -i "${DOCKER_HELPER_NAME}" docker load
+    return 0
+  fi
+
+  # Not found in helper nor host.
+  return 1
 }
 
 build_and_push(){
@@ -92,7 +182,7 @@ build_and_push(){
 
   log "Building and pushing -> $tag (context=$ctx, dockerfile=$df)"
   if [[ -n "$PLATFORM" ]]; then
-    # Buildx multi-arch: create and use a local builder (idempotent)
+    # Create and use a buildx builder (idempotent)
     d buildx create --use --name honeypotbx >/dev/null 2>&1 || true
     d buildx build --platform "$PLATFORM" -t "$tag" "$ctx" -f "$df" "${buildargs[@]}" --push
   else
@@ -106,19 +196,29 @@ ensure_image(){
   local -a buildargs=( "$@" )
   local tag; tag="$(tag_for "$name")"
 
+  # Force rebuild/push
   if [[ "$BUILD_CONTAINERS_K8S" == "true" ]]; then
     build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"; return
   fi
 
+  # Already in remote registry?
   if remote_image_exists "$tag"; then
-    log "Skipping build ($name): tag already exists in registry -> $tag"; return
+    log "Skipping build ($name): already in registry -> $tag"; return
   fi
 
+  # Present in helper's daemon?
   if local_image_exists "$tag"; then
-    log "Pushing only (found locally, missing remotely): $tag"
+    log "Pushing only (found locally in helper, missing remotely): $tag"
     d push "$tag"; return
   fi
 
+  # JIT: try to import from host only now (right before pushing/using it)
+  if import_from_host_if_needed "$tag"; then
+    log "Pushing only (imported from host): $tag"
+    d push "$tag"; return
+  fi
+
+  # Otherwise, build and push
   build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"
 }
 
@@ -432,6 +532,9 @@ deploy_helm(){
 }
 
 ### ========= Main =========
+# Ensure we always stop the helper on exit
+trap 'stop_docker_helper' EXIT
+
 start_docker_helper
 
 log "== Docker images =="
@@ -439,5 +542,5 @@ build_all_images
 
 log "== Helm Deploy =="
 deploy_helm
-stop_docker_helper
-log "Done. Registry=${REGISTRY_NAME}:${REGISTRY_PORT} | Version=${IMAGE_VERSION} | BUILD_CONTAINERS_K8S=${BUILD_CONTAINERS_K8S}"
+
+log "Done. Registry=${REGISTRY_NAME}:${REGISTRY_PORT} | Version=${IMAGE_VERSION} | BUILD_CONTAINERS_K8S=${BUILD_CONTAINERS_K8S} | INTERNAL_REGISTRY=${INTERNAL_REGISTRY} | INSECURE_REGISTRY=${INSECURE_REGISTRY}"

@@ -115,6 +115,6 @@ remove_registry() {
   echo "Deleted '${host}' from ${hosts}."
 }
 
-echo "Deleting dockers (no kind)" && docker rm -f $CALDERA_SERVER $ATTACKER $CALDERA_CONTROLLER $PROXY $REGISTRY_NAME samba-pv && echo "Deletion completed" || echo "Deletion ended with errors"
+echo "Deleting dockers (no kind)" && docker rm -f $CALDERA_SERVER $ATTACKER $CALDERA_CONTROLLER $PROXY $REGISTRY_NAME load-generator samba-pv && echo "Deletion completed" || echo "Deletion ended with errors"
 echo "Deleting kind" && kind delete cluster && docker network rm kind && echo "Deletion completed" || echo "Deletion ended with errors"
 echo "Deleting minikube" && minikube delete && docker network rm minikube && echo "Deletion completed" || echo "Deletion ended with errors"

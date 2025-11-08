@@ -1,36 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ==========================
+# =========================================
 # Utility functions
-# ==========================
+# =========================================
 log()  { printf "\033[1;36m[INFO]\033[0m %s\n" "$*"; }
 warn() { printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
 err()  { printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
 die()  { echo -e "[ERROR] $*" >&2; exit 1; }
 req(){ command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
 
-### ========= Parameters =========
+# =========================================
+# Parameters (env overridable)
+# =========================================
 IMAGE_VERSION="${IMAGE_VERSION:-2.0.2}"
 
-# Registry endpoint the HELPER will push to (must match the name used in your image tags)
+# Registry the HELPER will push to (must match the name used in your image tags)
 REGISTRY_NAME="${REGISTRY_NAME:-registry}"
 REGISTRY_PORT="${REGISTRY_PORT:-5000}"
 
-# Use an internal registry inside the helper (HTTP by default). Usually keep this false
-# if you already have a registry reachable as "${REGISTRY_NAME}:${REGISTRY_PORT}".
+# Start an internal registry inside the helper (HTTP by default)
 INTERNAL_REGISTRY="${INTERNAL_REGISTRY:-false}"
 
-# If your registry is HTTP, set this true so the helper's dockerd treats it as insecure.
+# If your registry is HTTP, set this true so the helper's dockerd treats it as insecure
 INSECURE_REGISTRY="${INSECURE_REGISTRY:-false}"
 
 # Optional login (for authenticated registries)
 REGISTRY_USER="${REGISTRY_USER:-}"
 REGISTRY_PASS="${REGISTRY_PASS:-}"
 
-# Host paths to your registry certificates (CA is what the helper needs to trust HTTPS).
+# Host paths to your registry certificates
 HOST_REGISTRY_CA="${HOST_REGISTRY_CA:-./pb/docker/registry/certs/rootca.crt}"
-HOST_REGISTRY_CERT="${HOST_REGISTRY_CERT:-./pb/docker/registry/certs/domain.crt}"  # optional, not required by Docker client
+HOST_REGISTRY_CERT="${HOST_REGISTRY_CERT:-./pb/docker/registry/certs/domain.crt}"  # optional
 
 APP_NAMESPACE="${APP_NAMESPACE:-app}"
 DAT_NAMESPACE="${DAT_NAMESPACE:-dat}"
@@ -39,7 +40,7 @@ MEM_NAMESPACE="${MEM_NAMESPACE:-mem}"
 PAY_NAMESPACE="${PAY_NAMESPACE:-pay}"
 TST_NAMESPACE="${TST_NAMESPACE:-tst}"
 
-# Build: true = force rebuild and push; false = build only if missing from registry (or push if only local)
+# Build policy: true = force rebuild and push; false = build only if missing from registry (or push if only local)
 BUILD_CONTAINERS_K8S="${BUILD_CONTAINERS_K8S:-false}"
 
 # Optional multi-arch build (e.g., "linux/amd64,linux/arm64")
@@ -53,19 +54,21 @@ DOCKER_HELPER_IMAGE="${DOCKER_HELPER_IMAGE:-docker:26.1-dind}"
 DOCKER_HELPER_NAME="${DOCKER_HELPER_NAME:-docker-cli-helper}"
 WORKDIR="$(pwd)"
 
-# Network the helper container will join (host Docker network context)
+# Network the helper container will join
 CP_NETWORK="${CP_NETWORK:-bridge}"
 
+# Requirements
 req docker
 req helm
 req kubectl
 
-### ========= Docker helper lifecycle =========
+# =========================================
+# Docker helper lifecycle
+# =========================================
 start_docker_helper() {
   docker rm -f "${DOCKER_HELPER_NAME}" >/dev/null 2>&1 || true
 
   log "Starting Docker helper '${DOCKER_HELPER_NAME}' with ${DOCKER_HELPER_IMAGE}"
-  # Pass --insecure-registry if requested (for HTTP registries)
   local dind_args=()
   if [[ "${INSECURE_REGISTRY}" == "true" ]]; then
     dind_args+=( "--insecure-registry=${REGISTRY_NAME}:${REGISTRY_PORT}" )
@@ -78,7 +81,7 @@ start_docker_helper() {
     "${DOCKER_HELPER_IMAGE}" \
     "${dind_args[@]}" >/dev/null
 
-  # Wait for the helper's Docker daemon to be ready
+  # Wait for helper's Docker daemon
   log "Waiting for helper's Docker daemon..."
   for i in {1..60}; do
     if docker exec "${DOCKER_HELPER_NAME}" docker info >/dev/null 2>&1; then
@@ -88,10 +91,10 @@ start_docker_helper() {
     [[ $i -eq 60 ]] && die "Helper Docker daemon did not become ready in time"
   done
 
-  # Install the registry CA so pushes to HTTPS registry succeed
+  # Install registry CA so HTTPS pushes succeed
   install_registry_ca
 
-  # Optionally start an internal registry inside the helper (HTTP by default)
+  # Optionally start an internal registry (HTTP by default)
   if [[ "${INTERNAL_REGISTRY}" == "true" ]]; then
     log "Ensuring internal registry (${REGISTRY_NAME}:${REGISTRY_PORT}) is running inside helper..."
     if ! docker exec "${DOCKER_HELPER_NAME}" docker ps --format '{{.Names}}' | grep -q "^${REGISTRY_NAME}\$"; then
@@ -102,7 +105,7 @@ start_docker_helper() {
     fi
   fi
 
-  # Login (if credentials provided). Note: internal registry is unauthenticated by default.
+  # Optional login (internal registry is unauthenticated by default)
   if [[ -n "${REGISTRY_USER}" && -n "${REGISTRY_PASS}" ]]; then
     log "Logging into ${REGISTRY_NAME}:${REGISTRY_PORT} from helper"
     if ! printf '%s\n' "${REGISTRY_PASS}" | docker exec -i "${DOCKER_HELPER_NAME}" \
@@ -119,13 +122,12 @@ stop_docker_helper() {
   docker rm -f "${DOCKER_HELPER_NAME}" >/dev/null 2>&1 || true
 }
 
-# Execute the Docker CLI inside the helper (uses its own daemon/socket)
-d() {
-  docker exec "${DOCKER_HELPER_NAME}" docker "$@"
-}
+# Execute Docker CLI inside helper
+d() { docker exec "${DOCKER_HELPER_NAME}" docker "$@"; }
 
-### ========= Certificates install =========
-# Install CA into helper so Docker client trusts ${REGISTRY_NAME}:${REGISTRY_PORT} over HTTPS.
+# =========================================
+# Certificates install
+# =========================================
 install_registry_ca() {
   local helper="${DOCKER_HELPER_NAME}"
   local reg="${REGISTRY_NAME}:${REGISTRY_PORT}"
@@ -137,58 +139,86 @@ install_registry_ca() {
 
   log "Installing registry CA into helper trust store for ${reg}"
   docker exec "${helper}" sh -lc "mkdir -p /etc/docker/certs.d/${reg}"
-  docker cp "${HOST_REGISTRY_CA}" "${helper}:/etc/docker/certs.d/${reg}/ca.crt"  # required
+  docker cp "${HOST_REGISTRY_CA}" "${helper}:/etc/docker/certs.d/${reg}/ca.crt"
   if [[ -f "${HOST_REGISTRY_CERT}" ]]; then
-    docker cp "${HOST_REGISTRY_CERT}" "${helper}:/etc/docker/certs.d/${reg}/domain.crt" || true  # optional
+    docker cp "${HOST_REGISTRY_CERT}" "${helper}:/etc/docker/certs.d/${reg}/domain.crt" || true
   fi
-  # Reload dockerd trust (dockerd is PID 1 in dind)
   docker exec "${helper}" sh -lc 'kill -SIGHUP 1 || true'
 }
 
-### ========= Image helpers =========
+# =========================================
+# Image helpers
+# =========================================
 tag_for(){ echo "${REGISTRY_NAME}:${REGISTRY_PORT}/$1:${IMAGE_VERSION}"; }
 
-remote_image_exists(){
-  d manifest inspect "$1" >/dev/null 2>&1
-}
+remote_image_exists(){ d manifest inspect "$1" >/dev/null 2>&1; }
+local_image_exists(){  d image inspect    "$1" >/dev/null 2>&1; }
 
-local_image_exists(){
-  d image inspect "$1" >/dev/null 2>&1
-}
-
-# JIT import: import a specific tag from the *host* into the helper, only if missing in helper.
+# Import a specific tag from the host into the helper, only if missing in helper.
 import_from_host_if_needed() {
   local tag="$1"
 
-  # Already in helper? nothing to do.
   if d image inspect "$tag" >/dev/null 2>&1; then
     return 0
   fi
-
-  # Present on host? import it into helper now.
   if docker image inspect "$tag" >/dev/null 2>&1; then
     log "Importing image from host into helper: $tag"
     docker save "$tag" | docker exec -i "${DOCKER_HELPER_NAME}" docker load
     return 0
   fi
-
-  # Not found in helper nor host.
   return 1
 }
 
-build_and_push(){
+# ---------- New flow: build on host → load into helper → push ----------
+load_into_helper() {
+  local tag="$1"
+  log "Loading image into helper: $tag"
+  docker save "$tag" | docker exec -i "${DOCKER_HELPER_NAME}" docker load
+}
+
+host_build(){
   local tag="$1" ctx="$2" df="$3"; shift 3
   local -a buildargs=( "$@" )
 
-  log "Building and pushing -> $tag (context=$ctx, dockerfile=$df)"
-  if [[ -n "$PLATFORM" ]]; then
-    # Create and use a buildx builder (idempotent)
-    d buildx create --use --name honeypotbx >/dev/null 2>&1 || true
-    d buildx build --platform "$PLATFORM" -t "$tag" "$ctx" -f "$df" "${buildargs[@]}" --push
+  local abs_ctx abs_df
+  abs_ctx="$(cd "$ctx" && pwd)"
+  abs_df="$(cd "$(dirname "$df")" && pwd)/$(basename "$df")"
+
+  log "Building on host -> $tag (context=$abs_ctx, dockerfile=$abs_df)"
+  if [[ -n "${PLATFORM}" ]]; then
+    if [[ "$PLATFORM" == *","* ]]; then
+      warn "Multi-arch requested ($PLATFORM): host '--load' is not supported for multi-arch. Falling back to helper buildx with direct push."
+      # Build multi-arch directly inside the helper and push
+      d buildx create --use --name honeypotbx >/dev/null 2>&1 || true
+      d buildx build --platform "$PLATFORM" -t "$tag" "$abs_ctx" -f "$abs_df" "${buildargs[@]}" --push
+      return 2  # signal: already pushed from helper
+    else
+      docker buildx create --use --name hostbx >/dev/null 2>&1 || true
+      docker buildx build --platform "$PLATFORM" -t "$tag" "$abs_ctx" -f "$abs_df" "${buildargs[@]}" --load
+    fi
   else
-    d build -t "$tag" "$ctx" -f "$df" "${buildargs[@]}"
-    d push "$tag"
+    docker build -t "$tag" "$abs_ctx" -f "$abs_df" "${buildargs[@]}"
   fi
+  return 0
+}
+
+host_build_and_push(){
+  local tag="$1" ctx="$2" df="$3"; shift 3
+  local -a buildargs=( "$@" )
+
+  if ! host_build "$tag" "$ctx" "$df" "${buildargs[@]}"; then
+    # host_build returned non-zero (unexpected)
+    return 1
+  fi
+
+  # If host_build returned code 2 (multi-arch fallback), it already pushed
+  local rc=$?
+  if [[ $rc -eq 2 ]]; then
+    return 0
+  fi
+
+  load_into_helper "$tag"
+  d push "$tag"
 }
 
 ensure_image(){
@@ -198,7 +228,7 @@ ensure_image(){
 
   # Force rebuild/push
   if [[ "$BUILD_CONTAINERS_K8S" == "true" ]]; then
-    build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"; return
+    host_build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"; return
   fi
 
   # Already in remote registry?
@@ -212,25 +242,23 @@ ensure_image(){
     d push "$tag"; return
   fi
 
-  # JIT: try to import from host only now (right before pushing/using it)
+  # Try to import from host now (just-in-time)
   if import_from_host_if_needed "$tag"; then
     log "Pushing only (imported from host): $tag"
     d push "$tag"; return
   fi
 
-  # Otherwise, build and push
-  build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"
+  # Otherwise, build on host → load into helper → push
+  host_build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"
 }
 
-### ========= Build/push images =========
+# =========================================
+# Build/push images
+# =========================================
 build_all_images(){
-  # accounting
   ensure_image accounting . src/accounting/Dockerfile
-
-  # ad
   ensure_image ad . src/ad/Dockerfile
 
-  # attacker (build args from env)
   ensure_image attacker src/attacker src/attacker/Dockerfile \
     --build-arg GROUP="cluster" \
     --build-arg LOG_NS="${MEM_NAMESPACE}" \
@@ -247,80 +275,39 @@ build_all_images(){
     --build-arg KC0107="${KC0107:-}" \
     --build-arg KC0108="${KC0108:-}"
 
-  # auth
   ensure_image auth src/auth src/auth/Dockerfile
-
-  # cart
   ensure_image cart . src/cart/src/Dockerfile
-
-  # checkout
   ensure_image checkout . src/checkout/Dockerfile
-
-  # controller
   ensure_image controller src/controller src/controller/Dockerfile
-
-  # currency
   ensure_image currency . src/currency/Dockerfile
-
-  # email
   ensure_image email . src/email/Dockerfile
-
-  # flagd
   ensure_image flagd . src/flagd/Dockerfile
-
-  # flagd-ui
   ensure_image flagd-ui . src/flagd-ui/Dockerfile
-
-  # fraud-detection
   ensure_image fraud-detection . src/fraud-detection/Dockerfile
-
-  # frontend
   ensure_image frontend . src/frontend/Dockerfile
-
-  # frontend-proxy
   ensure_image frontend-proxy . src/frontend-proxy/Dockerfile
-
-  # image-provider
   ensure_image image-provider . src/image-provider/Dockerfile
-
-  # kafka
   ensure_image kafka . src/kafka/Dockerfile
-
-  # payment
   ensure_image payment . src/payment/Dockerfile
 
-  # postgres variants
   ensure_image postgres src/postgres src/postgres/Dockerfile --build-arg DB="curr"
   ensure_image postgres-auth src/postgres src/postgres/Dockerfile --build-arg DB="auth"
   ensure_image postgres-payment src/postgres src/postgres/Dockerfile --build-arg DB="pay"
 
-  # product-catalog
   ensure_image product-catalog . src/product-catalog/Dockerfile
-
-  # quote
   ensure_image quote . src/quote/Dockerfile
-
-  # recommendation
   ensure_image recommendation . src/recommendation/Dockerfile
-
-  # shipping
   ensure_image shipping . src/shipping/Dockerfile
-
-  # sidecars
   ensure_image sidecar-enc src/sidecar-enc src/sidecar-enc/Dockerfile
   ensure_image sidecar-mal src/sidecar-mal src/sidecar-mal/Dockerfile
-
-  # smtp
   ensure_image smtp src/smtp src/smtp/Dockerfile
-
-  # valkey-cart
   ensure_image valkey-cart . src/valkey-cart/Dockerfile
-
-  # traffic-translator
   ensure_image traffic-translator src/traffic-translator src/traffic-translator/Dockerfile
 }
 
-### ========= Helm Deploy =========
+# =========================================
+# Helm Deploy
+# =========================================
 helm_repos(){
   helm repo add metallb https://metallb.github.io/metallb >/dev/null 2>&1 || true
   helm repo add csi-driver-smb https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts >/dev/null 2>&1 || true
@@ -369,8 +356,8 @@ deploy_helm(){
     --set "networkPolicies.rules.dat.ingress=${APP_NAMESPACE}\, ${MEM_NAMESPACE}\, ${PAY_NAMESPACE}\, kube-system" \
     --set "networkPolicies.rules.dat.egress=${APP_NAMESPACE}\, ${MEM_NAMESPACE}\, ${PAY_NAMESPACE}\, kube-system" \
     --set "networkPolicies.rules.mem.name=${MEM_NAMESPACE}" \
-    --set "networkPolicies.rules.mem.ingress=${DAT_NAMESPACE}\, ${MEM_NAMESPACE}\, ${DMZ_NAMESPACE}\, ${PAY_NAMESPACE}\, ${TST_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.mem.egress=${DAT_NAMESPACE}\, ${MEM_NAMESPACE}\, ${DMZ_NAMESPACE}\, ${PAY_NAMESPACE}\, ${TST_NAMESPACE}\, kube-system" \
+    --set "networkPolicies.rules.mem.ingress=${DAT_NAMESPACE}\, ${APP_NAMESPACE}\, ${DMZ_NAMESPACE}\, ${PAY_NAMESPACE}\, ${TST_NAMESPACE}\, kube-system" \
+    --set "networkPolicies.rules.mem.egress=${DAT_NAMESPACE}\, ${APP_NAMESPACE}\, ${DMZ_NAMESPACE}\, ${PAY_NAMESPACE}\, ${TST_NAMESPACE}\, kube-system" \
     --set "networkPolicies.rules.tst.name=${TST_NAMESPACE}" \
     --set "networkPolicies.rules.tst.ingress=${MEM_NAMESPACE}\, ${DMZ_NAMESPACE}\, kube-system" \
     --set "networkPolicies.rules.tst.egress=${MEM_NAMESPACE}\, ${DMZ_NAMESPACE}\, kube-system" \
@@ -531,8 +518,9 @@ deploy_helm(){
     --set "components.flagd.sidecarContainers[0].envSwitchFrom[1].valueFrom=$( [[ \"${FLAGD_CONFIGMAP:-true}\" == \"true\" ]] && echo configmap || echo secret )"
 }
 
-### ========= Main =========
-# Ensure we always stop the helper on exit
+# =========================================
+# Main
+# =========================================
 trap 'stop_docker_helper' EXIT
 
 start_docker_helper
@@ -543,4 +531,5 @@ build_all_images
 log "== Helm Deploy =="
 deploy_helm
 
+stop_docker_helper
 log "Done. Registry=${REGISTRY_NAME}:${REGISTRY_PORT} | Version=${IMAGE_VERSION} | BUILD_CONTAINERS_K8S=${BUILD_CONTAINERS_K8S} | INTERNAL_REGISTRY=${INTERNAL_REGISTRY} | INSECURE_REGISTRY=${INSECURE_REGISTRY}"

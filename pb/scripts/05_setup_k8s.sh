@@ -188,7 +188,28 @@ docker cp ./pb/docker/controller/kube ${CALDERA_CONTROLLER}:/kube
 log "Kubeconfig ready: ${OUT_FILE}"
 
 # --------------------------
-# 6) Setting CoreDNS to non-recursive mode OR inserting attacker zone
+# 6) Setting Policies in namespaces to avoid hostpath, privileged and privilege escalation
+# --------------------------
+if [[ "${MISSING_POLICY,,:-}" != "true" ]]; then
+  for ns_var in APP_NAMESPACE DAT_NAMESPACE DMZ_NAMESPACE MEM_NAMESPACE PAY_NAMESPACE TST_NAMESPACE; do
+    ns="${!ns_var:-}"
+    if [[ -n "$ns" ]]; then
+      log "Labeling namespace: $ns"
+      kubectl label namespace "$ns" \
+        pod-security.kubernetes.io/enforce=restricted \
+        pod-security.kubernetes.io/warn=restricted \
+        pod-security.kubernetes.io/audit=restricted \
+        --overwrite
+    else
+      log "Skipping: variable $ns_var is not set or empty"
+    fi
+  done
+else
+  log "MISSING_POLICY is 'true' → skipping Pod Security label application."
+fi
+
+# --------------------------
+# 7) Setting CoreDNS to non-recursive mode OR inserting attacker zone
 # --------------------------
 if [[ "${RECURSIVE_DNS:-true}" != "true" ]]; then
   log "Checking CoreDNS ConfigMap for 'forward'..."

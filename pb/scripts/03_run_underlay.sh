@@ -152,7 +152,6 @@ run_container "${CONTAINER_NAME}" \
   --hostname "${HOSTNAME}" \
   --restart always \
   --network "${CP_NETWORK}" \
-  -p "${REGISTRY_PORT}:${REGISTRY_PORT}" \
   -e "REGISTRY_STORAGE_DELETE_ENABLED=true" \
   -e "REGISTRY_HTTP_ADDR=0.0.0.0:${REGISTRY_PORT}" \
   -e "REGISTRY_AUTH=htpasswd" \

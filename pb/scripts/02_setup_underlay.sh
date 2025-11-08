@@ -481,13 +481,10 @@ log "Done."
 # --------------------------
 # 9) Generation of certificates
 # --------------------------
-if [ ! -f "./pb/docker/registry/htpasswd" ]; then
-  log "Generating htpasswd file..."
-  mkdir -p "$(dirname "./pb/docker/registry/htpasswd")"
-  htpasswd -Bbn "$REGISTRY_USER" "$REGISTRY_PASS" > "./pb/docker/registry/htpasswd"
-else
-  warn "File htpasswd already existing, no action needed"
-fi
+rm -f "./pb/docker/registry/htpasswd"
+log "Generating htpasswd file..."
+mkdir -p "$(dirname "./pb/docker/registry/htpasswd")"
+htpasswd -Bbn "$REGISTRY_USER" "$REGISTRY_PASS" > "./pb/docker/registry/htpasswd"
 
 CERTSDIR="./pb/docker/registry/certs"
 mkdir -p "$CERTSDIR"
@@ -563,6 +560,7 @@ install_on_node_container() {
   # if HTTPS, install CA as both containerd trust and OS trust
   if [ "${REG_SCHEME}" = "https" ]; then
     if [ -r "$REGISTRY_CA_FILE" ]; then
+      docker exec "$name" sh -lc "mkdir -p '${certsd}' '${hosts_dir}'"
       docker cp "$REGISTRY_CA_FILE" "${name}:${certsd}/ca.crt"
       docker cp "$REGISTRY_CA_FILE" "${name}:${hosts_dir}/registry-${REGISTRY_NAME}.crt"
       docker exec "$name" sh -lc "update-ca-certificates >/dev/null 2>&1 || true"

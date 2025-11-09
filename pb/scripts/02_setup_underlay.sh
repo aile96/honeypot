@@ -561,8 +561,10 @@ install_on_node_container() {
   if [ "${REG_SCHEME}" = "https" ]; then
     if [ -r "$REGISTRY_CA_FILE" ]; then
       docker exec "$name" sh -lc "mkdir -p '${certsd}' '${hosts_dir}'"
-      docker cp "$REGISTRY_CA_FILE" "${name}:${certsd}/ca.crt"
-      docker cp "$REGISTRY_CA_FILE" "${name}:${hosts_dir}/registry-${REGISTRY_NAME}.crt"
+      #docker cp "$REGISTRY_CA_FILE" "${name}:${certsd}/ca.crt"
+      #docker cp "$REGISTRY_CA_FILE" "${name}:${hosts_dir}/registry-${REGISTRY_NAME}.crt"
+      docker exec -i "$name" sh -c "install -D -m 0644 /dev/stdin '${certsd}/ca.crt'" < "$REGISTRY_CA_FILE"
+      docker exec -i "$name" sh -c "install -D -m 0644 /dev/stdin '${hosts_dir}/registry-${REGISTRY_NAME}.crt'" < "$REGISTRY_CA_FILE"
       docker exec "$name" sh -lc "update-ca-certificates >/dev/null 2>&1 || true"
     else
       warn "CA file '$REGISTRY_CA_FILE' not readable; TLS may fail."

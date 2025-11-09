@@ -16,9 +16,6 @@ SERVER_SCRIPT="/usr/local/bin/server_8080.py"
 
 log() { printf '%s %s\n' "$(date -Is)" "$*"; }
 
-# Clean previous results
-rm -rf $DATA_PATH/*
-
 # helper: detect container IPv4 (first non-loopback)
 detect_container_ip() {
   local ip

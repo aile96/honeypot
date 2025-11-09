@@ -346,7 +346,6 @@ if is_enabled "$svc"; then
     -e "NSPAYMT=${PAY_NAMESPACE}" \
     -e "NSDATA=${DAT_NAMESPACE}" \
     "${KC_ENVS[@]}" \
-    -v "./pb/docker/attacker/results:/tmp/KCData:Z" \
     "${IMG_NAME}"
 
   docker cp ./pb/docker/attacker/apiserver "${ATTACKER}:/apiserver"

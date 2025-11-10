@@ -75,46 +75,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   echo "Warning: ignoring unrecognized line: $line" >&2
 done < "$ENV_FILE"
 
-remove_registry() {
-  local host="${1:-registry}"         # 1° arg: host to remove (default: registry)
-  local hosts="${2:-/etc/hosts}"      # 2° arg: path to hosts file (default: /etc/hosts)
-
-  docker rm -f $1
-
-  # Looking if exists at least one entry with host
-  if ! grep -Eq "^[[:space:]]*[0-9a-fA-F:.]+[[:space:]]+.*\b${host}\b" "$hosts"; then
-    echo "No entry '${host}' found in ${hosts}"
-    return 0
-  fi
-
-  echo "Removing '${host}' from ${hosts}..."
-  local tmp
-  tmp="$(mktemp)"
-
-  # Backup
-  sudo cp "$hosts" "${hosts}.bak.$(date +%s)"
-
-  # Removing $host saving other alias on the same line
-  awk -v host="$host" '
-    /^[[:space:]]*#/ { print; next }             # leaving comments
-    NF == 0 { print; next }                       # leaving empty lines
-    {
-      ip=$1; out=$1; removed=0
-      for (i=2; i<=NF; i++) {
-        if ($i != host) out = out FS $i
-        else removed=1
-      }
-      if (removed && out == ip) next             # if not other host, remove the line
-      print out
-    }
-  ' "$hosts" > "$tmp"
-
-  sudo install -m 0644 "$tmp" "$hosts"
-  rm -f "$tmp"
-
-  echo "Deleted '${host}' from ${hosts}."
-}
-
 echo "Deleting dockers (no kind)" && docker rm -f $CALDERA_SERVER $ATTACKER $CALDERA_CONTROLLER $PROXY $REGISTRY_NAME load-generator samba-pv && echo "Deletion completed" || echo "Deletion ended with errors"
 echo "Deleting kind" && kind delete cluster && docker network rm kind && echo "Deletion completed" || echo "Deletion ended with errors"
 echo "Deleting minikube" && minikube delete && docker network rm minikube && echo "Deletion completed" || echo "Deletion ended with errors"

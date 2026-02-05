@@ -9,7 +9,7 @@ _SHOULD_STOP = False
 
 def _handle_stop(signum, frame):
     global _SHOULD_STOP
-    print(f"Received signal {signum}, stop requested…")
+    print(f"Received signal {signum}, stop requested...")
     _SHOULD_STOP = True
 
 # Register handlers for clean shutdowns (useful in containers)
@@ -109,7 +109,7 @@ def main():
             code = run_script(script_path)
             if _SHOULD_STOP:
                 break
-            print(f"Waiting {interval} seconds before the next run (last exit code: {code})…")
+            print(f"Waiting {interval} seconds before the next run (last exit code: {code})...")
             # Wait in small steps to react quickly to signals
             slept = 0
             while slept < interval and not _SHOULD_STOP:
@@ -122,7 +122,7 @@ def main():
         # Keep the process alive (current behavior) or exit:
         stay_idle = os.getenv("STAY_IDLE", "1")  # default 1 = stay idle
         if stay_idle not in ("0", "false", "False"):
-            print(f"Controller idle (script exit code: {code})… Press Ctrl+C to terminate.")
+            print(f"Controller idle (script exit code: {code})... Press Ctrl+C to terminate.")
             while not _SHOULD_STOP:
                 time.sleep(60)
             print("Stop requested, controller exiting.")

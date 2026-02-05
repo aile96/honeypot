@@ -8,7 +8,7 @@ ENV RCE_ENABLED="$RCE_ENABLED"
 # Install sshd + tini for a clean PID1
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
- openssh-server tini curl containerd unzip jq \
+ openssh-server tini curl containerd docker.io unzip jq \
  && rm -rf /var/lib/apt/lists/*
 
 # Basic SSH hardening (pubkey only; you can adjust as needed)

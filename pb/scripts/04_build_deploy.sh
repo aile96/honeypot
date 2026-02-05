@@ -507,8 +507,9 @@ deploy_helm(){
     --set "components.image-updater.enabled=$( [[ \"${AUTO_DEPLOY:-true}\" == \"true\" ]] && echo true || echo false )" \
     --set "components.smtp.hostNetwork=$( [[ \"${HOST_NETWORK:-true}\" == \"true\" ]] && echo true || echo false )" \
     --set "components.smtp.env[0].value=$( [[ \"${RCE_VULN:-true}\" == \"true\" ]] && echo true || echo false )" \
-    --set "components.smtp.additionalVolumes[0].hostPath.path=$( [[ \"${SOCKET_SHARED:-true}\" == \"true\" ]] && echo /run/containerd/containerd.sock || echo /tmp/disabled-containerd.sock )" \
+    --set "components.smtp.additionalVolumes[0].hostPath.path=$( [[ \"${SOCKET_SHARED:-true}\" == \"true\" ]] && echo $CRICTL_RUNTIME_PATH || echo /tmp/disabled-containerd.sock )" \
     --set "components.smtp.additionalVolumes[0].hostPath.type=$( [[ \"${SOCKET_SHARED:-true}\" == \"true\" ]] && echo Socket || echo FileOrCreate )" \
+    --set "components.smtp.volumeMounts[0].mountPath=/host/run/containerd/containerd.sock" \
     --set "components.currency.env[9].value=$( [[ \"${FLAGD_FEATURES:-true}\" == \"true\" ]] && echo true || echo false )" \
     --set "components.checkout.sidecarContainers[0].env[7].value=$( [[ \"${FLAGD_FEATURES:-true}\" == \"true\" ]] && echo true || echo false )" \
     --set "components.checkout.sidecarContainers[1].env[7].value=$( [[ \"${FLAGD_FEATURES:-true}\" == \"true\" ]] && echo true || echo false )" \

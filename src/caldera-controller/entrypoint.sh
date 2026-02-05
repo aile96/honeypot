@@ -27,19 +27,21 @@ log "==================="
 
 # --- 1) Wait for kubeconfig file to appear ---
 start_ts=$(date +%s)
+if [ ! -s "$KUBECONFIG" ]; then
+  warn "Kubeconfig not found yet at $KUBECONFIG; sleeping..."
+fi
 until [ -s "$KUBECONFIG" ]; do
   now=$(date +%s)
   if [ $(( now - start_ts )) -ge "$K8S_WAIT_TIMEOUT" ]; then
     err "Timed out waiting for kubeconfig at $KUBECONFIG"
     exit 1
   fi
-  warn "Kubeconfig not found yet at $KUBECONFIG; sleeping…"
   sleep 2
 done
 log "Kubeconfig present."
 
 # --- 2) Wait for API server readiness ---
-log "Waiting for Kubernetes API to be ready…"
+log "Waiting for Kubernetes API to be ready..."
 # Try /readyz first; fall back to a simple 'kubectl get ns'
 until kubectl --request-timeout=5s get --raw='/readyz' >/dev/null 2>&1 || \
       kubectl --request-timeout=5s get ns >/dev/null 2>&1; do
@@ -56,7 +58,7 @@ log "API server is reachable."
 if ! kubectl get nodes >/dev/null 2>&1; then
   warn "Cannot list nodes; continuing."
 else
-  log "Waiting for nodes to be Ready…"
+  log "Waiting for nodes to be Ready..."
   if ! kubectl wait --for=condition=Ready nodes --all --timeout="${K8S_WAIT_TIMEOUT}s"; then
     if [ "$K8S_STRICT" = "true" ]; then
       err "Nodes did not all become Ready in time."
@@ -68,7 +70,7 @@ else
 fi
 
 # --- 4) Wait for workloads to be up across namespaces (best effort) ---
-log "Waiting for workloads (Deployments/DaemonSets/StatefulSets) to be ready…"
+log "Waiting for workloads (Deployments/DaemonSets/StatefulSets) to be ready..."
 NAMESPACES=$(kubectl get ns -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
 for ns in $NAMESPACES; do
   # Deployments

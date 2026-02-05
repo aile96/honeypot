@@ -27,6 +27,10 @@ MINIKUBE_NODES="$((WORKERS + 1))"
 MINIKUBE_CPUS="${MINIKUBE_CPUS:-4}"
 MINIKUBE_MEM_MB="${MINIKUBE_MEM_MB:-4896}"
 
+# System requirements
+REQUIRED_AVAIL_MEM_MB="${REQUIRED_AVAIL_MEM_MB:-12288}" # 12 GB
+REQUIRED_CPUS="${REQUIRED_CPUS:-4}"
+
 # Images to pre-pull & load ONLY when creating a brand-new cluster
 IMAGES=(
   quay.io/metallb/controller:v0.15.2
@@ -57,18 +61,75 @@ detect_current_provider() {
   local ctx
   ctx="$(kubectl config current-context 2>/dev/null || true)"
   if [[ "$ctx" == kind-* ]]; then
-    echo "kind ($ctx)"
+    echo "kind"
   elif [[ "$ctx" == minikube* || "$ctx" == *minikube* ]]; then
-    echo "minikube ($ctx)"
+    echo "minikube"
   else
     # fallback by node names
     if kubectl get nodes -o name 2>/dev/null | grep -q "kind-control-plane"; then
-      echo "kind (by node name)"
+      echo "kind"
     elif kubectl get nodes -o name 2>/dev/null | grep -qi "minikube"; then
-      echo "minikube (by node name)"
+      echo "minikube"
     else
-      echo "unknown ($ctx)"
+      echo "udefinable"
     fi
+  fi
+}
+
+# --- System resource checks ---
+get_mem_available_mb() {
+  if [[ -r /proc/meminfo ]]; then
+    awk '/MemAvailable:/ {print int($2/1024)}' /proc/meminfo
+    return 0
+  fi
+
+  if command -v vm_stat >/dev/null 2>&1; then
+    local pagesize free inactive speculative
+    pagesize="$(vm_stat | awk '/page size of/ {gsub(/[^0-9]/, "", $8); print $8}')"
+    free="$(vm_stat | awk '/Pages free/ {gsub(/[^0-9]/, "", $3); print $3}')"
+    inactive="$(vm_stat | awk '/Pages inactive/ {gsub(/[^0-9]/, "", $3); print $3}')"
+    speculative="$(vm_stat | awk '/Pages speculative/ {gsub(/[^0-9]/, "", $3); print $3}')"
+    speculative="${speculative:-0}"
+
+    if [[ -n "$pagesize" && -n "$free" && -n "$inactive" ]]; then
+      echo $(( (free + inactive + speculative) * pagesize / 1024 / 1024 ))
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+get_cpu_count() {
+  if command -v nproc >/dev/null 2>&1; then
+    nproc
+    return 0
+  fi
+  if command -v sysctl >/dev/null 2>&1; then
+    sysctl -n hw.ncpu
+    return 0
+  fi
+  return 1
+}
+
+check_system_resources() {
+  local avail_mem_mb cpu_count
+
+  avail_mem_mb="$(get_mem_available_mb || true)"
+  cpu_count="$(get_cpu_count || true)"
+
+  if [[ -z "${avail_mem_mb}" || "${avail_mem_mb}" -le 0 ]]; then
+    die "Unable to determine available RAM. Need at least 12 GB available."
+  fi
+  if (( avail_mem_mb < REQUIRED_AVAIL_MEM_MB )); then
+    die "Not enough available RAM: ${avail_mem_mb} MB available, need at least ${REQUIRED_AVAIL_MEM_MB} MB."
+  fi
+
+  if [[ -z "${cpu_count}" || "${cpu_count}" -le 0 ]]; then
+    die "Unable to determine CPU count. Need at least 4 CPUs."
+  fi
+  if (( cpu_count < REQUIRED_CPUS )); then
+    die "Not enough CPU cores: ${cpu_count} available, need at least ${REQUIRED_CPUS}."
   fi
 }
 
@@ -100,10 +161,9 @@ EOF
 # --- Create Minikube cluster ---
 create_minikube_cluster() {
   log "Creating Minikube cluster with ${MINIKUBE_NODES} node(s) (${MINIKUBE_CPUS} CPUs, ${MINIKUBE_MEM_MB} MB)..."
-  minikube start --driver=docker \
+  minikube start \
     --kubernetes-version="v${K8S_VERSION}" \
     --listen-address=0.0.0.0 \
-    --container-runtime=containerd \
     --nodes="${MINIKUBE_NODES}" \
     --cpus="${MINIKUBE_CPUS}" \
     --memory="${MINIKUBE_MEM_MB}"
@@ -145,10 +205,12 @@ log "Requested target: ${TARGET}"
 
 if cluster_reachable; then
   prov="$(detect_current_provider)"
-  warn "A Kubernetes cluster is already reachable via kubectl (provider: ${prov})."
+  warn "A Kubernetes ${prov} cluster is already reachable via kubectl."
   warn "Full skip: no creation, no image pulls, no image loads."
   return 0
 fi
+
+#check_system_resources
 
 log "No reachable cluster detected. Creating '${TARGET}'..."
 case "$TARGET" in

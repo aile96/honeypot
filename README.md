@@ -1,7 +1,9 @@
 # Kubernetes Honeypot & Adversary Emulation Platform (KinD/Minikube)
 
-> Last update: 2025-11-10  
+> Last update: 2026-02-04  
 > **For isolated lab use only.** This platform runs *simulated* attacks via MITRE Caldera for research, training and defensive validation. **Do not use on production systems or third‑party infrastructure.**
+>
+> **Safety check:** verify your current `kubectl` context (`kubectl config current-context`) points to a local lab cluster (KinD/Minikube). The pipeline operates on whatever cluster is reachable and may patch control-plane/worker components depending on enabled vulnerability switches.
 
 ## Table of Contents
 - [Overview](#overview)
@@ -25,13 +27,13 @@ This thesis delivers an **automated platform** that **builds, deploys and tests*
 
 The platform **orchestrates kill chains** with **MITRE Caldera** (adversary emulation), mapped to **MITRE ATT&CK**, enabling **repeatable** attack/defense experiments and practical **CTI** generation.
 
-**Single entry point:** `./start.sh` runs a 5‑stage pipeline:
-1. **Ensure deps** – basic tooling/context checks.
-2. **Cluster** – create cluster (KinD or Minikube) and base settings.
-3. **Underlay Building** – bring up support infra (registry, proxy, Caldera, attacker, Samba, load generator, etc.).
-3. **Underlay Deploying** – deploy support infra (registry, proxy, Caldera, attacker, Samba, load generator, etc.).
-4. **Build & Deploy** – build images, push to the **local registry**, install **Helm charts** (microservices app, add‑ons, telemetry).
-5. **Setup K8s** – resources & permissions (ServiceAccount/ClusterRoleBinding, secrets, etc.).
+**Single entry point:** `./start.sh` runs a **6‑stage pipeline**:
+1. **Ensure deps** (`pb/scripts/00_ensure_deps.sh`) – basic tooling/context checks.
+2. **Cluster** (`pb/scripts/01_kind_cluster.sh`) – create a local cluster (KinD/Minikube) **only if** none is reachable via `kubectl`.
+3. **Underlay setup** (`pb/scripts/02_setup_underlay.sh`) – generate registry CA/credentials, compute a MetalLB IP, and apply cluster‑level switches (e.g., kubelet RO port, etcd exposure, anonymous auth).
+4. **Underlay run** (`pb/scripts/03_run_underlay.sh`) – start supporting Docker containers (registry, proxy, Caldera server/controller, attacker, Samba, load generator).
+5. **Build & deploy** (`pb/scripts/04_build_deploy.sh`) – build images, push to the local registry, deploy Helm charts (additions, telemetry, Astronomy Shop).
+6. **K8s setup** (`pb/scripts/05_setup_k8s.sh`) – create ServiceAccount/kubeconfig for the controller and apply selected DNS/namespace policies.
 
 A full cleanup script is provided: `./remove_all.sh`.
 
@@ -63,27 +65,36 @@ A full cleanup script is provided: `./remove_all.sh`.
 **Key components**:
 - **Kubernetes cluster**: KinD (recommended default) or Minikube. Worker count configurable via `WORKERS`.
 - **Application**: *Astronomy Shop* microservices with optional vulnerabilities (e.g., `dnsGrant`, `deployGrant`, `anonymousGrant`, `currencyGrant`) and **NetworkPolicy** toggles.
-- **Telemetry**: OTel Collector, Prometheus, Grafana, Jaeger, (opt.) OpenSearch. **Open** or **protected** mode (`TELEMETRY_OPEN`).
+- **Telemetry**: OTel Collector, Prometheus, Grafana, Jaeger, (opt.) OpenSearch. **Open** or **protected** mode (`LOG_OPEN`).
 - **Underlay** (supporting containers on the Docker host):
-  - **Local registry** (default `registry:5000`).
-  - **Reverse proxy** (host port `8080`) exposing the **app frontend** and **/caldera**.
+  - **Local registry** (default `registry:5000`, Docker-network only; used for image pushes).
+  - **Reverse proxy** exposing the **app frontend** on `:8080` and **Caldera** on `:8888`.
   - **MITRE Caldera** server and **controller** (auto‑starting operations).
   - **Attacker** (kill chain scripts) and **Load Generator** (Locust).
   - **Samba** for CSI SMB (persistent volumes).
+
+**Repo map** (where to look):
+- Pipeline scripts: `pb/scripts/*`
+- Underlay containers & Caldera content: `pb/docker/*`
+- Helm charts: `helm-charts/{additions,telemetry,astronomy-shop}`
+- Service sources and custom images: `src/*`
 
 ---
 
 ## Prerequisites
 
 - **OS**: Linux or macOS (x86_64/arm64). On Windows, use WSL2.
-- **Minimum suggested resources**: 4 CPU, 8–12 GB RAM, 20+ GB free disk.
+- **Minimum suggested resources**: 4 CPU, 12-16 GB RAM, 80+ GB free disk.
+- **Cluster size requirement**: at least **3 nodes total** (control-plane + ≥2 workers). Keep `WORKERS>=2`.
 - **Software** (available in PATH):
   - **Docker** (Engine/Desktop) running
   - **kubectl** (≥ 1.28; cluster defaults to K8s 1.30.x)
   - **kind** (≥ 0.22) **or** **minikube** (≥ 1.33)
   - **helm** (≥ 3.12)
+  - `docker buildx` (Buildx plugin)
+  - `htpasswd` (from `apache2-utils` / `httpd-tools`)
   - **jq**, **curl**, **openssl**
-- **Open ports** (defaults): `8080` (proxy-frontend), `8888` (proxy-caldera).
+- **Open ports** (defaults): `8080` (frontend proxy), `8888` (Caldera proxy).
 
 > The script `pb/scripts/00_ensure_deps.sh` performs basic checks and fails with clear messages if something is missing.
 
@@ -97,14 +108,17 @@ All options live in **`configuration.conf`** (loaded by `./start.sh`). Key examp
 - `KIND_CLUSTER=1` to use **KinD** (recommended).  
   If `KIND_CLUSTER=0`, target is **Minikube**.
 - `K8S_VERSION=1.30.0` cluster version.
+- `WORKERS=2` number of workers (must be ≥2).  
+  (Minikube creates `WORKERS+1` total nodes; KinD creates `WORKERS` workers + 1 control-plane.)
 
 ### Image registry
 - `REGISTRY_NAME=registry` – helper/hostname.
-- `REGISTRY_PORT=5000` – exposed port.
+- `REGISTRY_PORT=5000` – registry port (inside the Docker network).
 - `REGISTRY_USER`, `REGISTRY_PASS` – credentials.
 
 ### Telemetry
 - `LOG_OPEN=true|false` – selects *noauth*/**auth** values for the `telemetry` chart.
+- `LOG_TOKEN=true|false` – enables/disables synthetic token log generation (used by some scenarios).
 - Dashboards & collectors are deployed automatically (Grafana, Jaeger, Prometheus, OTel Collector, opt. OpenSearch).
 
 ### Vulnerabilities (chart `additions` → `values.yaml`)
@@ -113,6 +127,24 @@ All options live in **`configuration.conf`** (loaded by `./start.sh`). Key examp
 - `ANONYMOUS_GRANT=true|false`
 - `CURRENCY_GRANT=true|false`
 - **NetworkPolicy**: enable/disable default deny and selected exceptions (see `helm-charts/additions/values.yaml`).
+
+Note: `ANONYMOUS_GRANT` is effective only when `ANONYMOUS_AUTH=true` (see below).
+
+### Cluster-level toggles (scripts)
+- `OPEN_PORTS=true|false` – enables kubelet read-only port (`10255`) on worker nodes.
+- `ETCD_EXPOSURE=true|false` – exposes etcd client port (`12379`) on the control-plane.
+- `ANONYMOUS_AUTH=true|false` – enables Kubernetes API anonymous authentication (`--anonymous-auth=true`).
+- `RECURSIVE_DNS=true|false` – toggles DNS recursion behavior (CoreDNS changes in `pb/scripts/05_setup_k8s.sh`).
+- `MISSING_POLICY=true|false` – if `true`, skips Pod Security labels (less restricted namespaces).
+
+### Underlay services (Docker containers)
+Enable/disable underlay containers started by `pb/scripts/03_run_underlay.sh`:
+- `PROXY_ENABLE=true|false`
+- `CALDERA_SERVER_ENABLE=true|false`
+- `CALDERA_CONTROLLER_ENABLE=true|false`
+- `ATTACKER_ENABLE=true|false`
+- `SAMBA_ENABLE=true|false`
+- `LOAD_GENERATOR_ENABLE=true|false`
 
 ### Kill chains (MITRE Caldera)
 - `ADV_LIST="KC1 – Image@cluster, KC2 – WiFi@outside, ..."` – order and **agent group** (`cluster`/`outside`).  
@@ -162,8 +194,9 @@ When it finishes you’ll see **“Pipeline completed”**.
   (the *Astronomy Shop* UI).  
 - **MITRE Caldera UI**: <http://localhost:8888>  
   Default (lab‑only) users from `local.yml`:  
-  - *red*: `admin / admin`  
-  - *blue*: `admin / admin`  
+  - `admin / admin`  
+  - `red / admin`  
+  - `blue / admin`  
 - **Local registry**: `registry:5000` (used internally for image pushes).
 
 > Some telemetry endpoints (Grafana/Jaeger/Prometheus/OpenSearch) are **in‑cluster**; use `kubectl port-forward` unless already published via the proxy.
@@ -203,17 +236,17 @@ kubectl -n <NAMESPACE> logs <POD> --all-containers=true --tail=200
 **Docker not running / permissions**  
 Ensure Docker is running and your user can run `docker` without `sudo` (Linux: add user to `docker` group).
 
-**Port conflicts (8080/5000/8888)**  
+**Port conflicts (8080/8888)**  
 Stop conflicting processes or override ports in `configuration.conf`.
 
 **Image pull issues with the registry**  
-If `INSECURE_REGISTRY=true`, make sure Kind/Minikube trusts/pulls from HTTP registries. The script distributes the **CA** to nodes when using TLS.
+The registry runs inside the Docker network and uses TLS + basic auth by default. If pushes/pulls fail, inspect the `registry` container logs and the CA/auth distribution step in `pb/scripts/02_setup_underlay.sh`.
 
 **Insufficient memory / OOM**  
-Lower `WORKERS`, disable chains or non‑essential components, or allocate more RAM to the Docker VM.
+Lower `WORKERS` (but keep `WORKERS>=2`), disable chains or non‑essential components, or allocate more RAM to the Docker VM.
 
 **Minikube driver**  
-When using Minikube, ensure the chosen driver (Docker/None/HyperKit) is supported and resourced adequately.
+When using Minikube, ensure it uses the **Docker driver** (nodes must be visible as Docker containers). Several scripts patch nodes via `docker exec` and will fail with VM drivers.
 
 **Helm/Repos**  
 If a chart can’t be resolved, run `helm repo update` and retry.
@@ -229,6 +262,8 @@ To remove **everything** (helper containers, cluster):
 ```bash
 ./remove_all.sh
 ```
+> `remove_all.sh` deletes both KinD and Minikube clusters (if present) and removes Docker networks named `kind`/`minikube`.
+
 Alternatively:
 ```bash
 kind delete cluster     # if using Kind
@@ -252,10 +287,12 @@ docker rm -f ...        # all docker supporting network
 
 - **Cluster**: `KIND_CLUSTER`, `WORKERS`, `K8S_VERSION`
 - **Registry**: `REGISTRY_NAME`, `REGISTRY_PORT`, `REGISTRY_USER`, `REGISTRY_PASS`, `INTERNAL_REGISTRY`, `INSECURE_REGISTRY`
-- **Proxy/Service**: `PROXY`, `FRONTEND_PROXY`, `CALDERA_SERVER`
-- **Telemetry**: `TELEMETRY_OPEN`
+- **Proxy/Service**: `PROXY`, `CALDERA_SERVER`, `CALDERA_CONTROLLER`, `ATTACKER`, `FRONTEND_PROXY_IP`
+- **Telemetry**: `LOG_OPEN`, `LOG_TOKEN`
 - **Kill chains**: `ADV_LIST`, `ADV_NAME`, `ENABLEKC1..6`, `SCRIPT_PRE_KC*`, `SCRIPT_POST_KC*`
 - **Vulnerabilities (Helm additions)**: `DNS_GRANT`, `DEPLOY_GRANT`, `ANONYMOUS_GRANT`, `CURRENCY_GRANT`
+- **Cluster-level toggles**: `OPEN_PORTS`, `ETCD_EXPOSURE`, `ANONYMOUS_AUTH`, `RECURSIVE_DNS`, `MISSING_POLICY`
+- **Underlay services**: `*_ENABLE` flags (e.g., `PROXY_ENABLE`, `CALDERA_SERVER_ENABLE`, `ATTACKER_ENABLE`, ...)
 - **Namespaces**: `APP_NAMESPACE`, `DAT_NAMESPACE`, `DMZ_NAMESPACE`, `MEM_NAMESPACE`, `PAY_NAMESPACE`, `TST_NAMESPACE`
 
 ---
@@ -271,4 +308,3 @@ docker rm -f ...        # all docker supporting network
   - Config: `pb/docker/caldera/local.yml` (ports, API keys, “red/blue” users)
   - Abilities & adversaries: `pb/docker/caldera/abilities/*`, `.../adversaries/*`
 - App & helpers sources: `src/*` (microservices, attacker, caldera-controller, samba, load-generator)
-

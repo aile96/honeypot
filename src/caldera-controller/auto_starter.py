@@ -54,7 +54,9 @@ STOP_ON_FAIL = os.getenv("STOP_ON_FAIL", "true").lower() == "true"
 RECENT_WINDOW_MIN = int(os.getenv("RECENT_WINDOW_MIN", "5") or "5")
 REQUIRE_AGENT = os.getenv("REQUIRE_AGENT", "true").lower() == "true"
 
-def log(*a, **k): print(*a, flush=True, **k)
+def log(*a, **k):
+    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    print(f"[{ts}]", *a, flush=True, **k)
 
 def http_ok(url: str, timeout: int = 2) -> bool:
     try:

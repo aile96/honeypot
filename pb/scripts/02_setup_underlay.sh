@@ -60,7 +60,7 @@ if (( TOTAL_NODES < 3 )); then
 fi
 
 # --------------------------
-# 2) Identify control-plane(s) and workers
+# 2) Identify control-plane(s) and workers and extract container runtime info
 # --------------------------
 CONTROL_PLANE_NODES=($(kubectl_ctx get nodes -l 'node-role.kubernetes.io/control-plane' -o name 2>/dev/null || true))
 if [[ ${#CONTROL_PLANE_NODES[@]} -eq 0 ]]; then
@@ -104,6 +104,17 @@ CP_CONTAINER="$(echo "$FOUND" | cut -d';' -f1)"
 CP_NETWORKS="$(echo "$FOUND" | cut -d';' -f2-)"
 CP_NETWORK="$(echo "$CP_NETWORKS" | awk '{print $1}')"
 export CP_NETWORK
+
+# Extract CRI runtime socket path from /etc/crictl.yaml inside control-plane
+CRICTL_RUNTIME_PATH="$(docker exec -i "$CP_CONTAINER" sh -lc "sed -n 's/^runtime-endpoint:[[:space:]]*//p' /etc/crictl.yaml 2>/dev/null | head -n1" || true)"
+CRICTL_RUNTIME_PATH="${CRICTL_RUNTIME_PATH#unix://}"
+if [[ -z "$CRICTL_RUNTIME_PATH" ]]; then
+  warn "Could not read runtime-endpoint from /etc/crictl.yaml in $CP_CONTAINER."
+  CRICTL_RUNTIME_PATH="/run/containerd/containerd.sock"
+else
+  log "Control-plane CRI runtime socket path: $CRICTL_RUNTIME_PATH"
+fi
+export CRICTL_RUNTIME_PATH
 
 log "Control-plane container: $CP_CONTAINER"
 log "Control-plane docker network(s): $CP_NETWORKS"
@@ -323,7 +334,7 @@ else
   NODE_CTN="$(docker ps --format '{{.Names}}' | grep -E "^${NODE_NAME}$|${NODE_NAME}|control-plane" | head -n1 || true)"
 fi
 if [[ -z "${NODE_CTN:-}" ]]; then
-  echo "Error: cannot map $NODE_NAME to a Docker container. Specify it manually with NODE_CTN=…" >&2
+  echo "Error: cannot map $NODE_NAME to a Docker container. Specify it manually with NODE_CTN=..." >&2
   exit 1
 fi
 log "Node container: $NODE_CTN"
@@ -539,6 +550,7 @@ REG_SCHEME="${REG_SCHEME:-https}"
 install_on_node_container() {
   local node="$1"
   local ip pair name gw certsd hosts_dir tmp_ht tmp_remote changed=0 changed_os_ca=0 changed_ctrd_ca=0 changed_hosts=0 changed_hosts_toml=0
+  local rc=0
 
   ip="$(node_internal_ip "$node")" || return 1
   [ -n "$ip" ] || { warn "No IPv4 for $node"; return 1; }
@@ -551,44 +563,99 @@ install_on_node_container() {
 
   name="${pair%%;*}"
   certsd="/etc/containerd/certs.d/${REG_HOSTPORT}"
+  dockerd="/etc/docker/certs.d/${REG_HOSTPORT}"
   hosts_dir="/usr/local/share/ca-certificates"
   log "Configuring registry trust+auth for ${REG_HOSTPORT} on node ${name}"
 
   # ensure dirs
-  docker exec "$name" sh -lc "mkdir -p '${certsd}' '${hosts_dir}'"
+  if ! docker exec "$name" sh -lc "mkdir -p '${certsd}' '${hosts_dir}'"; then
+    err "docker exec failed on ${name} while creating base dirs"
+    return 1
+  fi
 
   # if HTTPS, install CA as both containerd trust and OS trust
   if [ "${REG_SCHEME}" = "https" ]; then
     if [ -r "$REGISTRY_CA_FILE" ]; then
-      docker exec "$name" sh -lc "mkdir -p '${certsd}' '${hosts_dir}'"
-      #docker cp "$REGISTRY_CA_FILE" "${name}:${certsd}/ca.crt"
-      #docker cp "$REGISTRY_CA_FILE" "${name}:${hosts_dir}/registry-${REGISTRY_NAME}.crt"
-      docker exec -i "$name" sh -c "install -D -m 0644 /dev/stdin '${certsd}/ca.crt'" < "$REGISTRY_CA_FILE"
-      docker exec -i "$name" sh -c "install -D -m 0644 /dev/stdin '${hosts_dir}/registry-${REGISTRY_NAME}.crt'" < "$REGISTRY_CA_FILE"
-      docker exec "$name" sh -lc "update-ca-certificates >/dev/null 2>&1 || true"
+      if ! docker exec "$name" sh -lc "mkdir -p /etc/docker/certs.d/"; then
+        err "docker exec failed on ${name} while creating /etc/docker/certs.d"
+        return 1
+      fi
+      if ! docker exec "$name" sh -lc "mkdir -p '${certsd}' '${dockerd}' '${hosts_dir}'"; then
+        err "docker exec failed on ${name} while creating certs dirs"
+        return 1
+      fi
+      if ! docker exec -i "$name" sh -c "install -D -m 0644 /dev/stdin '${certsd}/ca.crt'" < "$REGISTRY_CA_FILE"; then
+        err "docker exec failed on ${name} while installing containerd CA"
+        return 1
+      fi
+      if ! docker exec -i "$name" sh -c "install -D -m 0644 /dev/stdin '${dockerd}/ca.crt'" < "$REGISTRY_CA_FILE"; then
+        err "docker exec failed on ${name} while installing dockerd CA"
+        return 1
+      fi
+      if ! docker exec -i "$name" sh -c "install -D -m 0644 /dev/stdin '${hosts_dir}/registry-${REGISTRY_NAME}.crt'" < "$REGISTRY_CA_FILE"; then
+        err "docker exec failed on ${name} while installing OS CA"
+        return 1
+      fi
+      if ! docker exec "$name" sh -lc "update-ca-certificates >/dev/null 2>&1 || true"; then
+        err "docker exec failed on ${name} while running update-ca-certificates"
+        return 1
+      fi
     else
       warn "CA file '$REGISTRY_CA_FILE' not readable; TLS may fail."
     fi
   fi
 
   # Adding registry auth to containerd
-  if ! docker exec "$name" sh -lc "test -f '${certsd}/hosts.toml'"; then
-    cat <<EOF | docker exec -i "$name" sh -lc "umask 077; mkdir -p '${certsd}'; cat >'${certsd}/hosts.toml'"
+  docker exec "$name" sh -lc "test -f '${certsd}/hosts.toml'"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    warn "hosts.toml already present on node ${name}, not touching it"
+  elif [ "$rc" -eq 1 ]; then
+    if ! cat <<EOF | docker exec -i "$name" sh -lc "umask 077; mkdir -p '${certsd}'; cat >'${certsd}/hosts.toml'"
 [host."https://${REG_HOSTPORT}"]
 capabilities = ["pull", "resolve"]
 [host."https://${REG_HOSTPORT}".header]
 Authorization = "Basic $(echo -n "${REGISTRY_USER}:${REGISTRY_PASS}" | base64)"
 EOF
+    then
+      err "docker exec failed on ${name} while writing ${certsd}/hosts.toml"
+      return 1
+    fi
     changed_hosts_toml=1
     log "Created ${certsd}/hosts.toml in node ${name}"
-    docker exec "$name" sh -lc 'systemctl restart containerd || true'
+    if ! docker exec "$name" sh -lc 'systemctl restart containerd || true'; then
+      err "docker exec failed on ${name} while restarting containerd"
+      return 1
+    fi
   else
-    warn "hosts.toml already present on node ${name}, not touching it"
+    err "docker exec failed on ${name} while checking ${certsd}/hosts.toml"
+    return 1
   fi
 }
 
 log "Adding registry CA/auth to all nodes for ${REG_HOSTPORT} ..."
+failed_nodes=()
 for n in "${ALL_NODES[@]}"; do
-  install_on_node_container "$n" || warn "Registry setup failed on $n"
+  if ! install_on_node_container "$n"; then
+    warn "Registry setup failed on $n"
+    failed_nodes+=("$n")
+  fi
 done
+
+if (( ${#failed_nodes[@]} > 0 )); then
+  warn "Retrying registry setup after 20s for nodes: ${failed_nodes[*]}"
+  sleep 20
+
+  retry_failed_nodes=()
+  for n in "${failed_nodes[@]}"; do
+    if ! install_on_node_container "$n"; then
+      warn "Registry setup failed again on $n"
+      retry_failed_nodes+=("$n")
+    fi
+  done
+
+  if (( ${#retry_failed_nodes[@]} > 0 )); then
+    err "Registry setup still failing on: ${retry_failed_nodes[*]}"
+  fi
+fi
 log "Registry CA/auth installation step completed."

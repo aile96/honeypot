@@ -22,7 +22,7 @@ api_get()   { curl "${curl_common[@]}" -X GET  "${KUBE_APISERVER}$1"; }
 api_post()  { curl "${curl_common[@]}" -X POST -d @"$2" "${KUBE_APISERVER}$1"; }
 api_put()   { curl "${curl_common[@]}" -X PUT  -d @"$2" "${KUBE_APISERVER}$1"; }
 
-echo ">> Verify reachability API server…"
+echo ">> Verify reachability API server..."
 api_get "/version" >/dev/null || { echo "Impossible to reach API server. Watch KUBE_APISERVER/TOKEN/CA."; exit 1; }
 
 list_node_ips() {
@@ -122,7 +122,7 @@ wait_deployment_ready() {
   local interval=5
   local start_ts now ready replicas observed gen
 
-  echo ">> Waiting for Deployment '$name' to be ready (timeout: ${timeout}s)…"
+  echo ">> Waiting for Deployment '$name' to be ready (timeout: ${timeout}s)..."
   start_ts="$(date +%s)"
 
   while :; do
@@ -165,7 +165,7 @@ create_deployment_for_node() {
   payload=$(make_deployment_json "${iteration}")
   tmpfile=$(mktemp)
   echo "${payload}" > "${tmpfile}"
-  echo ">> Create Deployment for node '${node_host}'…"
+  echo ">> Create Deployment for node '${node_host}'..."
   api_post "/apis/apps/v1/namespaces/${NAMESPACE}/deployments" "${tmpfile}" >/dev/null
   rm -f "${tmpfile}"
 }
@@ -192,7 +192,7 @@ done
 echo "Created deployments with full control on host"
 
 # 2) WAIT FOR ALL
-echo ">> Waiting for ${#created_names[@]} deployments to become ready…"
+echo ">> Waiting for ${#created_names[@]} deployments to become ready..."
 fail=0
 for name in "${created_names[@]}"; do
   if ! wait_deployment_ready "$name"; then

@@ -63,7 +63,7 @@ A full cleanup script is provided: `./remove_all.sh`.
 ```
 
 **Key components**:
-- **Kubernetes cluster**: KinD (recommended default) or Minikube. Worker count configurable via `WORKERS`.
+- **Kubernetes cluster**: KinD or Minikube. Current config default is **Minikube** (`KIND_CLUSTER=0`), while KinD is generally recommended. Worker count configurable via `WORKERS`.
 - **Application**: *Astronomy Shop* microservices with optional vulnerabilities (e.g., `dnsGrant`, `deployGrant`, `anonymousGrant`, `currencyGrant`) and **NetworkPolicy** toggles.
 - **Telemetry**: OTel Collector, Prometheus, Grafana, Jaeger, (opt.) OpenSearch. **Open** or **protected** mode (`LOG_OPEN`).
 - **Underlay** (supporting containers on the Docker host):
@@ -89,7 +89,7 @@ A full cleanup script is provided: `./remove_all.sh`.
 - **Software** (available in PATH):
   - **Docker** (Engine/Desktop) running
   - **kubectl** (≥ 1.28; cluster defaults to K8s 1.30.x)
-  - **kind** (≥ 0.22) **or** **minikube** (≥ 1.33)
+  - **kind** (≥ 0.22) **or** **minikube** (≥ 1.33), required when `./start.sh` needs to create a cluster
   - **helm** (≥ 3.12)
   - `docker buildx` (Buildx plugin)
   - `htpasswd` (from `apache2-utils` / `httpd-tools`)
@@ -97,18 +97,19 @@ A full cleanup script is provided: `./remove_all.sh`.
 - **Open ports** (defaults): `8080` (frontend proxy), `8888` (Caldera proxy).
 
 > The script `pb/scripts/00_ensure_deps.sh` performs basic checks and fails with clear messages if something is missing.
+> If a cluster is already reachable via `kubectl`, `pb/scripts/01_kind_cluster.sh` skips cluster creation.
 
 ---
 
 ## Configuration
 
-All options live in **`configuration.conf`** (loaded by `./start.sh`). Key examples:
+Most options live in **`configuration.conf`** (loaded by `./start.sh`); some advanced values are computed at runtime or have script defaults. Key examples:
 
 ### Cluster choice
-- `KIND_CLUSTER=1` to use **KinD** (recommended).  
-  If `KIND_CLUSTER=0`, target is **Minikube**.
-- `K8S_VERSION=1.30.0` cluster version.
-- `WORKERS=2` number of workers (must be ≥2).  
+- `KIND_CLUSTER=1` to use **KinD**.  
+  If `KIND_CLUSTER=0`, target is **Minikube** (**default in current `configuration.conf`**).
+- `K8S_VERSION=1.30.0` cluster version (**optional in `configuration.conf`**; default from `pb/scripts/01_kind_cluster.sh`).
+- `WORKERS=2` number of workers (must be ≥2, **optional in `configuration.conf`**; default from `pb/scripts/01_kind_cluster.sh`).  
   (Minikube creates `WORKERS+1` total nodes; KinD creates `WORKERS` workers + 1 control-plane.)
 
 ### Image registry
@@ -138,7 +139,8 @@ Note: `ANONYMOUS_GRANT` is effective only when `ANONYMOUS_AUTH=true` (see below)
 - `MISSING_POLICY=true|false` – if `true`, skips Pod Security labels (less restricted namespaces).
 
 ### Underlay services (Docker containers)
-Enable/disable underlay containers started by `pb/scripts/03_run_underlay.sh`:
+Enable/disable optional underlay containers started by `pb/scripts/03_run_underlay.sh`:
+- `registry` is started unconditionally (name/port controlled by `REGISTRY_NAME`, `REGISTRY_PORT`).
 - `PROXY_ENABLE=true|false`
 - `CALDERA_SERVER_ENABLE=true|false`
 - `CALDERA_CONTROLLER_ENABLE=true|false`
@@ -183,6 +185,17 @@ TST_NAMESPACE=tst
    - `05_setup_k8s.sh`
 
 When it finishes you’ll see **“Pipeline completed”**.
+
+### Fast path (default config)
+If you want to boot the lab with defaults and verify quickly:
+```bash
+kubectl config current-context
+./start.sh
+kubectl get nodes && kubectl get pods -A
+```
+Then open:
+- <http://localhost:8080/> (app front-end)
+- <http://localhost:8888> (Caldera)
 
 > The very first run may take a while (image builds & chart pulls). Subsequent runs benefit from caching.
 
@@ -237,7 +250,9 @@ kubectl -n <NAMESPACE> logs <POD> --all-containers=true --tail=200
 Ensure Docker is running and your user can run `docker` without `sudo` (Linux: add user to `docker` group).
 
 **Port conflicts (8080/8888)**  
-Stop conflicting processes or override ports in `configuration.conf`.
+Stop conflicting processes or change port mappings/templates in:
+- `pb/scripts/03_run_underlay.sh` (Docker `-p` mappings)
+- `pb/docker/proxy/nginx.conf.template` (`listen 8080` / `listen 8888`)
 
 **Image pull issues with the registry**  
 The registry runs inside the Docker network and uses TLS + basic auth by default. If pushes/pulls fail, inspect the `registry` container logs and the CA/auth distribution step in `pb/scripts/02_setup_underlay.sh`.
@@ -283,17 +298,18 @@ docker rm -f ...        # all docker supporting network
 
 ## Appendix: Key Variables
 
-> The following variables are read from `configuration.conf` and/or `pb/scripts/*.sh`.
+> The following variables are sourced from `configuration.conf` and/or from script defaults/runtime exports in `pb/scripts/*.sh`.
 
 - **Cluster**: `KIND_CLUSTER`, `WORKERS`, `K8S_VERSION`
-- **Registry**: `REGISTRY_NAME`, `REGISTRY_PORT`, `REGISTRY_USER`, `REGISTRY_PASS`, `INTERNAL_REGISTRY`, `INSECURE_REGISTRY`
-- **Proxy/Service**: `PROXY`, `CALDERA_SERVER`, `CALDERA_CONTROLLER`, `ATTACKER`, `FRONTEND_PROXY_IP`
+- **Registry**: `REGISTRY_NAME`, `REGISTRY_PORT`, `REGISTRY_USER`, `REGISTRY_PASS`
+- **Proxy/Service**: `PROXY`, `CALDERA_SERVER`, `CALDERA_CONTROLLER`, `ATTACKER`
 - **Telemetry**: `LOG_OPEN`, `LOG_TOKEN`
 - **Kill chains**: `ADV_LIST`, `ADV_NAME`, `ENABLEKC1..6`, `SCRIPT_PRE_KC*`, `SCRIPT_POST_KC*`
 - **Vulnerabilities (Helm additions)**: `DNS_GRANT`, `DEPLOY_GRANT`, `ANONYMOUS_GRANT`, `CURRENCY_GRANT`
 - **Cluster-level toggles**: `OPEN_PORTS`, `ETCD_EXPOSURE`, `ANONYMOUS_AUTH`, `RECURSIVE_DNS`, `MISSING_POLICY`
 - **Underlay services**: `*_ENABLE` flags (e.g., `PROXY_ENABLE`, `CALDERA_SERVER_ENABLE`, `ATTACKER_ENABLE`, ...)
 - **Namespaces**: `APP_NAMESPACE`, `DAT_NAMESPACE`, `DMZ_NAMESPACE`, `MEM_NAMESPACE`, `PAY_NAMESPACE`, `TST_NAMESPACE`
+- **Script/runtime derived or optional overrides**: `FRONTEND_PROXY_IP`, `INTERNAL_REGISTRY`, `INSECURE_REGISTRY`
 
 ---
 

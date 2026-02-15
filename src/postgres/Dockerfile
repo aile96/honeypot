@@ -1,5 +1,5 @@
 # Stage 1: builder that generates init.sql from JSON
-FROM python:3.11-alpine AS builder
+FROM python:3.11-alpine@sha256:303398d5c9f110790bce60d64f902e51e1a061e33292985c72bf6cd07960bf09 AS builder
 
 ARG DB=curr
 
@@ -17,5 +17,5 @@ RUN set -eux; \
 # /tmp/init.sql is now ready
 
 # Stage 2: final image with Postgres
-FROM postgres:16-alpine
+FROM postgres:16-alpine@sha256:97ff59a4e30e08d1c11bdcd9455e7832368c0572b576c9092cde2df4ae5552a3
 COPY --from=builder /tmp/init.sql /docker-entrypoint-initdb.d/001-init.sql

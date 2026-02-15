@@ -1,5 +1,5 @@
 # build
-FROM golang:1.24 AS build
+FROM golang:1.24@sha256:d2d2bc1c84f7e60d7d2438a3836ae7d0c847f4888464e7ec9ba3a1339a1ee804 AS build
 WORKDIR /src
 
 # 1) copy mod and download base dependencies
@@ -12,7 +12,7 @@ RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/crypto-proxy .
 
 # run (distroless)
-FROM gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/static-debian12@sha256:20bc6c0bc4d625a22a8fde3e55f6515709b32055ef8fb9cfbddaa06d1760f838
 
 ARG CRYPTO_USE_FLAGD="true"
 ARG CRYPTO_DEFAULT_WORD="my-fallback-secret"

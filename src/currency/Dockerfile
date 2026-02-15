@@ -1,14 +1,14 @@
 # Copyright The OpenTelemetry Authors
 # SPDX-License-Identifier: Apache-2.0
 
-FROM alpine:3.18 AS builder
+FROM alpine:3.18@sha256:de0eb0b3f2a47ba1eb89389859a9bd88b28e82f5826b6969ad604979713c2d4f AS builder
 
 # toolchain + deps
 RUN apk update && apk add --no-cache \
-    git cmake make g++ \
-    grpc-dev protobuf-dev linux-headers \
-    postgresql-dev openssl-dev zlib-dev \
-    wget
+    git=2.40.4-r0 cmake=3.26.5-r0 make=4.4.1-r1 g++=12.2.1_git20220924-r10 \
+    grpc-dev=1.54.2-r0 protobuf-dev=3.21.12-r2 linux-headers=6.3-r0 \
+    postgresql15-dev=15.13-r0 openssl-dev=3.1.8-r0 zlib-dev=1.2.13-r1 \
+    wget=1.21.4-r0
 
 ARG OPENTELEMETRY_CPP_VERSION="1.20.0"
 
@@ -40,7 +40,7 @@ RUN cd /currency \
     && make -j$(nproc || sysctl -n hw.ncpu || echo 1) install
 
 
-FROM alpine:3.18 AS release
+FROM alpine:3.18@sha256:de0eb0b3f2a47ba1eb89389859a9bd88b28e82f5826b6969ad604979713c2d4f AS release
 
 ARG CURRENCY_PORT=8080
 ARG EXPOSE_HTTP_PORT=8081
@@ -49,9 +49,9 @@ ARG EXPOSE_STATIC_PATH="/tmp/log.txt"
 
 # minimal runtime
 RUN apk update && apk add --no-cache \
-    libstdc++ grpc-dev grpc protobuf \
-    c-ares re2 abseil-cpp postgresql-libs \
-    openssl zlib libpq ca-certificates
+    libstdc++=12.2.1_git20220924-r10 grpc-dev=1.54.2-r0 grpc=1.54.2-r0 protobuf=3.21.12-r2 \
+    c-ares=1.19.1-r1 re2=2023.03.01-r1 abseil-cpp=20230125.3-r1 libecpg=15.13-r0 \
+    openssl=3.1.8-r0 zlib=1.2.13-r1 libpq=15.13-r0 ca-certificates=20241121-r1
 
 # binaries/libraries installed from the builder stage
 COPY --from=builder /usr/local /usr/local

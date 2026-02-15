@@ -43,6 +43,11 @@ spec:
       {{- if .hostNetwork }}
       hostNetwork: true
       {{- end }}
+      {{- if .dnsPolicy }}
+      dnsPolicy: {{ .dnsPolicy }}
+      {{- else if .hostNetwork }}
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
       automountServiceAccountToken: {{ default "false" .automountServiceAccountToken }}
       {{- $schedulingRules := .schedulingRules | default dict }}
       {{- if or .defaultValues.schedulingRules.nodeSelector $schedulingRules.nodeSelector}}

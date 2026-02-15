@@ -7,6 +7,8 @@
 #include "opentelemetry/sdk/metrics/meter.h"
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 
+#include <memory>
+
 // namespaces
 namespace common        = opentelemetry::common;
 namespace metrics_api   = opentelemetry::metrics;
@@ -16,6 +18,8 @@ namespace otlp_exporter = opentelemetry::exporter::otlp;
 
 namespace
 {
+  [[maybe_unused]] std::shared_ptr<metric_sdk::MeterProvider> g_meter_provider;
+
   void initMeter() 
   {
     // Build MetricExporter
@@ -26,10 +30,20 @@ namespace
     metric_sdk::PeriodicExportingMetricReaderOptions options;
     std::unique_ptr<metric_sdk::MetricReader> reader{
         new metric_sdk::PeriodicExportingMetricReader(std::move(exporter), options) };
-    auto provider = std::shared_ptr<metrics_api::MeterProvider>(new metric_sdk::MeterProvider());
-    auto p = std::static_pointer_cast<metric_sdk::MeterProvider>(provider);
-    p->AddMetricReader(std::move(reader));
+    std::shared_ptr<metrics_api::MeterProvider> provider =
+        std::make_shared<metric_sdk::MeterProvider>();
+    g_meter_provider = std::static_pointer_cast<metric_sdk::MeterProvider>(provider);
+    g_meter_provider->AddMetricReader(std::move(reader));
     metrics_api::Provider::SetMeterProvider(provider);
+  }
+
+  void shutdownMeter()
+  {
+    if (g_meter_provider)
+    {
+      g_meter_provider->Shutdown();
+      g_meter_provider.reset();
+    }
   }
 
   nostd::unique_ptr<metrics_api::Counter<uint64_t>> initIntCounter(std::string name, std::string version)

@@ -279,6 +279,10 @@ if is_enabled "$svc"; then
     -e "CALDERA_URL=http://${CALDERA_SERVER}:8888" \
     -e "KUBECONFIG=/kube/kubeconfig" \
     -e "ADV_LIST=${ADV_LIST}" \
+    -e "DOCKER_HOST=unix:///var/run/docker.sock" \
+    -e "ATT_OUT=${ATTACKER}" \
+    -e "ATT_NS=${TST_NAMESPACE}" \
+    -v "/var/run/docker.sock:/var/run/docker.sock" \
     "${KC_ENABLE_ENVS[@]}" \
     "${KC_SCRIPT_PRE_ENVS[@]}" \
     "${KC_SCRIPT_POST_ENVS[@]}" \

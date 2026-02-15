@@ -3,4 +3,13 @@ pb/docker/controller/kube/
 pb/docker/proxy/conf.d-empty/
 pb/docker/attacker/
 pb/docker/registry/
-.gradle/
+
+# Generated build artifacts
+src/ad/bin/
+src/ad/build/
+src/currency/build/
+src/fraud-detection/build/
+
+# Python bytecode/cache
+__pycache__/
+*.pyc

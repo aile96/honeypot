@@ -2,16 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-FROM ruby:3.4.4-alpine3.21 AS builder
+FROM ruby:3.4.4-alpine3.21@sha256:5bdfa2312f3f0bc9bd077e954c943652155a093db228af978873ff92389300d3 AS builder
 
 COPY ./src/email/Gemfile Gemfile
 COPY ./src/email/Gemfile.lock Gemfile.lock
 
 RUN apk update && \
-    apk add make gcc musl-dev gcompat && \
+    apk add make=4.4.1-r2 gcc=14.2.0-r4 musl-dev=1.2.5-r9 gcompat=1.1.0-r4 && \
     bundle install
 
-FROM ruby:3.4.4-alpine3.21
+FROM ruby:3.4.4-alpine3.21@sha256:5bdfa2312f3f0bc9bd077e954c943652155a093db228af978873ff92389300d3
 ARG EMAIL_PORT="8080"
 
 COPY --from=builder /usr/local/bundle/ /usr/local/bundle/

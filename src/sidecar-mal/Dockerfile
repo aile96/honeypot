@@ -1,8 +1,8 @@
 # HTTP mirroring sidecar based on NGINX
-FROM nginx:1.25-alpine
+FROM nginx:1.25-alpine@sha256:516475cc129da42866742567714ddc681e5eed7b9ee0b9e9c015e464b4221a00
 
 # envsubst for templating
-RUN apk add --no-cache bash gettext
+RUN apk add --no-cache bash=5.2.21-r0 gettext=0.22.3-r0
 
 # Copy template and entrypoint
 COPY nginx.conf.tmpl /etc/nginx/templates/nginx.conf.tmpl

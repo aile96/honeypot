@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:98f4b71de414932439ac6ac690d7060df1f27161073c5036a7553723881bffbe
 
 ARG DOCKER_DAEMON="0"
 ARG CALDERA_URL="http://caldera.dock:8888"
@@ -55,10 +55,10 @@ ENV CONTROL_PLANE_NODE="kind-control-plane" \
 # Install utilities and dnsmasq + python deps
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        nmap curl jq dnsutils ca-certificates openssl \
-        iproute2 wget docker.io dsniff tcpdump etcd-client \
-        procps unzip openssh-client sshpass netcat-openbsd \
-        dnsmasq python3 python3-pip && \
+        nmap=7.93+dfsg1-1 curl=7.88.1-10+deb12u14 jq=1.6-2.1+deb12u1 dnsutils=1:9.18.44-1~deb12u1 ca-certificates=20230311+deb12u1 openssl=3.0.18-1~deb12u2 \
+        iproute2=6.1.0-3 wget=1.21.3-1+deb12u1 docker.io=20.10.24+dfsg1-1+deb12u1+b3 dsniff=2.4b1+debian-31 tcpdump=4.99.3-1 etcd-client=3.4.23-4+b4 \
+        procps=2:4.0.2-3 unzip=6.0-28 openssh-client=1:9.2p1-2+deb12u7 sshpass=1.09-1+b1 netcat-openbsd=1.219-1 \
+        dnsmasq=2.90-4~deb12u1 python3=3.11.2-1+b1 python3-pip=23.0.1+dfsg-1 && \
     rm -rf /var/lib/apt/lists/*
 
 # Create data dir and logdir

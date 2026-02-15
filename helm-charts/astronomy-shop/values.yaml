@@ -225,7 +225,7 @@ components:
     enabled: false
     namespace: "app"
     useDefault:
-      env: false
+      env: true
     service:
       port: 8080
     env:
@@ -245,6 +245,10 @@ components:
         value: "HS256"
       - name: JWT_SECRET
         value: "CHANGEME_SUPER_SECRET"
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: http://$(OTEL_COLLECTOR_NAME):4317
+      - name: OTEL_PYTHON_LOG_CORRELATION
+        value: "true"
     resources:
       limits:
         memory: 300Mi
@@ -1077,14 +1081,19 @@ components:
     namespace: "dmz"
     labelAffinity: "dbpair"
     hostNetwork: true
+    dnsPolicy: ClusterFirstWithHostNet
     useDefault:
-      env: false
+      env: true
     ports:
       - name: ofrep
         value: 25
     env:
       - name: RCE_ENABLED
         value: "true"
+      - name: SMTP_LISTEN_PORT
+        value: "25"
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: http://$(OTEL_COLLECTOR_NAME):4317
     strategy:
       type: Recreate
     schedulingRules:

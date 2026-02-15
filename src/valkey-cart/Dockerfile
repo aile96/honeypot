@@ -1,1 +1,1 @@
-FROM valkey/valkey:7.2-alpine
+FROM valkey/valkey:7.2-alpine@sha256:10328d00120dc14fbc87b2ed61b7677ddbb0d011e705361b4788329a0ec69a93

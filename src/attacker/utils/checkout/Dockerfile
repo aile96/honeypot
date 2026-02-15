@@ -1,14 +1,14 @@
 FROM registry:5000/checkout:2.0.2 AS app_orig
 
 # === Stage 2: runtime with Envoy ===
-FROM envoyproxy/envoy:v1.31-latest
+FROM envoyproxy/envoy:v1.31-latest@sha256:caa5b411be1633b90023592a34a7e010c933d6e60206c758f631485e53006865
 
 ARG EXFIL_DOMAIN="caldera.dock"
 
 # Install minimal tools + Python + dig
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates jq bash coreutils gettext-base \
-    python3 python3-distutils dnsutils \
+    ca-certificates=20240203~22.04.1 jq=1.6-2.1ubuntu3.1 bash=5.1-6ubuntu1.1 coreutils=8.32-4.1ubuntu1.2 gettext-base=0.21-4ubuntu4 \
+    python3=3.10.6-1~22.04.1 python3-distutils=3.10.8-1~22.04 dnsutils=1:9.18.39-0ubuntu0.22.04.2 \
  && rm -rf /var/lib/apt/lists/*
 
 # Working directories

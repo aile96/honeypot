@@ -1,11 +1,29 @@
 from datetime import datetime, timedelta, timezone
+import atexit
+import logging
 import os
 from typing import Optional
 
 import jwt
 from fastapi import FastAPI, HTTPException
+from opentelemetry import metrics, trace
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, Integer, String, create_engine, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, Session
 from sqlalchemy.engine import URL
 
@@ -54,6 +72,46 @@ Base.metadata.create_all(engine)
 # ---- API ----
 app = FastAPI(title="Auth Service", version="1.0.0")
 
+
+def configure_telemetry():
+    service_name = os.getenv("OTEL_SERVICE_NAME", "auth")
+    resource = Resource.create({"service.name": service_name})
+
+    tracer_provider = TracerProvider(resource=resource)
+    tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(insecure=True)))
+    trace.set_tracer_provider(tracer_provider)
+
+    metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter(insecure=True))
+    meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+    metrics.set_meter_provider(meter_provider)
+
+    logger_provider = LoggerProvider(resource=resource)
+    set_logger_provider(logger_provider)
+    logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(insecure=True)))
+    logging.getLogger().addHandler(LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider))
+
+    LoggingInstrumentor().instrument(set_logging_format=True)
+    SQLAlchemyInstrumentor().instrument(engine=engine)
+    FastAPIInstrumentor.instrument_app(app)
+
+    @atexit.register
+    def shutdown_telemetry():
+        try:
+            logger_provider.shutdown()
+        except Exception:
+            pass
+        try:
+            meter_provider.shutdown()
+        except Exception:
+            pass
+        try:
+            tracer_provider.shutdown()
+        except Exception:
+            pass
+
+
+configure_telemetry()
+
 class RegisterReq(BaseModel):
     username: str = Field(min_length=1)
     password: str = Field(min_length=1)
@@ -100,7 +158,16 @@ def register(req: RegisterReq):
             phone=req.phone,
         )
         s.add(user)
-        s.commit()
+        try:
+            s.commit()
+        except IntegrityError as exc:
+            s.rollback()
+            err_msg = str(exc.orig) if getattr(exc, "orig", None) else str(exc)
+            if "idx_users_email" in err_msg or "(email)" in err_msg:
+                raise HTTPException(status_code=409, detail="Email already exists") from exc
+            if "idx_users_username" in err_msg or "(username)" in err_msg:
+                raise HTTPException(status_code=409, detail="Username already exists") from exc
+            raise HTTPException(status_code=409, detail="User already exists") from exc
         return {"status": "created", "id": user.id}
 
 @app.post("/login")

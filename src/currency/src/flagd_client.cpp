@@ -1,9 +1,9 @@
 #include "flagd_client.h"
+#include "logger_common.h"
 #include <cstdlib>
 #include <string>
 #include <optional>
 #include <sstream>
-#include <iostream>
 
 #include "../third_party/httplib.h"
 #include "../third_party/json.hpp"
@@ -30,26 +30,26 @@ std::optional<std::string> FlagdResolveString(
     auto res = cli.Post("/flagd.evaluation.v1.Service/ResolveString",
                         body.dump(), "application/json");
     if (!res) {
-      std::cerr << "[flagd] no response\n";
+      getLogger("currency")->Warn("[flagd] no response");
       return std::nullopt;
     }
     if (res->status != 200) {
-      std::cerr << "[flagd] status: " << res->status << "\n";
+      getLogger("currency")->Warn("[flagd] status: " + std::to_string(res->status));
       return std::nullopt;
     }
     auto j = json::parse(res->body, nullptr, false);
     if (j.is_discarded()) {
-      std::cerr << "[flagd] invalid JSON\n";
+      getLogger("currency")->Warn("[flagd] invalid JSON");
       return std::nullopt;
     }
     // Typical response: {"value": "STRING", ...}
     if (j.contains("value") && j["value"].is_string()) {
       return j["value"].get<std::string>();
     }
-    std::cerr << "[flagd] missing 'value' field or not a string\n";
+    getLogger("currency")->Warn("[flagd] missing 'value' field or not a string");
     return std::nullopt;
   } catch (const std::exception& e) {
-    std::cerr << "[flagd] exception: " << e.what() << "\n";
+    getLogger("currency")->Error(std::string("[flagd] exception: ") + e.what());
     return std::nullopt;
   }
 }

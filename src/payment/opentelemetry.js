@@ -43,3 +43,16 @@ const sdk = new opentelemetry.NodeSDK({
 })
 
 sdk.start();
+
+const shutdown = (signal) => {
+  sdk.shutdown()
+    .catch((err) => {
+      console.error(`[otel] error during ${signal} shutdown`, err)
+    })
+    .finally(() => {
+      process.exit(0)
+    })
+}
+
+process.once('SIGTERM', () => shutdown('SIGTERM'))
+process.once('SIGINT', () => shutdown('SIGINT'))

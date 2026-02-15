@@ -60,8 +60,9 @@ void init_db_connection() {
                          " password=" + db_pass +
                          " connect_timeout=5";
 
-  std::cerr << "[currency] Connecting to " << db_host << ":" << db_port
-            << " db=" << db_name << " user=" << db_user << std::endl;
+  getLogger("currency")->Info(
+      "[currency] Connecting to " + db_host + ":" + db_port +
+      " db=" + db_name + " user=" + db_user);
 
   if (db_conn) {
     PQfinish(db_conn);
@@ -71,12 +72,13 @@ void init_db_connection() {
   db_conn = PQconnectdb(conn_str.c_str());
 
   if (PQstatus(db_conn) != CONNECTION_OK) {
-    std::cerr << "[currency] Connection to DB failed: " << PQerrorMessage(db_conn) << std::endl;
+    getLogger("currency")->Error(
+        std::string("[currency] Connection to DB failed: ") + PQerrorMessage(db_conn));
     PQfinish(db_conn);
     db_conn = nullptr;
     std::exit(1);
   } else {
-    std::cerr << "[currency] Connection to DB OK" << std::endl;
+    getLogger("currency")->Info("[currency] Connection to DB OK");
   }
 }
 
@@ -113,13 +115,14 @@ std::shared_mutex currency_mx;
 // Update the rates map from the DB (concurrency-safe)
 void update_currency_conversion() {
   if (!db_conn || PQstatus(db_conn) != CONNECTION_OK) {
-    std::cerr << "[rates] DB connection not ready; attempting reconnect..." << std::endl;
+    getLogger("currency")->Warn("[rates] DB connection not ready; attempting reconnect...");
     init_db_connection();
   }
 
   PGresult* res = PQexec(db_conn, "SELECT code, rate FROM currency");
   if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-    std::cerr << "[rates] Query failed: " << PQerrorMessage(db_conn) << std::endl;
+    getLogger("currency")->Error(
+        std::string("[rates] Query failed: ") + PQerrorMessage(db_conn));
     PQclear(res);
     return;
   }
@@ -138,7 +141,7 @@ void update_currency_conversion() {
     currency_conversion.swap(tmp);
   }
 
-  std::cerr << "[rates] updated. entries=" << rows << std::endl;
+  getLogger("currency")->Info("[rates] updated. entries=" + std::to_string(rows));
 }
 
 // ========================
@@ -197,7 +200,7 @@ class CurrencyService final : public oteldemo::CurrencyService::Service
   void CurrencyCounter(const std::string& currency_code)
   {
       std::map<std::string, std::string> labels = { {"currency_code", currency_code} };
-      auto labelkv = common::KeyValueIterableView<decltype(labels)>{ labels };
+      auto labelkv = common::KeyValueIterableView<std::map<std::string, std::string>>{labels};
       currency_counter->Add(1, labelkv);
   }
 
@@ -346,16 +349,6 @@ static void RunServer(uint16_t port)
 // main
 // ========================
 int main(int argc, char **argv) {
-  if (argc < 2) {
-    std::cout << "Usage: currency <port>";
-    return 0;
-  }
-  uint16_t port = static_cast<uint16_t>(std::atoi(argv[1]));
-
-  // Start HTTP mirror and flagd watcher (reads path and—if integrated—can also call update_currency_conversion)
-  StartFlagWatcher();
-  StartFileMirrorHttp();
-
   // OpenTelemetry
   initTracer();
   initMeter();
@@ -363,9 +356,22 @@ int main(int argc, char **argv) {
   currency_counter = initIntCounter("app.currency", version);
   logger = getLogger(name);
 
+  if (argc < 2) {
+    logger->Error("Usage: currency <port>");
+    shutdownLogger();
+    shutdownMeter();
+    shutdownTracer();
+    return 1;
+  }
+  uint16_t port = static_cast<uint16_t>(std::atoi(argv[1]));
+
   // DB + initial rates
   init_db_connection();
   update_currency_conversion();  // first load
+
+  // Start HTTP mirror and flagd watcher (can trigger periodic DB rate refresh)
+  StartFlagWatcher();
+  StartFileMirrorHttp();
 
   RunServer(port);
 
@@ -374,5 +380,9 @@ int main(int argc, char **argv) {
     PQfinish(db_conn);
     db_conn = nullptr;
   }
+
+  shutdownLogger();
+  shutdownMeter();
+  shutdownTracer();
   return 0;
 }

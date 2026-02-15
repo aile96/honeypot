@@ -10,13 +10,14 @@
 #include "opentelemetry/sdk/trace/simple_processor_factory.h"
 #include "opentelemetry/sdk/trace/tracer_context.h"
 #include "opentelemetry/sdk/trace/tracer_context_factory.h"
+#include "opentelemetry/sdk/trace/tracer_provider.h"
 #include "opentelemetry/sdk/trace/tracer_provider_factory.h"
 #include "opentelemetry/trace/propagation/http_trace_context.h"
 #include "opentelemetry/trace/provider.h"
 
 #include <grpcpp/grpcpp.h>
 #include <cstring>
-#include <iostream>
+#include <memory>
 #include <vector>
 
 using grpc::ClientContext;
@@ -24,6 +25,8 @@ using grpc::ServerContext;
 
 namespace
 {
+[[maybe_unused]] std::shared_ptr<opentelemetry::sdk::trace::TracerProvider> g_tracer_provider;
+
 class GrpcClientCarrier : public opentelemetry::context::propagation::TextMapCarrier
 {
 public:
@@ -38,7 +41,6 @@ public:
   virtual void Set(opentelemetry::nostd::string_view key,
                    opentelemetry::nostd::string_view value) noexcept override
   {
-    std::cout << " Client ::: Adding " << key << " " << value << "\n";
     context_->AddMetadata(key.data(), value.data());
   }
 
@@ -82,6 +84,8 @@ void initTracer()
       opentelemetry::sdk::trace::TracerContextFactory::Create(std::move(processors));
   std::shared_ptr<opentelemetry::trace::TracerProvider> provider =
       opentelemetry::sdk::trace::TracerProviderFactory::Create(std::move(context));
+  g_tracer_provider =
+      std::static_pointer_cast<opentelemetry::sdk::trace::TracerProvider>(provider);
 
   // Set the global trace provider
   opentelemetry::trace::Provider::SetTracerProvider(provider);
@@ -90,6 +94,15 @@ void initTracer()
   opentelemetry::context::propagation::GlobalTextMapPropagator::SetGlobalPropagator(
       opentelemetry::nostd::shared_ptr<opentelemetry::context::propagation::TextMapPropagator>(
           new opentelemetry::trace::propagation::HttpTraceContext()));
+}
+
+void shutdownTracer()
+{
+  if (g_tracer_provider)
+  {
+    g_tracer_provider->Shutdown();
+    g_tracer_provider.reset();
+  }
 }
 
 opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> get_tracer(std::string tracer_name)

@@ -16,6 +16,11 @@
 # production
 /build
 
+# nested copied project artifacts
+/src/flagd-ui/node_modules
+/src/flagd-ui/package.json
+/src/flagd-ui/package-lock.json
+
 # misc
 .DS_Store
 *.pem

@@ -2,24 +2,25 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-FROM --platform=${BUILDPLATFORM} rust:1.76 AS builder
+FROM --platform=${BUILDPLATFORM} rust:1.76@sha256:d36f9d8a9a4c76da74c8d983d0d4cb146dd2d19bb9bd60b704cdcf70ef868d3a AS builder
 ARG TARGETARCH
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
+ARG RUST_TOOLCHAIN_VERSION=1.76.0
 
 RUN echo Building on ${BUILDPLATFORM} for ${TARGETPLATFORM}
 
 # Check if we are doing cross-compilation, if so we need to add in some more dependencies and run rustup
 RUN if [ "${TARGETPLATFORM}" = "${BUILDPLATFORM}" ] ; then \
-        apt-get update && apt-get install --no-install-recommends -y g++ libc6-dev libprotobuf-dev protobuf-compiler ca-certificates; \
+        apt-get update && apt-get install --no-install-recommends -y g++=4:12.2.0-3 libc6-dev=2.36-9+deb12u13 libprotobuf-dev=3.21.12-3 protobuf-compiler=3.21.12-3 ca-certificates=20230311+deb12u1; \
     elif [ "${TARGETPLATFORM}" = "linux/arm64" ] ; then \
-        apt-get update && apt-get install --no-install-recommends -y g++-aarch64-linux-gnu libc6-dev-arm64-cross libprotobuf-dev protobuf-compiler ca-certificates && \
+        apt-get update && apt-get install --no-install-recommends -y g++-aarch64-linux-gnu=4:12.2.0-3 libc6-dev-arm64-cross=2.36-8cross1 libprotobuf-dev=3.21.12-3 protobuf-compiler=3.21.12-3 ca-certificates=20230311+deb12u1 && \
         rustup target add aarch64-unknown-linux-gnu && \
-        rustup toolchain install stable-aarch64-unknown-linux-gnu; \
+        rustup toolchain install ${RUST_TOOLCHAIN_VERSION}-aarch64-unknown-linux-gnu; \
     elif [ "${TARGETPLATFORM}" = "linux/amd64" ] ; then \
-        apt-get update && apt-get install --no-install-recommends -y g++-x86-64-linux-gnu libc6-amd64-cross libprotobuf-dev protobuf-compiler ca-certificates && \
+        apt-get update && apt-get install --no-install-recommends -y g++-x86-64-linux-gnu libc6-amd64-cross=2.36-8cross1 libprotobuf-dev=3.21.12-3 protobuf-compiler=3.21.12-3 ca-certificates=20230311+deb12u1 && \
         rustup target add x86_64-unknown-linux-gnu && \
-        rustup toolchain install stable-x86_64-unknown-linux-gnu; \
+        rustup toolchain install ${RUST_TOOLCHAIN_VERSION}-x86_64-unknown-linux-gnu; \
     else \
         echo "${TARGETPLATFORM} is not supported"; \
         exit 1; \
@@ -55,7 +56,7 @@ ENV GRPC_HEALTH_PROBE_VERSION=v0.4.37
 RUN wget -qO/bin/grpc_health_probe https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-${TARGETARCH} && \
     chmod +x /bin/grpc_health_probe
 
-FROM debian:bookworm-slim AS release
+FROM debian:bookworm-slim@sha256:98f4b71de414932439ac6ac690d7060df1f27161073c5036a7553723881bffbe AS release
 ARG SHIPPING_PORT=8080
 
 WORKDIR /app

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-FROM --platform=${BUILDPLATFORM} eclipse-temurin:21-jdk AS builder
+FROM --platform=${BUILDPLATFORM} eclipse-temurin:21-jdk@sha256:2dbb970461f444a3230facb0a34ca9f2e555150689f0d943c252a3785c905487 AS builder
 ARG _JAVA_OPTIONS
 WORKDIR /usr/src/app/
 
@@ -20,7 +20,7 @@ RUN ./gradlew installDist -PprotoSourceDir=./proto
 
 # -----------------------------------------------------------------------------
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21-jre@sha256:05b34d0c037b1b216530d61a131797d2005f3fc8b24a50da5af4ec2df1009356
 
 ARG OTEL_JAVA_AGENT_VERSION=2.15.0
 ARG _JAVA_OPTIONS

@@ -1,1 +1,1 @@
-FROM ghcr.io/open-feature/flagd:v0.11.1
+FROM ghcr.io/open-feature/flagd:v0.11.1@sha256:a7ea52f87446d18020d5b900da4fc29b61015435b1e6756c98236310d73b90b3

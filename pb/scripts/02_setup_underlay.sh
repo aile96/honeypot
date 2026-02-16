@@ -167,8 +167,9 @@ log "Detected IPv4 subnet for $CP_NETWORK: $IPV4_SUBNET"
 BASE_IP="${IPV4_SUBNET%%/*}"  # e.g., 172.18.0.0
 IFS='.' read -r o1 o2 o3 o4 <<< "$BASE_IP" || die "Unexpected IPv4 subnet base: $BASE_IP"
 FRONTEND_PROXY_IP="${o1}.${o2}.${o3}.200"
-log "Constructed frontend-proxy IPv4: $FRONTEND_PROXY_IP (.200)."
-export FRONTEND_PROXY_IP
+GENERIC_SVC_ADDR="${o1}.${o2}.${o3}.201"
+log "Constructed frontend-proxy IPv4: $FRONTEND_PROXY_IP (.200). And generic service IPv4: $GENERIC_SVC_ADDR (.201)"
+export FRONTEND_PROXY_IP GENERIC_SVC_ADDR
 
 # --------------------------
 # 5) Build IP - HOST lines and write to file (control-plane, worker1..N)
@@ -643,8 +644,8 @@ for n in "${ALL_NODES[@]}"; do
 done
 
 if (( ${#failed_nodes[@]} > 0 )); then
-  warn "Retrying registry setup after 20s for nodes: ${failed_nodes[*]}"
-  sleep 20
+  warn "Retrying registry setup after 60s for nodes: ${failed_nodes[*]}"
+  sleep 60
 
   retry_failed_nodes=()
   for n in "${failed_nodes[@]}"; do

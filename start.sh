@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_START_EPOCH="$(date +%s)"
+echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Script started"
+
+on_exit() {
+  local exit_code=$?
+  local script_end_epoch end_ts duration
+
+  script_end_epoch="$(date +%s)"
+  end_ts="$(date '+%Y-%m-%d %H:%M:%S %Z')"
+  duration=$((script_end_epoch - SCRIPT_START_EPOCH))
+
+  if [[ $exit_code -eq 0 ]]; then
+    echo "[$end_ts] Pipeline completed (duration: ${duration}s)"
+  else
+    echo "[$end_ts] Script failed with exit code ${exit_code} (duration: ${duration}s)" >&2
+  fi
+}
+trap on_exit EXIT
+
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_VERSION=2.0.2
 export PROJECT_ROOT IMAGE_VERSION
@@ -88,4 +107,4 @@ source "${PROJECT_ROOT}/pb/scripts/03_run_underlay.sh"
 source "${PROJECT_ROOT}/pb/scripts/04_build_deploy.sh"
 source "${PROJECT_ROOT}/pb/scripts/05_setup_k8s.sh"
 
-echo "Pipeline completed"
+on_exit

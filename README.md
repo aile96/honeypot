@@ -1,6 +1,6 @@
 # Kubernetes Honeypot & Adversary Emulation Platform (KinD/Minikube)
 
-> Last update: 2026-02-04  
+> Last update: 2026-02-16  
 > **For isolated lab use only.** This platform runs *simulated* attacks via MITRE Caldera for research, training and defensive validation. **Do not use on production systems or third‑party infrastructure.**
 >
 > **Safety check:** verify your current `kubectl` context (`kubectl config current-context`) points to a local lab cluster (KinD/Minikube). The pipeline operates on whatever cluster is reachable and may patch control-plane/worker components depending on enabled vulnerability switches.
@@ -302,7 +302,7 @@ docker rm -f ...        # all docker supporting network
 
 - **Cluster**: `KIND_CLUSTER`, `WORKERS`, `K8S_VERSION`
 - **Registry**: `REGISTRY_NAME`, `REGISTRY_PORT`, `REGISTRY_USER`, `REGISTRY_PASS`
-- **Proxy/Service**: `PROXY`, `CALDERA_SERVER`, `CALDERA_CONTROLLER`, `ATTACKER`
+- **Proxy/Service**: `PROXY`, `CALDERA_SERVER`, `CALDERA_CONTROLLER`, `ATTACKER`, `GENERIC_SVC_PORT`
 - **Telemetry**: `LOG_OPEN`, `LOG_TOKEN`
 - **Kill chains**: `ADV_LIST`, `ADV_NAME`, `ENABLEKC1..6`, `SCRIPT_PRE_KC*`, `SCRIPT_POST_KC*`
 - **Vulnerabilities (Helm additions)**: `DNS_GRANT`, `DEPLOY_GRANT`, `ANONYMOUS_GRANT`, `CURRENCY_GRANT`

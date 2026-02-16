@@ -92,4 +92,20 @@ done
 log "Cluster readiness checks completed."
 
 # --- 5) Start the app ---
-exec python /app/auto_starter.py
+app_start_ts="$(date '+%Y-%m-%d %H:%M:%S %Z')"
+log "Starting auto_starter.py at ${app_start_ts}"
+
+if python /app/auto_starter.py; then
+  app_exit_code=0
+else
+  app_exit_code=$?
+fi
+
+app_end_ts="$(date '+%Y-%m-%d %H:%M:%S %Z')"
+if [ "$app_exit_code" -eq 0 ]; then
+  log "Finished auto_starter.py at ${app_end_ts}"
+else
+  err "auto_starter.py exited with code ${app_exit_code} at ${app_end_ts}"
+fi
+
+exit "$app_exit_code"

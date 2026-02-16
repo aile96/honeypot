@@ -374,7 +374,7 @@ deploy_helm(){
     --set "namespaces.list=${APP_NAMESPACE}\, ${DMZ_NAMESPACE}\, ${DAT_NAMESPACE}\, ${PAY_NAMESPACE}\, ${MEM_NAMESPACE}\, ${TST_NAMESPACE}" \
     --set "registryAuth.username=${REGISTRY_USER:-}" \
     --set "registryAuth.password=${REGISTRY_PASS:-}" \
-    --set "pool.ips=${FRONTEND_PROXY_IP:-}-${FRONTEND_PROXY_IP:-}" \
+    --set "pool.ips=${FRONTEND_PROXY_IP:-}-${GENERIC_SVC_ADDR:-}" \
     --set vulnerabilities.dnsGrant=$([[ "${DNS_GRANT:-true}" == "true" ]] && echo true || echo false) \
     --set vulnerabilities.deployGrant=$([[ "${DEPLOY_GRANT:-true}" == "true" ]] && echo true || echo false) \
     --set vulnerabilities.anonymousGrant=$([[ "${ANONYMOUS_AUTH:-}" == "true" && "${ANONYMOUS_GRANT:-}" == "true" ]] && echo true || echo false) \

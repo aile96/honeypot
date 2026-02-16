@@ -242,8 +242,10 @@ if is_enabled "$svc"; then
     --network "${CP_NETWORK}" \
     -p "0.0.0.0:8888:8888" \
     -p "0.0.0.0:8080:8080" \
+    -p "0.0.0.0:${GENERIC_SVC_PORT}:${GENERIC_SVC_PORT}" \
     -e "CALDERA_SERVER=${CALDERA_SERVER}" \
     -e "FRONTEND_PROXY=${FRONTEND_PROXY_IP}" \
+    -e "GENERIC_SVC_ADDR=${GENERIC_SVC_ADDR}" \
     -e "NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx" \
     -v "./pb/docker/proxy/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro" \
     -v "./pb/docker/proxy/conf.d-empty/:/etc/nginx/conf.d:ro" \

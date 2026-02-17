@@ -132,8 +132,6 @@ validate_image_or_die() {
 }
 
 # === MAIN ===
-mkdir -p pb/docker/attacker/results
-
 KUBESERVER_PORT="$(kubectl -n default get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || echo 6443)"
 export KUBESERVER_PORT
 K8S_IMAGE="$(kubectl get pod -n kube-system -l component=kube-apiserver -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}' 2>/dev/null || true)"
@@ -245,6 +243,7 @@ if is_enabled "$svc"; then
     -p "0.0.0.0:${GENERIC_SVC_PORT}:${GENERIC_SVC_PORT}" \
     -e "CALDERA_SERVER=${CALDERA_SERVER}" \
     -e "FRONTEND_PROXY=${FRONTEND_PROXY_IP}" \
+    -e "GENERIC_SVC_PORT=${GENERIC_SVC_PORT}" \
     -e "GENERIC_SVC_ADDR=${GENERIC_SVC_ADDR}" \
     -e "NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx" \
     -v "./pb/docker/proxy/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro" \

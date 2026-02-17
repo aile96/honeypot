@@ -8,12 +8,11 @@ http {
   access_log /var/log/nginx/access.log;
   error_log  /var/log/nginx/error.log;
 
-  upstream caldera_server { server ${CALDERA_SERVER}:8888; }
-
   server {
     listen 8080;
     location / {
-      proxy_pass http://${FRONTEND_PROXY}:8080;
+      set $frontend_upstream "${FRONTEND_PROXY}:8080";
+      proxy_pass http://$frontend_upstream;
       proxy_http_version 1.1;
       proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr;
@@ -29,7 +28,8 @@ http {
     listen 8888;
     location = /healthz { return 200 "ok\n"; }
     location / {
-      proxy_pass http://caldera_server;
+      set $caldera_upstream "${CALDERA_SERVER}:8888";
+      proxy_pass http://$caldera_upstream;
       proxy_http_version 1.1;
       proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr;
@@ -45,7 +45,8 @@ http {
     listen ${GENERIC_SVC_PORT};
     location = /healthz { return 200 "ok\n"; }
     location / {
-      proxy_pass http://${GENERIC_SVC_ADDR}:${GENERIC_SVC_PORT};
+      set $generic_svc_upstream "${GENERIC_SVC_ADDR}:${GENERIC_SVC_PORT}";
+      proxy_pass http://$generic_svc_upstream;
       proxy_http_version 1.1;
       proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr;

@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -250,6 +251,66 @@ func isGRPCContentType(ct string) bool {
 	return strings.HasPrefix(strings.ToLower(ct), "application/grpc")
 }
 
+type grpcFrameTransform func(payload []byte) ([]byte, error)
+
+type grpcFrameTransformReadCloser struct {
+	src       io.ReadCloser
+	transform grpcFrameTransform
+	buf       bytes.Buffer
+	done      bool
+}
+
+func newGRPCFrameTransformReadCloser(src io.ReadCloser, transform grpcFrameTransform) io.ReadCloser {
+	return &grpcFrameTransformReadCloser{
+		src:       src,
+		transform: transform,
+	}
+}
+
+func (g *grpcFrameTransformReadCloser) Read(p []byte) (int, error) {
+	for g.buf.Len() == 0 {
+		if g.done {
+			return 0, io.EOF
+		}
+
+		header := make([]byte, 5)
+		if _, err := io.ReadFull(g.src, header); err != nil {
+			if err == io.EOF {
+				g.done = true
+				return 0, io.EOF
+			}
+			if err == io.ErrUnexpectedEOF {
+				return 0, fmt.Errorf("invalid gRPC frame header: %w", err)
+			}
+			return 0, err
+		}
+
+		frameLen := binary.BigEndian.Uint32(header[1:])
+		framePayload := make([]byte, frameLen)
+		if _, err := io.ReadFull(g.src, framePayload); err != nil {
+			return 0, fmt.Errorf("invalid gRPC frame payload: %w", err)
+		}
+
+		transformedPayload, err := g.transform(framePayload)
+		if err != nil {
+			return 0, err
+		}
+		if uint64(len(transformedPayload)) > uint64(^uint32(0)) {
+			return 0, fmt.Errorf("gRPC frame too large after transform: %d", len(transformedPayload))
+		}
+
+		binary.BigEndian.PutUint32(header[1:], uint32(len(transformedPayload)))
+		g.buf.Write(header)
+		g.buf.Write(transformedPayload)
+	}
+
+	return g.buf.Read(p)
+}
+
+func (g *grpcFrameTransformReadCloser) Close() error {
+	return g.src.Close()
+}
+
 func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 	rp := httputil.NewSingleHostReverseProxy(p.upstreamURL)
 
@@ -275,7 +336,7 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 		word := p.currentWord(ctx)
 		transparent := strings.TrimSpace(word) == ""
 
-		// gRPC detection (do not manipulate frames, but we can add headers/metadata)
+		// gRPC detection
 		isGRPC := isGRPCContentType(r.Header.Get("Content-Type"))
 
 		if p.mode == "egress" {
@@ -286,8 +347,18 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 			// Always add token when the word is set (also for gRPC)
 			r.Header.Set(p.headerKey, word)
 
-			// For body-carrying methods, encrypt ONLY if not gRPC
-			if !isGRPC && r.Body != nil && (r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch) {
+			// For body-carrying methods, encrypt payloads (including gRPC frames)
+			if r.Body != nil && (r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch) {
+				if isGRPC {
+					r.Header.Set(headerEncrypted, "1")
+					r.Body = newGRPCFrameTransformReadCloser(r.Body, func(payload []byte) ([]byte, error) {
+						return encrypt(word, payload)
+					})
+					r.ContentLength = -1
+					r.Header.Del("Content-Length")
+					return
+				}
+
 				origCT := r.Header.Get("Content-Type")
 				body, _ := readAllAndClose(r.Body)
 				enc, err := encrypt(word, body)
@@ -322,8 +393,21 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 			return
 		}
 
-		// If the request arrives encrypted (non-gRPC), decrypt
-		if !isGRPC && r.Header.Get(headerEncrypted) == "1" && r.Body != nil {
+		// If the request arrives encrypted, decrypt
+		if r.Header.Get(headerEncrypted) == "1" && r.Body != nil {
+			if isGRPC {
+				r.Body = newGRPCFrameTransformReadCloser(r.Body, func(payload []byte) ([]byte, error) {
+					return decrypt(word, payload)
+				})
+				r.ContentLength = -1
+				r.Header.Del("Content-Length")
+				// cleanup
+				r.Header.Del(headerEncrypted)
+				r.Header.Del(headerOrigCT)
+				r.Header.Del(p.headerKey)
+				return
+			}
+
 			origCT := r.Header.Get(headerOrigCT)
 			body, _ := readAllAndClose(r.Body)
 			pt, err := decrypt(word, body)
@@ -391,6 +475,17 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 				return nil
 			}
 			if resp.Header.Get(headerEncrypted) == "1" {
+				if isGRPC && resp.Body != nil {
+					resp.Body = newGRPCFrameTransformReadCloser(resp.Body, func(payload []byte) ([]byte, error) {
+						return decrypt(word, payload)
+					})
+					resp.ContentLength = -1
+					resp.Header.Del("Content-Length")
+					resp.Header.Del(headerEncrypted)
+					resp.Header.Del(headerOrigCT)
+					return nil
+				}
+
 				origCT := resp.Header.Get(headerOrigCT)
 				body, _ := readAllAndClose(resp.Body)
 				pt, err := decrypt(word, body)
@@ -411,10 +506,22 @@ func (p *proxy) buildReverseProxy() *httputil.ReverseProxy {
 			return nil
 		}
 
-		// INGRESS: encrypt the response towards the caller ONLY if not gRPC and word is active
-		if transparent || isGRPC {
+		// INGRESS: encrypt the response towards the caller when word is active
+		if transparent {
 			return nil
 		}
+		if isGRPC {
+			if resp.Body != nil {
+				resp.Header.Set(headerEncrypted, "1")
+				resp.Body = newGRPCFrameTransformReadCloser(resp.Body, func(payload []byte) ([]byte, error) {
+					return encrypt(word, payload)
+				})
+				resp.ContentLength = -1
+				resp.Header.Del("Content-Length")
+			}
+			return nil
+		}
+
 		body, _ := readAllAndClose(resp.Body)
 		enc, err := encrypt(word, body)
 		if err != nil {

@@ -2,13 +2,12 @@
 FROM golang:1.24@sha256:d2d2bc1c84f7e60d7d2438a3836ae7d0c847f4888464e7ec9ba3a1339a1ee804 AS build
 WORKDIR /src
 
-# 1) copy mod and download base dependencies
-COPY go.mod ./
+# 1) copy module manifests and download exact dependencies
+COPY go.mod go.sum ./
 RUN go mod download
 
-# 2) copy the rest of the code, generate go.sum and compile
+# 2) copy the rest of the code and compile
 COPY . .
-RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/crypto-proxy .
 
 # run (distroless)

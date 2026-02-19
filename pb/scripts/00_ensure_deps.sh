@@ -5,15 +5,21 @@ set -euo pipefail
 # Check-only bootstrap (no installs)
 # ==========================
 
-# ---- Logging ----
-info(){ printf "\033[1;36m[INFO]\033[0m %s\n" "$*"; }
-warn(){ printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
-fail(){ printf "\033[1;31m[FAIL]\033[0m %s\n" "$*" >&2; exit 1; }
-
 # ---- Paths ----
 SCRIPTS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMON_LIB="${SCRIPTS_ROOT}/lib/common.sh"
+if [[ ! -f "${COMMON_LIB}" ]]; then
+  printf "[ERROR] Common library not found: %s\n" "${COMMON_LIB}" >&2
+  return 1 2>/dev/null || exit 1
+fi
+source "${COMMON_LIB}"
+
+# ---- Logging ----
+info(){ log "$*"; }
+
 # scripts sourced by your launcher
 NEEDED_SOURCED_FILES=(
+  "01_kind_cluster.sh"
   "02_setup_underlay.sh"
   "03_run_underlay.sh"
   "04_build_deploy.sh"
@@ -22,7 +28,7 @@ NEEDED_SOURCED_FILES=(
 
 # ---- Requirements (from all your scripts 1,2,4,5 + new launcher) ----
 CORE_CMDS=( docker kubectl helm curl openssl htpasswd )
-UTIL_CMDS=( grep sed awk xargs sort head tr cut base64 mktemp )
+UTIL_CMDS=( grep sed awk xargs sort head tr cut base64 mktemp jq )
 # need at least one of:
 ALT_NET_CMDS=( ss netstat )
 
@@ -58,7 +64,22 @@ else
   fail "Missing required network CLI: need either 'ss' (preferred) or 'netstat' in PATH."
 fi
 
-# 5) Docker: CLI reachable and daemon responsive
+# 5) Cluster manager command present for selected TARGET
+TARGET="${TARGET:-$([ "${KIND_CLUSTER:-0}" = "0" ] && echo "minikube" || echo "kind")}"
+case "$TARGET" in
+  kind)
+    command -v kind >/dev/null 2>&1 || fail "Missing required command for TARGET=kind: 'kind'."
+    ;;
+  minikube)
+    command -v minikube >/dev/null 2>&1 || fail "Missing required command for TARGET=minikube: 'minikube'."
+    ;;
+  *)
+    fail "Invalid TARGET='${TARGET}'. Allowed values: kind|minikube."
+    ;;
+esac
+info "Cluster manager available for TARGET=${TARGET}."
+
+# 6) Docker: CLI reachable and daemon responsive
 if ! docker --version >/dev/null 2>&1; then
   fail "Docker CLI not working."
 fi
@@ -67,25 +88,25 @@ if ! docker ps >/dev/null 2>&1; then
 fi
 info "Docker CLI and daemon reachable."
 
-# 6) Docker Buildx available (used by your builds)
+# 7) Docker Buildx available (used by your builds)
 if ! docker buildx version >/dev/null 2>&1; then
   fail "Docker Buildx is not available. Please enable/install Buildx before proceeding."
 fi
 info "Docker Buildx available."
 
-# 7) kubectl: client reachable
+# 8) kubectl: client reachable
 if ! kubectl version --client >/dev/null 2>&1; then
   fail "kubectl client not working."
 fi
 info "kubectl client OK."
 
-# 8) Helm works
+# 9) Helm works
 if ! helm version --short >/dev/null 2>&1; then
   fail "Helm is not working."
 fi
 info "Helm CLI OK."
 
-# 9) Project files expected by your launcher script
+# 10) Project files expected by your launcher script
 for rel in "${NEEDED_SOURCED_FILES[@]}"; do
   [[ -f "${SCRIPTS_ROOT}/${rel}" ]] || fail "Expected script not found: ${SCRIPTS_ROOT}/${rel}"
 done

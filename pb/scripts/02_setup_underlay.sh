@@ -1,10 +1,14 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-### === Utility functions ===
-log()  { printf "\033[1;36m[INFO]\033[0m %s\n" "$*"; }
-warn() { printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
-err()  { printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
-die()  { echo -e "[ERROR] $*" >&2; exit 1; }
+SCRIPTS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPTS_ROOT}/../.." && pwd)"
+COMMON_LIB="${SCRIPTS_ROOT}/lib/common.sh"
+if [[ ! -f "${COMMON_LIB}" ]]; then
+  printf "[ERROR] Common library not found: %s\n" "${COMMON_LIB}" >&2
+  return 1 2>/dev/null || exit 1
+fi
+source "${COMMON_LIB}"
 
 kubectl_ctx() {
   kubectl --context "$KUBE_CONTEXT" "$@"
@@ -21,37 +25,52 @@ node_internal_ip() {
 
 # Map an IP address to a docker container name and networks (IPv4 is enough)
 find_container_by_ip() {
-  local ip="$1"
-  while IFS= read -r cid; do
-    local name ips nets
-    name="$(docker inspect -f '{{.Name}}' "$cid" | sed 's#^/##')"
-    ips="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$v.IPAddress}} {{end}}' "$cid" | xargs || true)"
-    nets="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$cid" | xargs || true)"
-    for tip in $ips; do
-      if [[ "$tip" == "$ip" ]]; then
-        printf '%s;%s' "$name" "$nets"
-        return 0
-      fi
-    done
-  done < <(docker ps -q)
-  return 1
+  find_docker_container_by_ip "$1"
 }
 
 # --------------
 # Config / env
 # --------------
-: "${KUBE_CONTEXT:=$(kubectl config current-context)}"
+: "${KUBE_CONTEXT:=$(kubectl config current-context 2>/dev/null || true)}"
 : "${OUT_DIR:=./pb/docker/attacker/apiserver}"
 : "${ATTACKER_DIR:=./pb/docker/attacker}"
 : "${ETCD_DOCKER_IMAGE:=quay.io/coreos/etcd:v3.5.10}"
 : "${PLAIN_PORT:=12379}"
+: "${API_CERT:=false}"
+: "${OPEN_PORTS:=false}"
+: "${ETCD_EXPOSURE:=false}"
+: "${ANONYMOUS_AUTH:=false}"
+: "${REGISTRY_NAME:=registry}"
+: "${REGISTRY_PORT:=5000}"
+: "${REGISTRY_USER:?REGISTRY_USER required}"
+: "${REGISTRY_PASS:?REGISTRY_PASS required}"
+: "${REGISTRY_CA_FILE:=pb/docker/registry/certs/rootca.crt}"
+: "${REG_SCHEME:=https}"
+
+if [[ "${REGISTRY_CA_FILE}" != /* ]]; then
+  REGISTRY_CA_FILE="${PROJECT_ROOT}/${REGISTRY_CA_FILE#./}"
+fi
+
+[[ -n "$KUBE_CONTEXT" ]] || die "Unable to resolve kubectl context."
+req docker
+req kubectl
+normalize_bool_var API_CERT
+normalize_bool_var OPEN_PORTS
+normalize_bool_var ETCD_EXPOSURE
+normalize_bool_var ANONYMOUS_AUTH
+require_port_var REGISTRY_PORT
+REG_SCHEME="${REG_SCHEME,,}"
+case "$REG_SCHEME" in
+  https|http) ;;
+  *) die "Invalid REG_SCHEME='${REG_SCHEME}' (allowed: https|http)." ;;
+esac
 
 # --------------------------
 # 1) Count nodes and ensure total >= 3
 # --------------------------
 log "Using kubectl context: $KUBE_CONTEXT"
 
-ALL_NODES=($(kubectl_ctx get nodes -o name | sed 's#node/##'))
+mapfile -t ALL_NODES < <(kubectl_ctx get nodes -o name | sed 's#node/##')
 TOTAL_NODES=${#ALL_NODES[@]}
 log "Total nodes found: $TOTAL_NODES"
 
@@ -62,9 +81,9 @@ fi
 # --------------------------
 # 2) Identify control-plane(s) and workers and extract container runtime info
 # --------------------------
-CONTROL_PLANE_NODES=($(kubectl_ctx get nodes -l 'node-role.kubernetes.io/control-plane' -o name 2>/dev/null || true))
+mapfile -t CONTROL_PLANE_NODES < <(kubectl_ctx get nodes -l 'node-role.kubernetes.io/control-plane' -o name 2>/dev/null || true)
 if [[ ${#CONTROL_PLANE_NODES[@]} -eq 0 ]]; then
-  CONTROL_PLANE_NODES=($(kubectl_ctx get nodes -l 'node-role.kubernetes.io/master' -o name 2>/dev/null || true))
+  mapfile -t CONTROL_PLANE_NODES < <(kubectl_ctx get nodes -l 'node-role.kubernetes.io/master' -o name 2>/dev/null || true)
 fi
 for i in "${!CONTROL_PLANE_NODES[@]}"; do CONTROL_PLANE_NODES[$i]="${CONTROL_PLANE_NODES[$i]#node/}"; done
 
@@ -128,10 +147,10 @@ if (( ${#WORKER_NODES[@]} < 2 )); then
 fi
 
 log "Patching kube-apiserver to exclude application pods..."
-kubectl taint nodes $CONTROL_PLANE_NODE node-role.kubernetes.io/control-plane=:NoSchedule --overwrite=true
+kubectl_ctx taint nodes "$CONTROL_PLANE_NODE" node-role.kubernetes.io/control-plane=:NoSchedule --overwrite=true
 
 mkdir -p "$OUT_DIR"
-if [[ "$API_CERT" == "true" ]]; then
+if is_true "$API_CERT"; then
   log "Copying apiserver.crt and apiserver.key from $CP_CONTAINER to $OUT_DIR"
   if docker cp "$CP_CONTAINER":/etc/kubernetes/pki/apiserver.crt "$OUT_DIR/apiserver.crt" >/dev/null 2>&1 && \
      docker cp "$CP_CONTAINER":/etc/kubernetes/pki/apiserver.key "$OUT_DIR/apiserver.key" >/dev/null 2>&1; then
@@ -303,7 +322,7 @@ curl -sS -o /dev/null -w "kubelet 10255 on localhost: %{http_code}\n" http://127
 ' || warn "Failed to patch kubelet on $node (container $name). Check logs."
 }
 
-if [[ "$OPEN_PORTS" == "true" ]]; then
+if is_true "$OPEN_PORTS"; then
   log "Enabling kubelet read-only port (10255) on all worker nodes..."
   for n in "${WORKER_NODES[@]}"; do
     enable_ro_port_on_worker "$n"
@@ -319,11 +338,11 @@ NS=kube-system
 
 # Detect the etcd pod (static pod mirror) and its nodeName
 log "Detecting etcd pod and control-plane node..."
-ETCD_POD="$(kubectl -n "$NS" get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep '^etcd-' | head -n1)"
+ETCD_POD="$(kubectl_ctx -n "$NS" get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep '^etcd-' | head -n1 || true)"
 if [[ -z "${ETCD_POD:-}" ]]; then
-  echo "Error: no etcd pod found in $NS" >&2; exit 1
+  die "No etcd pod found in namespace ${NS}."
 fi
-NODE_NAME="$(kubectl -n "$NS" get pod "$ETCD_POD" -o jsonpath='{.spec.nodeName}')"
+NODE_NAME="$(kubectl_ctx -n "$NS" get pod "$ETCD_POD" -o jsonpath='{.spec.nodeName}')"
 log "etcd pod: $ETCD_POD  |  nodeName: $NODE_NAME"
 
 # Find the Docker container corresponding to the node
@@ -331,17 +350,19 @@ log "etcd pod: $ETCD_POD  |  nodeName: $NODE_NAME"
 log "Looking for the Docker container of the node..."
 if docker inspect "$NODE_NAME" >/dev/null 2>&1; then
   NODE_CTN="$NODE_NAME"
+elif [[ "$NODE_NAME" == "$CONTROL_PLANE_NODE" && -n "${CP_CONTAINER:-}" ]]; then
+  NODE_CTN="$CP_CONTAINER"
 else
-  NODE_CTN="$(docker ps --format '{{.Names}}' | grep -E "^${NODE_NAME}$|${NODE_NAME}|control-plane" | head -n1 || true)"
+  NODE_CTN="$(docker ps --format '{{.Names}}' | grep -Fx "$NODE_NAME" | head -n1 || true)"
+  if [[ -z "${NODE_CTN:-}" ]]; then
+    NODE_CTN="$(docker ps --format '{{.Names}}' | grep -E 'control-plane|minikube' | head -n1 || true)"
+  fi
 fi
 if [[ -z "${NODE_CTN:-}" ]]; then
-  echo "Error: cannot map $NODE_NAME to a Docker container. Specify it manually with NODE_CTN=..." >&2
-  exit 1
+  die "Cannot map ${NODE_NAME} to a Docker container. Specify it manually with NODE_CTN=..."
 fi
 log "Node container: $NODE_CTN"
 
-# Patch the etcd static manifest
-ETCD_MANIFEST="/etc/kubernetes/manifests/etcd.yaml"
 PATCH_CMD=$(cat <<'EOF'
 set -euo pipefail
 mf="/etc/kubernetes/manifests/etcd.yaml"
@@ -375,7 +396,7 @@ fi
 EOF
 )
 
-if [[ "$ETCD_EXPOSURE" == "true" ]]; then
+if is_true "$ETCD_EXPOSURE"; then
   log "Applying patch inside the node container..."
   docker exec -i "$NODE_CTN" bash -lc "$PATCH_CMD"
 fi
@@ -416,14 +437,14 @@ EOF
 # --- Helpers ---
 _get_apiserver_identity() {
   # Returns "podName|podUID" or empty if API is not reachable
-  kubectl -n kube-system get pod -l component=kube-apiserver \
+  kubectl_ctx -n kube-system get pod -l component=kube-apiserver \
     -o jsonpath='{.items[0].metadata.name}{"|"}{.items[0].metadata.uid}' 2>/dev/null || true
 }
 
 _wait_api_reachable_short() {
   local deadline=$(( $(date +%s) + 10 ))
   while true; do
-    if kubectl version --request-timeout=5s >/dev/null 2>&1; then
+    if kubectl_ctx version --request-timeout=5s >/dev/null 2>&1; then
       return 0
     fi
     (( $(date +%s) > deadline )) && return 1
@@ -444,7 +465,7 @@ _wait_new_apiserver_ready() {
 
     if [[ -n "$pod" && -n "$uid" && "$uid" != "$prev_uid" ]]; then
       log "Detected new kube-apiserver pod: $pod (UID changed). Waiting for Ready..."
-      if kubectl -n kube-system wait --for=condition=Ready "pod/$pod" --timeout=180s >/dev/null 2>&1; then
+      if kubectl_ctx -n kube-system wait --for=condition=Ready "pod/$pod" --timeout=180s >/dev/null 2>&1; then
         log "kube-apiserver is Ready: $pod"
         return 0
       else
@@ -455,8 +476,8 @@ _wait_new_apiserver_ready() {
     (( $(date +%s) > deadline )) && {
       err "Timeout (${APISERVER_WAIT_TIMEOUT}s) waiting for kube-apiserver to be recreated and Ready."
       echo "=== kubectl get pods -n kube-system -o wide (apiserver) ==="
-      kubectl -n kube-system get pod -o wide | grep -i apiserver || true
-      [[ -n "$pod" ]] && { echo "=== describe $pod ==="; kubectl -n kube-system describe pod "$pod" || true; }
+      kubectl_ctx -n kube-system get pod -o wide | grep -i apiserver || true
+      [[ -n "$pod" ]] && { echo "=== describe $pod ==="; kubectl_ctx -n kube-system describe pod "$pod" || true; }
       echo "=== last 200 lines of $NODE_CTN logs ==="
       docker logs --tail 200 "$NODE_CTN" 2>/dev/null || true
       return 1
@@ -467,7 +488,7 @@ _wait_new_apiserver_ready() {
 }
 
 # --- Main: patch + conditional wait ---
-if [[ "$ANONYMOUS_AUTH" == "true" ]]; then
+if is_true "$ANONYMOUS_AUTH"; then
   # Capture current apiserver UID (if API is reachable)
   prev_id="$(_get_apiserver_identity)"
   prev_uid="${prev_id##*|}"
@@ -539,19 +560,12 @@ fi
 # --------------------------
 # 10) Adding CA + AUTH for registry to the nodes
 # --------------------------
-REGISTRY_CA_FILE="${REGISTRY_CA_FILE:-pb/docker/registry/certs/rootca.crt}"
-: "${REGISTRY_NAME:?REGISTRY_NAME required}"
-: "${REGISTRY_PORT:?REGISTRY_PORT required}"
-: "${REGISTRY_USER:?REGISTRY_USER required}"
-: "${REGISTRY_PASS:?REGISTRY_PASS required}"
-
 REG_HOSTPORT="${REGISTRY_NAME}:${REGISTRY_PORT}"
-REG_SCHEME="${REG_SCHEME:-https}"
 
 install_on_node_container() {
   local node="$1"
-  local ip pair name gw certsd hosts_dir tmp_ht tmp_remote changed=0 changed_os_ca=0 changed_ctrd_ca=0 changed_hosts=0 changed_hosts_toml=0
-  local rc=0
+  local ip pair name auth_b64 desired_hosts_toml current_hosts_toml
+  local hosts_changed ca_cert_b64
 
   ip="$(node_internal_ip "$node")" || return 1
   [ -n "$ip" ] || { warn "No IPv4 for $node"; return 1; }
@@ -563,75 +577,100 @@ install_on_node_container() {
   fi
 
   name="${pair%%;*}"
-  certsd="/etc/containerd/certs.d/${REG_HOSTPORT}"
-  dockerd="/etc/docker/certs.d/${REG_HOSTPORT}"
-  hosts_dir="/usr/local/share/ca-certificates"
   log "Configuring registry trust+auth for ${REG_HOSTPORT} on node ${name}"
 
-  # ensure dirs
-  if ! docker exec "$name" sh -lc "mkdir -p '${certsd}' '${hosts_dir}'"; then
-    err "docker exec failed on ${name} while creating base dirs"
-    return 1
-  fi
-
-  # if HTTPS, install CA as both containerd trust and OS trust
-  if [ "${REG_SCHEME}" = "https" ]; then
-    if [ -r "$REGISTRY_CA_FILE" ]; then
-      if ! docker exec "$name" sh -lc "mkdir -p /etc/docker/certs.d/"; then
-        err "docker exec failed on ${name} while creating /etc/docker/certs.d"
-        return 1
-      fi
-      if ! docker exec "$name" sh -lc "mkdir -p '${certsd}' '${dockerd}' '${hosts_dir}'"; then
-        err "docker exec failed on ${name} while creating certs dirs"
-        return 1
-      fi
-      if ! docker exec -i "$name" sh -c "install -D -m 0644 /dev/stdin '${certsd}/ca.crt'" < "$REGISTRY_CA_FILE"; then
-        err "docker exec failed on ${name} while installing containerd CA"
-        return 1
-      fi
-      if ! docker exec -i "$name" sh -c "install -D -m 0644 /dev/stdin '${dockerd}/ca.crt'" < "$REGISTRY_CA_FILE"; then
-        err "docker exec failed on ${name} while installing dockerd CA"
-        return 1
-      fi
-      if ! docker exec -i "$name" sh -c "install -D -m 0644 /dev/stdin '${hosts_dir}/registry-${REGISTRY_NAME}.crt'" < "$REGISTRY_CA_FILE"; then
-        err "docker exec failed on ${name} while installing OS CA"
-        return 1
-      fi
-      if ! docker exec "$name" sh -lc "update-ca-certificates >/dev/null 2>&1 || true"; then
-        err "docker exec failed on ${name} while running update-ca-certificates"
-        return 1
-      fi
-    else
-      warn "CA file '$REGISTRY_CA_FILE' not readable; TLS may fail."
-    fi
-  fi
-
-  # Adding registry auth to containerd
-  docker exec "$name" sh -lc "test -f '${certsd}/hosts.toml'"
-  rc=$?
-  if [ "$rc" -eq 0 ]; then
-    warn "hosts.toml already present on node ${name}, not touching it"
-  elif [ "$rc" -eq 1 ]; then
-    if ! cat <<EOF | docker exec -i "$name" sh -lc "umask 077; mkdir -p '${certsd}'; cat >'${certsd}/hosts.toml'"
-[host."https://${REG_HOSTPORT}"]
+  # Adding/updating registry auth in containerd hosts.toml.
+  auth_b64="$(printf '%s' "${REGISTRY_USER}:${REGISTRY_PASS}" | base64 | tr -d '\n')"
+  desired_hosts_toml="$(cat <<EOF
+[host."${REG_SCHEME}://${REG_HOSTPORT}"]
 capabilities = ["pull", "resolve"]
-[host."https://${REG_HOSTPORT}".header]
-Authorization = "Basic $(echo -n "${REGISTRY_USER}:${REGISTRY_PASS}" | base64)"
+[host."${REG_SCHEME}://${REG_HOSTPORT}".header]
+Authorization = "Basic ${auth_b64}"
 EOF
-    then
-      err "docker exec failed on ${name} while writing ${certsd}/hosts.toml"
-      return 1
-    fi
-    changed_hosts_toml=1
-    log "Created ${certsd}/hosts.toml in node ${name}"
-    if ! docker exec "$name" sh -lc 'systemctl restart containerd || true'; then
-      err "docker exec failed on ${name} while restarting containerd"
-      return 1
-    fi
+)"
+
+  current_hosts_toml="$(docker exec "$name" sh -lc "cat '/etc/containerd/certs.d/${REG_HOSTPORT}/hosts.toml' 2>/dev/null" || true)"
+  if [[ "${current_hosts_toml}" == "${desired_hosts_toml}" ]]; then
+    hosts_changed="false"
   else
-    err "docker exec failed on ${name} while checking ${certsd}/hosts.toml"
+    hosts_changed="true"
+  fi
+
+  ca_cert_b64=""
+  if [[ "${REG_SCHEME}" == "https" ]]; then
+    if [[ -r "${REGISTRY_CA_FILE}" ]]; then
+      ca_cert_b64="$(base64 < "${REGISTRY_CA_FILE}" | tr -d '\n')"
+    else
+      warn "CA file '${REGISTRY_CA_FILE}' not readable; TLS may fail."
+    fi
+  fi
+
+  if ! docker exec -i "${name}" sh -s -- \
+    "${REG_HOSTPORT}" "${REG_SCHEME}" "${REGISTRY_NAME}" "${auth_b64}" "${hosts_changed}" "${ca_cert_b64}" <<'EOF'
+set -eu
+reg_hostport="$1"
+reg_scheme="$2"
+reg_name="$3"
+auth_b64="$4"
+hosts_changed="$5"
+ca_cert_b64="$6"
+
+certsd="/etc/containerd/certs.d/${reg_hostport}"
+dockerd="/etc/docker/certs.d/${reg_hostport}"
+hosts_dir="/usr/local/share/ca-certificates"
+hosts_toml="${certsd}/hosts.toml"
+ca_installed="false"
+ca_tmp_file="/tmp/registry-ca.crt"
+
+mkdir -p "${certsd}" "${hosts_dir}"
+
+if [ "${reg_scheme}" = "https" ] && [ -n "${ca_cert_b64}" ]; then
+  printf '%s' "${ca_cert_b64}" | base64 -d > "${ca_tmp_file}"
+  mkdir -p "${dockerd}"
+  install -D -m 0644 "${ca_tmp_file}" "${certsd}/ca.crt"
+  install -D -m 0644 "${ca_tmp_file}" "${dockerd}/ca.crt"
+  install -D -m 0644 "${ca_tmp_file}" "${hosts_dir}/registry-${reg_name}.crt"
+  rm -f "${ca_tmp_file}"
+  update-ca-certificates >/dev/null 2>&1 || true
+  ca_installed="true"
+fi
+
+if [ "${hosts_changed}" = "true" ]; then
+  umask 077
+  cat > "${hosts_toml}" <<HOSTS
+[host."${reg_scheme}://${reg_hostport}"]
+capabilities = ["pull", "resolve"]
+[host."${reg_scheme}://${reg_hostport}".header]
+Authorization = "Basic ${auth_b64}"
+HOSTS
+fi
+
+if [ "${hosts_changed}" = "true" ] || [ "${ca_installed}" = "true" ]; then
+  systemctl restart containerd >/dev/null 2>&1 || true
+  systemctl restart docker >/dev/null 2>&1 || true
+  systemctl restart cri-docker >/dev/null 2>&1 || true
+fi
+EOF
+  then
+    err "docker exec failed while configuring registry trust/auth on ${name}"
     return 1
   fi
+
+  if [[ "${hosts_changed}" == "true" ]]; then
+    log "Updated /etc/containerd/certs.d/${REG_HOSTPORT}/hosts.toml in node ${name}"
+  else
+    log "hosts.toml already up to date on node ${name}"
+  fi
+
+  if [[ "${REG_SCHEME}" == "https" && -z "${ca_cert_b64}" && ! -r "${REGISTRY_CA_FILE}" ]]; then
+    warn "CA file unavailable while REG_SCHEME=https for node ${name}."
+  fi
+
+  if [[ "${REG_SCHEME}" == "http" ]]; then
+    log "Configured node ${name} to use HTTP registry endpoint ${REG_HOSTPORT}."
+  fi
+
+  return 0
 }
 
 log "Adding registry CA/auth to all nodes for ${REG_HOSTPORT} ..."

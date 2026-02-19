@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# =========================================
-# Utility functions
-# =========================================
-log()  { printf "\033[1;36m[INFO]\033[0m %s\n" "$*"; }
-warn() { printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
-err()  { printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
-die()  { echo -e "[ERROR] $*" >&2; exit 1; }
-req(){ command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
+SCRIPTS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMON_LIB="${SCRIPTS_ROOT}/lib/common.sh"
+if [[ ! -f "${COMMON_LIB}" ]]; then
+  printf "[ERROR] Common library not found: %s\n" "${COMMON_LIB}" >&2
+  return 1 2>/dev/null || exit 1
+fi
+source "${COMMON_LIB}"
+PROJECT_ROOT="$(cd "${SCRIPTS_ROOT}/../.." && pwd)"
 
 # =========================================
 # Parameters (env overridable)
@@ -43,6 +43,11 @@ TST_NAMESPACE="${TST_NAMESPACE:-tst}"
 # Build policy: true = force rebuild and push; false = build only if missing from registry (or push if only local)
 BUILD_CONTAINERS_K8S="${BUILD_CONTAINERS_K8S:-false}"
 
+# Number of concurrent image build/push jobs (1 = sequential)
+DOCKER_BUILD_PARALLELISM="${DOCKER_BUILD_PARALLELISM:-4}"
+DOCKER_BUILD_RETRY_ATTEMPTS="${DOCKER_BUILD_RETRY_ATTEMPTS:-3}"
+DOCKER_BUILD_RETRY_DELAY_SECONDS="${DOCKER_BUILD_RETRY_DELAY_SECONDS:-5}"
+
 # Optional multi-arch build (e.g., "linux/amd64,linux/arm64")
 PLATFORM="${PLATFORM:-}"
 
@@ -52,15 +57,28 @@ HELM_TIMEOUT="${HELM_TIMEOUT:-1h}"
 # Docker helper (dedicated daemon/socket via docker:dind)
 DOCKER_HELPER_IMAGE="${DOCKER_HELPER_IMAGE:-docker:26.1-dind}"
 DOCKER_HELPER_NAME="${DOCKER_HELPER_NAME:-docker-cli-helper}"
-WORKDIR="$(pwd)"
+WORKDIR="${PROJECT_ROOT}"
 
 # Network the helper container will join
 CP_NETWORK="${CP_NETWORK:-bridge}"
+
+normalize_bool_var INTERNAL_REGISTRY
+normalize_bool_var INSECURE_REGISTRY
+normalize_bool_var BUILD_CONTAINERS_K8S
+[[ "${DOCKER_BUILD_PARALLELISM}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_PARALLELISM must be an integer >= 1"
+(( DOCKER_BUILD_PARALLELISM >= 1 )) || die "DOCKER_BUILD_PARALLELISM must be >= 1"
+[[ "${DOCKER_BUILD_RETRY_ATTEMPTS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_ATTEMPTS must be an integer >= 1"
+(( DOCKER_BUILD_RETRY_ATTEMPTS >= 1 )) || die "DOCKER_BUILD_RETRY_ATTEMPTS must be >= 1"
+[[ "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_DELAY_SECONDS must be an integer >= 0"
+require_port_var REGISTRY_PORT
+[[ -n "${REGISTRY_NAME}" ]] || die "REGISTRY_NAME must not be empty."
+[[ -n "${DOCKER_HELPER_NAME}" ]] || die "DOCKER_HELPER_NAME must not be empty."
 
 # Requirements
 req docker
 req helm
 req kubectl
+cd "${PROJECT_ROOT}"
 
 # =========================================
 # Docker helper lifecycle
@@ -70,16 +88,18 @@ start_docker_helper() {
 
   log "Starting Docker helper '${DOCKER_HELPER_NAME}' with ${DOCKER_HELPER_IMAGE}"
   local dind_args=()
-  if [[ "${INSECURE_REGISTRY}" == "true" ]]; then
+  if is_true "${INSECURE_REGISTRY}"; then
     dind_args+=( "--insecure-registry=${REGISTRY_NAME}:${REGISTRY_PORT}" )
   fi
 
-  docker run -d --rm --name "${DOCKER_HELPER_NAME}" \
-    --privileged \
-    --network "${CP_NETWORK}" \
-    -v "${DOCKER_HELPER_NAME}-data:/var/lib/docker" \
-    "${DOCKER_HELPER_IMAGE}" \
-    "${dind_args[@]}" >/dev/null
+  retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker run ${DOCKER_HELPER_NAME}" \
+    docker run -d --rm --name "${DOCKER_HELPER_NAME}" \
+      --privileged \
+      --network "${CP_NETWORK}" \
+      -v "${WORKDIR}:${WORKDIR}:ro" \
+      -v "${DOCKER_HELPER_NAME}-data:/var/lib/docker" \
+      "${DOCKER_HELPER_IMAGE}" \
+      "${dind_args[@]}" >/dev/null
 
   # Wait for helper's Docker daemon
   log "Waiting for helper's Docker daemon..."
@@ -95,13 +115,15 @@ start_docker_helper() {
   install_registry_ca
 
   # Optionally start an internal registry (HTTP by default)
-  if [[ "${INTERNAL_REGISTRY}" == "true" ]]; then
+  if is_true "${INTERNAL_REGISTRY}"; then
     log "Ensuring internal registry (${REGISTRY_NAME}:${REGISTRY_PORT}) is running inside helper..."
     if ! docker exec "${DOCKER_HELPER_NAME}" docker ps --format '{{.Names}}' | grep -q "^${REGISTRY_NAME}\$"; then
       docker exec "${DOCKER_HELPER_NAME}" docker run -d --name "${REGISTRY_NAME}" \
         -p "${REGISTRY_PORT}:5000" \
         --restart=always registry:2 >/dev/null
-      [[ "${INSECURE_REGISTRY}" != "true" ]] && warn "Internal registry started without TLS; set INSECURE_REGISTRY=true for HTTP pushes."
+      if ! is_true "${INSECURE_REGISTRY}"; then
+        warn "Internal registry started without TLS; set INSECURE_REGISTRY=true for HTTP pushes."
+      fi
     fi
   fi
 
@@ -118,12 +140,62 @@ start_docker_helper() {
 }
 
 stop_docker_helper() {
+  if is_true "${DOCKER_HELPER_STOPPED:-false}"; then
+    return 0
+  fi
   log "Stopping Docker helper '${DOCKER_HELPER_NAME}'"
   docker rm -f "${DOCKER_HELPER_NAME}" >/dev/null 2>&1 || true
+  DOCKER_HELPER_STOPPED=true
 }
 
 # Execute Docker CLI inside helper
 d() { docker exec "${DOCKER_HELPER_NAME}" docker "$@"; }
+
+# Normalized boolean helpers for env-driven Helm values.
+bool_env_value() {
+  local var_name="$1"
+  local default_value="$2"
+  local value="${!var_name:-$default_value}"
+
+  case "${value,,}" in
+    true|false) printf '%s' "${value,,}" ;;
+    *) die "Invalid boolean for ${var_name}: '${value}' (expected true|false)." ;;
+  esac
+}
+
+helm_bool() {
+  local var_name="$1"
+  local default_value="$2"
+  if is_true "$(bool_env_value "$var_name" "$default_value")"; then
+    printf 'true'
+  else
+    printf 'false'
+  fi
+}
+
+helm_bool_all() {
+  local var_a="$1"
+  local def_a="$2"
+  local var_b="$3"
+  local def_b="$4"
+  if is_true "$(bool_env_value "$var_a" "$def_a")" && is_true "$(bool_env_value "$var_b" "$def_b")"; then
+    printf 'true'
+  else
+    printf 'false'
+  fi
+}
+
+bool_text() {
+  local var_name="$1"
+  local default_value="$2"
+  local on_true="$3"
+  local on_false="$4"
+  if is_true "$(bool_env_value "$var_name" "$default_value")"; then
+    printf '%s' "$on_true"
+  else
+    printf '%s' "$on_false"
+  fi
+}
 
 # =========================================
 # Certificates install
@@ -154,71 +226,46 @@ tag_for(){ echo "${REGISTRY_NAME}:${REGISTRY_PORT}/$1:${IMAGE_VERSION}"; }
 remote_image_exists(){ d manifest inspect "$1" >/dev/null 2>&1; }
 local_image_exists(){  d image inspect    "$1" >/dev/null 2>&1; }
 
-# Import a specific tag from the host into the helper, only if missing in helper.
-import_from_host_if_needed() {
-  local tag="$1"
-
-  if d image inspect "$tag" >/dev/null 2>&1; then
-    return 0
-  fi
-  if docker image inspect "$tag" >/dev/null 2>&1; then
-    log "Importing image from host into helper: $tag"
-    docker save "$tag" | docker exec -i "${DOCKER_HELPER_NAME}" docker load
-    return 0
-  fi
-  return 1
-}
-
-# ---------- New flow: build on host → load into helper → push ----------
-load_into_helper() {
-  local tag="$1"
-  log "Loading image into helper: $tag"
-  docker save "$tag" | docker exec -i "${DOCKER_HELPER_NAME}" docker load
-}
-
-host_build(){
-  local tag="$1" ctx="$2" df="$3"; shift 3
-  local -a buildargs=( "$@" )
-
-  local abs_ctx abs_df
-  abs_ctx="$(cd "$ctx" && pwd)"
-  abs_df="$(cd "$(dirname "$df")" && pwd)/$(basename "$df")"
-
-  log "Building on host -> $tag (context=$abs_ctx, dockerfile=$abs_df)"
-  if [[ -n "${PLATFORM}" ]]; then
-    if [[ "$PLATFORM" == *","* ]]; then
-      warn "Multi-arch requested ($PLATFORM): host '--load' is not supported for multi-arch. Falling back to helper buildx with direct push."
-      # Build multi-arch directly inside the helper and push
-      d buildx create --use --name honeypotbx >/dev/null 2>&1 || true
-      d buildx build --platform "$PLATFORM" -t "$tag" "$abs_ctx" -f "$abs_df" "${buildargs[@]}" --push
-      return 2  # signal: already pushed from helper
-    else
-      docker buildx create --use --name hostbx >/dev/null 2>&1 || true
-      docker buildx build --platform "$PLATFORM" -t "$tag" "$abs_ctx" -f "$abs_df" "${buildargs[@]}" --load
-    fi
+helper_abs_path() {
+  local maybe_rel="$1"
+  if [[ "${maybe_rel}" = /* ]]; then
+    printf '%s' "${maybe_rel}"
   else
-    docker build -t "$tag" "$abs_ctx" -f "$abs_df" "${buildargs[@]}"
+    printf '%s/%s' "${PROJECT_ROOT}" "${maybe_rel#./}"
   fi
-  return 0
 }
 
-host_build_and_push(){
-  local tag="$1" ctx="$2" df="$3"; shift 3
-  local -a buildargs=( "$@" )
-
-  if ! host_build "$tag" "$ctx" "$df" "${buildargs[@]}"; then
-    # host_build returned non-zero (unexpected)
-    return 1
-  fi
-
-  # If host_build returned code 2 (multi-arch fallback), it already pushed
-  local rc=$?
-  if [[ $rc -eq 2 ]]; then
+ensure_helper_builder() {
+  if [[ "${HELPER_BUILDER_READY:-false}" == "true" ]]; then
     return 0
   fi
+  d buildx inspect honeypotbx >/dev/null 2>&1 || d buildx create --name honeypotbx >/dev/null 2>&1
+  d buildx use honeypotbx >/dev/null 2>&1 || true
+  HELPER_BUILDER_READY=true
+}
 
-  load_into_helper "$tag"
-  d push "$tag"
+helper_build_and_push(){
+  local tag="$1" ctx="$2" df="$3"; shift 3
+  local -a buildargs=( "$@" )
+  local abs_ctx abs_df
+
+  abs_ctx="$(helper_abs_path "$ctx")"
+  abs_df="$(helper_abs_path "$df")"
+
+  [[ -d "${abs_ctx}" ]] || die "Build context does not exist: ${abs_ctx}"
+  [[ -f "${abs_df}" ]] || die "Dockerfile does not exist: ${abs_df}"
+
+  log "Building in helper -> ${tag} (context=${abs_ctx}, dockerfile=${abs_df})"
+  if [[ -n "${PLATFORM}" ]]; then
+    ensure_helper_builder
+    retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "buildx+push ${tag}" \
+      d buildx build --platform "${PLATFORM}" -t "${tag}" -f "${abs_df}" "${buildargs[@]}" "${abs_ctx}" --push
+  else
+    retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker build ${tag}" \
+      d build -t "${tag}" -f "${abs_df}" "${buildargs[@]}" "${abs_ctx}"
+    retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker push ${tag}" \
+      d push "${tag}"
+  fi
 }
 
 ensure_image(){
@@ -227,8 +274,8 @@ ensure_image(){
   local tag; tag="$(tag_for "$name")"
 
   # Force rebuild/push
-  if [[ "$BUILD_CONTAINERS_K8S" == "true" ]]; then
-    host_build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"; return
+  if is_true "$BUILD_CONTAINERS_K8S"; then
+    helper_build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"; return
   fi
 
   # Already in remote registry?
@@ -239,27 +286,52 @@ ensure_image(){
   # Present in helper's daemon?
   if local_image_exists "$tag"; then
     log "Pushing only (found locally in helper, missing remotely): $tag"
-    d push "$tag"; return
+    retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker push ${tag}" \
+      d push "$tag"
+    return
   fi
 
-  # Try to import from host now (just-in-time)
-  if import_from_host_if_needed "$tag"; then
-    log "Pushing only (imported from host): $tag"
-    d push "$tag"; return
-  fi
-
-  # Otherwise, build on host → load into helper → push
-  host_build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"
+  # Otherwise, build and push directly from helper daemon.
+  helper_build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"
 }
 
 # =========================================
 # Build/push images
 # =========================================
 build_all_images(){
-  ensure_image accounting . src/accounting/Dockerfile
-  ensure_image ad . src/ad/Dockerfile
+  local -a pids=()
+  local -a labels=()
+  local -a failed=()
+  local i
 
-  ensure_image attacker src/attacker src/attacker/Dockerfile \
+  queue_image_build() {
+    local label="$1"
+    shift
+
+    ensure_image "$@" &
+    pids+=("$!")
+    labels+=("${label}")
+
+    if (( ${#pids[@]} >= DOCKER_BUILD_PARALLELISM )); then
+      local pid="${pids[0]}"
+      local done_label="${labels[0]}"
+      pids=("${pids[@]:1}")
+      labels=("${labels[@]:1}")
+      if ! wait "${pid}"; then
+        failed+=("${done_label}")
+      fi
+    fi
+  }
+
+  if [[ -n "${PLATFORM}" ]]; then
+    # Avoid races in parallel jobs when creating/selecting the buildx builder.
+    ensure_helper_builder
+  fi
+
+  queue_image_build accounting accounting . src/accounting/Dockerfile
+  queue_image_build ad ad . src/ad/Dockerfile
+
+  queue_image_build attacker attacker src/attacker src/attacker/Dockerfile \
     --build-arg GROUP="cluster" \
     --build-arg LOG_NS="${MEM_NAMESPACE}" \
     --build-arg ATTACKED_NS="${DMZ_NAMESPACE}" \
@@ -275,34 +347,44 @@ build_all_images(){
     --build-arg KC0107="${KC0107:-}" \
     --build-arg KC0108="${KC0108:-}"
 
-  ensure_image auth src/auth src/auth/Dockerfile
-  ensure_image cart . src/cart/src/Dockerfile
-  ensure_image checkout . src/checkout/Dockerfile
-  ensure_image controller src/controller src/controller/Dockerfile
-  ensure_image currency . src/currency/Dockerfile
-  ensure_image email . src/email/Dockerfile
-  ensure_image flagd . src/flagd/Dockerfile
-  ensure_image flagd-ui . src/flagd-ui/Dockerfile
-  ensure_image fraud-detection . src/fraud-detection/Dockerfile
-  ensure_image frontend . src/frontend/Dockerfile
-  ensure_image frontend-proxy . src/frontend-proxy/Dockerfile
-  ensure_image image-provider . src/image-provider/Dockerfile
-  ensure_image kafka . src/kafka/Dockerfile
-  ensure_image payment . src/payment/Dockerfile
+  queue_image_build auth auth src/auth src/auth/Dockerfile
+  queue_image_build cart cart . src/cart/src/Dockerfile
+  queue_image_build checkout checkout . src/checkout/Dockerfile
+  queue_image_build controller controller src/controller src/controller/Dockerfile
+  queue_image_build currency currency . src/currency/Dockerfile
+  queue_image_build email email . src/email/Dockerfile
+  queue_image_build flagd flagd . src/flagd/Dockerfile
+  queue_image_build flagd-ui flagd-ui . src/flagd-ui/Dockerfile
+  queue_image_build fraud-detection fraud-detection . src/fraud-detection/Dockerfile
+  queue_image_build frontend frontend . src/frontend/Dockerfile
+  queue_image_build frontend-proxy frontend-proxy . src/frontend-proxy/Dockerfile
+  queue_image_build image-provider image-provider . src/image-provider/Dockerfile
+  queue_image_build kafka kafka . src/kafka/Dockerfile
+  queue_image_build payment payment . src/payment/Dockerfile
 
-  ensure_image postgres src/postgres src/postgres/Dockerfile --build-arg DB="curr"
-  ensure_image postgres-auth src/postgres src/postgres/Dockerfile --build-arg DB="auth"
-  ensure_image postgres-payment src/postgres src/postgres/Dockerfile --build-arg DB="pay"
+  queue_image_build postgres postgres src/postgres src/postgres/Dockerfile --build-arg DB="curr"
+  queue_image_build postgres-auth postgres-auth src/postgres src/postgres/Dockerfile --build-arg DB="auth"
+  queue_image_build postgres-payment postgres-payment src/postgres src/postgres/Dockerfile --build-arg DB="pay"
 
-  ensure_image product-catalog . src/product-catalog/Dockerfile
-  ensure_image quote . src/quote/Dockerfile
-  ensure_image recommendation . src/recommendation/Dockerfile
-  ensure_image shipping . src/shipping/Dockerfile
-  ensure_image sidecar-enc src/sidecar-enc src/sidecar-enc/Dockerfile
-  ensure_image sidecar-mal src/sidecar-mal src/sidecar-mal/Dockerfile
-  ensure_image smtp src/smtp src/smtp/Dockerfile
-  ensure_image valkey-cart . src/valkey-cart/Dockerfile
-  ensure_image traffic-translator src/traffic-translator src/traffic-translator/Dockerfile
+  queue_image_build product-catalog product-catalog . src/product-catalog/Dockerfile
+  queue_image_build quote quote . src/quote/Dockerfile
+  queue_image_build recommendation recommendation . src/recommendation/Dockerfile
+  queue_image_build shipping shipping . src/shipping/Dockerfile
+  queue_image_build sidecar-enc sidecar-enc src/sidecar-enc src/sidecar-enc/Dockerfile
+  queue_image_build sidecar-mal sidecar-mal src/sidecar-mal src/sidecar-mal/Dockerfile
+  queue_image_build smtp smtp src/smtp src/smtp/Dockerfile
+  queue_image_build valkey-cart valkey-cart . src/valkey-cart/Dockerfile
+  queue_image_build traffic-translator traffic-translator src/traffic-translator src/traffic-translator/Dockerfile
+
+  for i in "${!pids[@]}"; do
+    if ! wait "${pids[$i]}"; then
+      failed+=("${labels[$i]}")
+    fi
+  done
+
+  if (( ${#failed[@]} > 0 )); then
+    die "Image build/push failed for: ${failed[*]}"
+  fi
 }
 
 # =========================================
@@ -330,70 +412,122 @@ deploy_helm(){
   fi
 
   # honeypot-additions
+  local additions_overrides
+  additions_overrides="$(mktemp)"
+  trap_add "rm -f '${additions_overrides}'" EXIT
+  cat > "${additions_overrides}" <<EOF
+default:
+  image:
+    repository: "${REGISTRY_NAME}:${REGISTRY_PORT}"
+    version: "${IMAGE_VERSION}"
+networkPolicies:
+  enabled: true
+  rules:
+    dmz:
+      name: "${DMZ_NAMESPACE}"
+      ingress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${TST_NAMESPACE}, kube-system"
+      egress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${TST_NAMESPACE}, kube-system"
+    pay:
+      name: "${PAY_NAMESPACE}"
+      ingress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${DAT_NAMESPACE}, kube-system"
+      egress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${DAT_NAMESPACE}, kube-system"
+    app:
+      name: "${APP_NAMESPACE}"
+      ingress: "${DAT_NAMESPACE}, ${MEM_NAMESPACE}, ${DMZ_NAMESPACE}, ${PAY_NAMESPACE}, kube-system"
+      egress: "${DAT_NAMESPACE}, ${MEM_NAMESPACE}, ${DMZ_NAMESPACE}, ${PAY_NAMESPACE}, kube-system"
+    dat:
+      name: "${DAT_NAMESPACE}"
+      ingress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${PAY_NAMESPACE}, kube-system"
+      egress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${PAY_NAMESPACE}, kube-system"
+    mem:
+      name: "${MEM_NAMESPACE}"
+      ingress: "${DAT_NAMESPACE}, ${APP_NAMESPACE}, ${DMZ_NAMESPACE}, ${PAY_NAMESPACE}, ${TST_NAMESPACE}, kube-system"
+      egress: "${DAT_NAMESPACE}, ${APP_NAMESPACE}, ${DMZ_NAMESPACE}, ${PAY_NAMESPACE}, ${TST_NAMESPACE}, kube-system"
+    tst:
+      name: "${TST_NAMESPACE}"
+      ingress: "${MEM_NAMESPACE}, ${DMZ_NAMESPACE}, kube-system"
+      egress: "${MEM_NAMESPACE}, ${DMZ_NAMESPACE}, kube-system"
+postgres:
+  enabled: true
+  namespace: "${DAT_NAMESPACE}"
+config:
+  enabled: true
+  objects:
+    flagd-credentials-ui:
+      namespace: "${MEM_NAMESPACE}"
+      type: "$(bool_text FLAGD_CONFIGMAP true configmap secret)"
+    proto:
+      namespace: "${APP_NAMESPACE}"
+    product-catalog-products:
+      namespace: "${APP_NAMESPACE}"
+    flagd-config:
+      namespace: "${MEM_NAMESPACE}"
+    dbcurrency-creds:
+      namespace: "${APP_NAMESPACE}"
+    dbcurrency:
+      namespace: "${DAT_NAMESPACE}"
+    dbpayment:
+      namespace: "${DAT_NAMESPACE}"
+    dbauth:
+      namespace: "${DAT_NAMESPACE}"
+    smb-creds:
+      namespace: "${MEM_NAMESPACE}"
+RBAC:
+  enabled: true
+namespaces:
+  enabled: true
+  list: "${APP_NAMESPACE}, ${DMZ_NAMESPACE}, ${DAT_NAMESPACE}, ${PAY_NAMESPACE}, ${MEM_NAMESPACE}, ${TST_NAMESPACE}"
+pool:
+  enabled: true
+  ips: "${FRONTEND_PROXY_IP:-}-${GENERIC_SVC_ADDR:-}"
+volumes:
+  enabled: $(helm_bool SAMBA_ENABLE true)
+registryAuth:
+  enabled: true
+  username: "${REGISTRY_USER:-}"
+  password: "${REGISTRY_PASS:-}"
+vulnerabilities:
+  dnsGrant: $(helm_bool DNS_GRANT true)
+  deployGrant: $(helm_bool DEPLOY_GRANT true)
+  anonymousGrant: $(helm_bool_all ANONYMOUS_AUTH false ANONYMOUS_GRANT false)
+  currencyGrant: $(helm_bool CURRENCY_GRANT true)
+EOF
+
   helm upgrade --install honeypot-additions helm-charts/additions \
     --wait --timeout "${HELM_TIMEOUT}" \
     -f helm-charts/additions/values.yaml \
-    --set default.image.repository="${REGISTRY_NAME}:${REGISTRY_PORT}" \
-    --set default.image.version="${IMAGE_VERSION}" \
-    --set networkPolicies.enabled=true \
-    --set postgres.enabled=true \
-    --set config.enabled=true \
-    --set RBAC.enabled=true \
-    --set namespaces.enabled=true \
-    --set pool.enabled=true \
-    --set volumes.enabled=$([[ "${SAMBA_ENABLE:-true}" == "true" ]] && echo true || echo false) \
-    --set registryAuth.enabled=true \
-    --set "networkPolicies.rules.dmz.name=${DMZ_NAMESPACE}" \
-    --set "networkPolicies.rules.dmz.ingress=${APP_NAMESPACE}\, ${MEM_NAMESPACE}\, ${TST_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.dmz.egress=${APP_NAMESPACE}\, ${MEM_NAMESPACE}\, ${TST_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.pay.name=${PAY_NAMESPACE}" \
-    --set "networkPolicies.rules.pay.ingress=${APP_NAMESPACE}\, ${MEM_NAMESPACE}\, ${DAT_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.pay.egress=${APP_NAMESPACE}\, ${MEM_NAMESPACE}\, ${DAT_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.app.name=${APP_NAMESPACE}" \
-    --set "networkPolicies.rules.app.ingress=${DAT_NAMESPACE}\, ${MEM_NAMESPACE}\, ${DMZ_NAMESPACE}\, ${PAY_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.app.egress=${DAT_NAMESPACE}\, ${MEM_NAMESPACE}\, ${DMZ_NAMESPACE}\, ${PAY_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.dat.name=${DAT_NAMESPACE}" \
-    --set "networkPolicies.rules.dat.ingress=${APP_NAMESPACE}\, ${MEM_NAMESPACE}\, ${PAY_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.dat.egress=${APP_NAMESPACE}\, ${MEM_NAMESPACE}\, ${PAY_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.mem.name=${MEM_NAMESPACE}" \
-    --set "networkPolicies.rules.mem.ingress=${DAT_NAMESPACE}\, ${APP_NAMESPACE}\, ${DMZ_NAMESPACE}\, ${PAY_NAMESPACE}\, ${TST_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.mem.egress=${DAT_NAMESPACE}\, ${APP_NAMESPACE}\, ${DMZ_NAMESPACE}\, ${PAY_NAMESPACE}\, ${TST_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.tst.name=${TST_NAMESPACE}" \
-    --set "networkPolicies.rules.tst.ingress=${MEM_NAMESPACE}\, ${DMZ_NAMESPACE}\, kube-system" \
-    --set "networkPolicies.rules.tst.egress=${MEM_NAMESPACE}\, ${DMZ_NAMESPACE}\, kube-system" \
-    --set "postgres.namespace=${DAT_NAMESPACE}" \
-    --set "config.objects.flagd-credentials-ui.namespace=${MEM_NAMESPACE}" \
-    --set "config.objects.proto.namespace=${APP_NAMESPACE}" \
-    --set "config.objects.product-catalog-products.namespace=${APP_NAMESPACE}" \
-    --set "config.objects.flagd-config.namespace=${MEM_NAMESPACE}" \
-    --set "config.objects.dbcurrency-creds.namespace=${APP_NAMESPACE}" \
-    --set "config.objects.dbcurrency.namespace=${DAT_NAMESPACE}" \
-    --set "config.objects.dbpayment.namespace=${DAT_NAMESPACE}" \
-    --set "config.objects.dbauth.namespace=${DAT_NAMESPACE}" \
-    --set "config.objects.smb-creds.namespace=${MEM_NAMESPACE}" \
-    --set "namespaces.list=${APP_NAMESPACE}\, ${DMZ_NAMESPACE}\, ${DAT_NAMESPACE}\, ${PAY_NAMESPACE}\, ${MEM_NAMESPACE}\, ${TST_NAMESPACE}" \
-    --set "registryAuth.username=${REGISTRY_USER:-}" \
-    --set "registryAuth.password=${REGISTRY_PASS:-}" \
-    --set "pool.ips=${FRONTEND_PROXY_IP:-}-${GENERIC_SVC_ADDR:-}" \
-    --set vulnerabilities.dnsGrant=$([[ "${DNS_GRANT:-true}" == "true" ]] && echo true || echo false) \
-    --set vulnerabilities.deployGrant=$([[ "${DEPLOY_GRANT:-true}" == "true" ]] && echo true || echo false) \
-    --set vulnerabilities.anonymousGrant=$([[ "${ANONYMOUS_AUTH:-}" == "true" && "${ANONYMOUS_GRANT:-}" == "true" ]] && echo true || echo false) \
-    --set vulnerabilities.currencyGrant=$([[ "${CURRENCY_GRANT:-true}" == "true" ]] && echo true || echo false) \
-    --set config.objects.flagd-credentials-ui.type=$([[ "${FLAGD_CONFIGMAP:-true}" == "true" ]] && echo configmap || echo secret)
+    -f "${additions_overrides}"
 
   # honeypot-telemetry
-  local TELEMETRY_VALUES="helm-charts/telemetry/values-$( [[ \"${LOG_OPEN:-true}\" == \"true\" ]] && echo noauth || echo auth ).yaml"
+  local TELEMETRY_VALUES telemetry_overrides
+  TELEMETRY_VALUES="helm-charts/telemetry/values-$(bool_text LOG_OPEN true noauth auth).yaml"
+  telemetry_overrides="$(mktemp)"
+  trap_add "rm -f '${telemetry_overrides}'" EXIT
+  cat > "${telemetry_overrides}" <<EOF
+opentelemetry-collector:
+  enabled: true
+  config:
+    receivers:
+      "httpcheck/frontend-proxy":
+        targets:
+          - endpoint: "http://frontend-proxy.${DMZ_NAMESPACE}:8080"
+      redis:
+        endpoint: "valkey-cart.${DAT_NAMESPACE}:6379"
+jaeger:
+  enabled: true
+prometheus:
+  enabled: true
+grafana:
+  enabled: true
+opensearch:
+  enabled: true
+EOF
+
   helm upgrade --install honeypot-telemetry helm-charts/telemetry \
     --namespace "${MEM_NAMESPACE}" --create-namespace \
     --wait --timeout "${HELM_TIMEOUT}" \
-    -f "$TELEMETRY_VALUES" \
-    --set opentelemetry-collector.enabled=true \
-    --set jaeger.enabled=true \
-    --set prometheus.enabled=true \
-    --set grafana.enabled=true \
-    --set opensearch.enabled=true \
-    --set "opentelemetry-collector.config.receivers.httpcheck/frontend-proxy.targets[0].endpoint=http://frontend-proxy.${DMZ_NAMESPACE}:8080" \
-    --set "opentelemetry-collector.config.receivers.redis.endpoint=valkey-cart.${DAT_NAMESPACE}:6379"
+    -f "${TELEMETRY_VALUES}" \
+    -f "${telemetry_overrides}"
 
   # honeypot-astronomy-shop
   helm upgrade --install honeypot-astronomy-shop helm-charts/astronomy-shop \
@@ -503,26 +637,26 @@ deploy_helm(){
     --set "components.traffic-controller.imageOverride.repository=${REGISTRY_NAME}:${REGISTRY_PORT}/controller" \
     --set "components.traffic-controller.sidecarContainers[0].imageOverride.repository=${REGISTRY_NAME}:${REGISTRY_PORT}/traffic-translator" \
     --set "components.valkey-cart.namespace=${DAT_NAMESPACE}" \
-    --set "components.traffic-controller.env[4].value=$( [[ \"${LOG_TOKEN:-true}\" == \"true\" ]] && echo synthetic-log.sh || echo null.sh )" \
-    --set "components.image-updater.enabled=$( [[ \"${AUTO_DEPLOY:-true}\" == \"true\" ]] && echo true || echo false )" \
-    --set "components.smtp.hostNetwork=$( [[ \"${HOST_NETWORK:-true}\" == \"true\" ]] && echo true || echo false )" \
-    --set "components.smtp.env[0].value=$( [[ \"${RCE_VULN:-true}\" == \"true\" ]] && echo true || echo false )" \
-    --set "components.smtp.additionalVolumes[0].hostPath.path=$( [[ \"${SOCKET_SHARED:-true}\" == \"true\" ]] && echo $CRICTL_RUNTIME_PATH || echo /tmp/disabled-containerd.sock )" \
-    --set "components.smtp.additionalVolumes[0].hostPath.type=$( [[ \"${SOCKET_SHARED:-true}\" == \"true\" ]] && echo Socket || echo FileOrCreate )" \
+    --set "components.traffic-controller.env[4].value=$(bool_text LOG_TOKEN true synthetic-log.sh null.sh)" \
+    --set "components.image-updater.enabled=$(helm_bool AUTO_DEPLOY true)" \
+    --set "components.smtp.hostNetwork=$(helm_bool HOST_NETWORK true)" \
+    --set "components.smtp.env[0].value=$(helm_bool RCE_VULN true)" \
+    --set "components.smtp.additionalVolumes[0].hostPath.path=$(bool_text SOCKET_SHARED true "$CRICTL_RUNTIME_PATH" /tmp/disabled-containerd.sock)" \
+    --set "components.smtp.additionalVolumes[0].hostPath.type=$(bool_text SOCKET_SHARED true Socket FileOrCreate)" \
     --set "components.smtp.volumeMounts[0].mountPath=/host/run/containerd/containerd.sock" \
-    --set "components.currency.env[9].value=$( [[ \"${FLAGD_FEATURES:-true}\" == \"true\" ]] && echo true || echo false )" \
-    --set "components.checkout.sidecarContainers[0].env[7].value=$( [[ \"${FLAGD_FEATURES:-true}\" == \"true\" ]] && echo true || echo false )" \
-    --set "components.checkout.sidecarContainers[1].env[7].value=$( [[ \"${FLAGD_FEATURES:-true}\" == \"true\" ]] && echo true || echo false )" \
-    --set "components.frontend.sidecarContainers[0].env[7].value=$( [[ \"${FLAGD_FEATURES:-true}\" == \"true\" ]] && echo true || echo false )" \
-    --set "components.payment.sidecarContainers[0].env[7].value=$( [[ \"${FLAGD_FEATURES:-true}\" == \"true\" ]] && echo true || echo false )" \
-    --set "components.flagd.sidecarContainers[0].envSwitchFrom[0].valueFrom=$( [[ \"${FLAGD_CONFIGMAP:-true}\" == \"true\" ]] && echo configmap || echo secret )" \
-    --set "components.flagd.sidecarContainers[0].envSwitchFrom[1].valueFrom=$( [[ \"${FLAGD_CONFIGMAP:-true}\" == \"true\" ]] && echo configmap || echo secret )"
+    --set "components.currency.env[9].value=$(helm_bool FLAGD_FEATURES true)" \
+    --set "components.checkout.sidecarContainers[0].env[7].value=$(helm_bool FLAGD_FEATURES true)" \
+    --set "components.checkout.sidecarContainers[1].env[7].value=$(helm_bool FLAGD_FEATURES true)" \
+    --set "components.frontend.sidecarContainers[0].env[7].value=$(helm_bool FLAGD_FEATURES true)" \
+    --set "components.payment.sidecarContainers[0].env[7].value=$(helm_bool FLAGD_FEATURES true)" \
+    --set "components.flagd.sidecarContainers[0].envSwitchFrom[0].valueFrom=$(bool_text FLAGD_CONFIGMAP true configmap secret)" \
+    --set "components.flagd.sidecarContainers[0].envSwitchFrom[1].valueFrom=$(bool_text FLAGD_CONFIGMAP true configmap secret)"
 }
 
 # =========================================
 # Main
 # =========================================
-trap 'stop_docker_helper' EXIT
+trap_add stop_docker_helper EXIT
 
 start_docker_helper
 

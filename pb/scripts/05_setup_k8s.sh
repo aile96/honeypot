@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ==========================
-# Utility functions
-# ==========================
-log()  { printf "\033[1;36m[INFO]\033[0m %s\n" "$*"; }
-warn() { printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
-err()  { printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
-die()  { echo -e "[ERROR] $*" >&2; exit 1; }
+SCRIPTS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMON_LIB="${SCRIPTS_ROOT}/lib/common.sh"
+if [[ ! -f "${COMMON_LIB}" ]]; then
+  printf "[ERROR] Common library not found: %s\n" "${COMMON_LIB}" >&2
+  return 1 2>/dev/null || exit 1
+fi
+source "${COMMON_LIB}"
 
 require_bin() {
   command -v "$1" >/dev/null 2>&1 || die "Required binary '$1' not found in PATH"
@@ -21,12 +21,25 @@ SA_NAME="controller-admin"
 CRB_NAME="controller-admin"
 OUT_DIR="pb/docker/controller/kube"
 OUT_FILE="${OUT_DIR}/kubeconfig"
+CALDERA_CONTROLLER="${CALDERA_CONTROLLER:-controller}"
+ATTACKER="${ATTACKER:-attacker}"
+MISSING_POLICY="${MISSING_POLICY:-false}"
+RECURSIVE_DNS="${RECURSIVE_DNS:-true}"
+: "${KUBE_CONTEXT:=$(kubectl config current-context 2>/dev/null || true)}"
+
+[[ -n "${KUBE_CONTEXT}" ]] || die "Unable to resolve kubectl context."
+normalize_bool_var MISSING_POLICY
+normalize_bool_var RECURSIVE_DNS
 
 # ==========================
 # Helpers
 # ==========================
 kubectl_get() {
-  kubectl "$@"
+  if [[ -n "${KUBE_CONTEXT:-}" ]]; then
+    kubectl --context "$KUBE_CONTEXT" "$@"
+  else
+    kubectl "$@"
+  fi
 }
 
 node_internal_ip() {
@@ -36,34 +49,12 @@ node_internal_ip() {
 }
 
 find_container_by_ip() {
-  local ip="$1"
-  local cid name ips nets
-  while IFS= read -r cid; do
-    name="$(docker inspect -f '{{.Name}}' "$cid" 2>/dev/null | sed 's#^/##' || true)"
-    ips="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$v.IPAddress}} {{end}}' "$cid" 2>/dev/null | xargs || true)"
-    nets="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$cid" 2>/dev/null | xargs || true)"
-    for tip in $ips; do
-      if [[ "$tip" == "$ip" ]]; then
-        printf '%s;%s' "$name" "$nets"
-        return 0
-      fi
-    done
-  done < <(docker ps -q)
-  return 1
-}
-
-ctx_exists() {
-  kubectl config get-contexts -o name | grep -qx "$1"
-}
-
-jsonpath_val() {
-  # $1 = context name, $2 = field (cluster|user|namespace)
-  kubectl config view -o jsonpath="{.contexts[?(@.name==\"$1\")].context.$2}"
+  find_docker_container_by_ip "$1"
 }
 
 # Ensure required tools for core operations
 require_bin kubectl
-command -v docker >/dev/null 2>&1 || warn "Docker not found — some Docker-backed cluster detection may fail"
+require_bin docker
 
 # --------------------------
 # 1) Ensure ServiceAccount and ClusterRoleBinding
@@ -81,10 +72,11 @@ kubectl_get get clusterrolebinding "${CRB_NAME}" >/dev/null 2>&1 || \
 # --------------------------
 # 2) Extract cluster info and CA data
 # --------------------------
-CURRENT_CONTEXT="$(kubectl config current-context || true)"
-CLUSTER_NAME="$(kubectl config view -o jsonpath='{.contexts[?(@.name=="'${CURRENT_CONTEXT}'")].context.cluster}')"
-CA_DATA="$(kubectl config view --raw -o jsonpath='{.clusters[?(@.name=="'"${CLUSTER_NAME}"'")].cluster.certificate-authority-data}')"
-CURRENT_SERVER="$(kubectl config view --raw -o jsonpath='{.clusters[?(@.name=="'"${CLUSTER_NAME}"'")].cluster.server}')"
+CURRENT_CONTEXT="${KUBE_CONTEXT}"
+[[ -n "$CURRENT_CONTEXT" ]] || die "Unable to resolve current kubectl context."
+CLUSTER_NAME="$(kubectl config view --raw --minify --context "${CURRENT_CONTEXT}" -o jsonpath='{.contexts[0].context.cluster}')"
+CA_DATA="$(kubectl config view --raw --minify --context "${CURRENT_CONTEXT}" -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')"
+CURRENT_SERVER="$(kubectl config view --raw --minify --context "${CURRENT_CONTEXT}" -o jsonpath='{.clusters[0].cluster.server}')"
 
 [[ -n "$CLUSTER_NAME" ]] || die "Unable to resolve cluster name from current context."
 [[ -n "$CURRENT_SERVER" ]] || die "Unable to resolve current cluster server endpoint."
@@ -164,13 +156,20 @@ fi
 # 5) Write minimal kubeconfig file
 # --------------------------
 mkdir -p "${OUT_DIR}"
+TLS_CONFIG_LINE="insecure-skip-tls-verify: true"
+if [[ -n "$CA_DATA" ]]; then
+  TLS_CONFIG_LINE="certificate-authority-data: ${CA_DATA}"
+else
+  warn "Cluster CA data not found. Falling back to insecure-skip-tls-verify."
+fi
+
 cat > "${OUT_FILE}" <<EOF
 apiVersion: v1
 kind: Config
 clusters:
 - cluster:
     server: ${SERVER_URL}
-    insecure-skip-tls-verify: true
+    ${TLS_CONFIG_LINE}
   name: ${CLUSTER_NAME}
 contexts:
 - context:
@@ -184,18 +183,22 @@ users:
     token: ${TOKEN}
 EOF
 
-docker cp ./pb/docker/controller/kube ${CALDERA_CONTROLLER}:/kube
+if docker ps -a --format '{{.Names}}' | grep -qx "${CALDERA_CONTROLLER}"; then
+  docker cp ./pb/docker/controller/kube "${CALDERA_CONTROLLER}:/kube" || die "Failed to copy kubeconfig into '${CALDERA_CONTROLLER}'."
+else
+  warn "Container '${CALDERA_CONTROLLER}' not found. Skipping kubeconfig copy."
+fi
 log "Kubeconfig ready: ${OUT_FILE}"
 
 # --------------------------
 # 6) Setting Policies in namespaces to avoid hostpath, privileged and privilege escalation
 # --------------------------
-if [[ "${MISSING_POLICY,,:-}" != "true" ]]; then
+if ! is_true "${MISSING_POLICY}"; then
   for ns_var in APP_NAMESPACE DAT_NAMESPACE DMZ_NAMESPACE MEM_NAMESPACE PAY_NAMESPACE TST_NAMESPACE; do
     ns="${!ns_var:-}"
     if [[ -n "$ns" ]]; then
       log "Labeling namespace: $ns"
-      kubectl label namespace "$ns" \
+      kubectl_get label namespace "$ns" \
         pod-security.kubernetes.io/enforce=restricted \
         pod-security.kubernetes.io/warn=restricted \
         pod-security.kubernetes.io/audit=restricted \
@@ -211,11 +214,11 @@ fi
 # --------------------------
 # 7) Setting CoreDNS to non-recursive mode OR inserting attacker zone
 # --------------------------
-if [[ "${RECURSIVE_DNS:-true}" != "true" ]]; then
+if ! is_true "${RECURSIVE_DNS}"; then
   log "Checking CoreDNS ConfigMap for 'forward'..."
-  if kubectl -n kube-system get configmap coredns -o yaml | grep -q '^[[:space:]]*forward[[:space:]]'; then
+  if kubectl_get -n kube-system get configmap coredns -o yaml | grep -q '^[[:space:]]*forward[[:space:]]'; then
     log "Disabling recursion: removing 'forward' (handles block and single-line forms)..."
-    kubectl -n kube-system get configmap coredns -o yaml \
+    kubectl_get -n kube-system get configmap coredns -o yaml \
       | awk '
           # Start skipping when we hit: forward ... {
           /^[[:space:]]*forward[[:space:]].*{/ { blk=1; depth=1; next }
@@ -231,9 +234,9 @@ if [[ "${RECURSIVE_DNS:-true}" != "true" ]]; then
           # Otherwise print the line
           { print }
         ' \
-      | kubectl -n kube-system apply -f -
+      | kubectl_get -n kube-system apply -f -
     log "Restarting the CoreDNS deployment..."
-    kubectl -n kube-system rollout restart deployment coredns
+    kubectl_get -n kube-system rollout restart deployment coredns
     log "Done! CoreDNS is now non-recursive."
   else
     log "No 'forward' directive found — nothing to change."
@@ -242,11 +245,16 @@ else
   ZONE="${ATTACKER}"
   CONTAINER_NAME="${ATTACKER}"
 
+  if ! docker ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
+    warn "Container '${CONTAINER_NAME}' not found. Skipping attacker DNS zone insertion."
+    return_or_exit 0
+  fi
+
   # get docker IP (first network IP)
   DOCKER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null || true)
   if [[ -z "${DOCKER_IP}" ]]; then
     err "Could not determine IP for docker container '${CONTAINER_NAME}'. Aborting."
-    exit 1
+    return_or_exit 1
   fi
 
   # Build the zone block (no leading indentation)
@@ -260,22 +268,22 @@ ${ZONE}:53 {
 EOF
 
   # Fetch current Corefile via JSON to avoid YAML block marker problems
-  CURRENT_COREFILE=$(kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' 2>/dev/null || true)
+  CURRENT_COREFILE="$(kubectl_get -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' 2>/dev/null || true)"
   if [[ -z "${CURRENT_COREFILE}" ]]; then
     err "Failed to read kube-system/coredns Corefile. Aborting."
-    exit 1
+    return_or_exit 1
   fi
 
   # If the zone block already exists (top-level "zone" optionally with :port), exit
   if printf '%s\n' "${CURRENT_COREFILE}" | grep -qE "^[[:space:]]*${ZONE}(:[0-9]+)?[[:space:]]*\\{" ; then
     log "Zone block for '${ZONE}' already present in Corefile. Nothing to do."
-    exit 0
+    return_or_exit 0
   fi
 
   # Remove any pre-existing occurrences of the same zone block (balanced-brace removal),
   # then insert the zone block before the main .:53 block (if present) or prepend.
   TMPDIR="$(mktemp -d)"
-  trap 'rm -rf "${TMPDIR}"' EXIT
+  trap_add '[[ -n "${TMPDIR:-}" ]] && rm -rf "${TMPDIR}"' EXIT
   printf '%s\n' "${CURRENT_COREFILE}" > "${TMPDIR}/corefile.orig"
 
   # remove pre-existing zone blocks for the same zone (balanced braces)
@@ -322,16 +330,18 @@ EOF
   # Use jq to patch the ConfigMap JSON safely (this avoids depending on YAML block markers).
   # Note: jq must be available. If jq is missing, print an error and abort.
   if ! command -v jq >/dev/null 2>&1; then
+    [[ -n "${TMPDIR:-}" ]] && rm -rf "${TMPDIR}" && TMPDIR=""
     err "jq is required to safely patch the ConfigMap but was not found. Install jq and retry."
-    exit 1
+    return_or_exit 1
   fi
 
-  kubectl -n kube-system get cm coredns -o json \
+  kubectl_get -n kube-system get cm coredns -o json \
     | jq --arg cf "$NEW_COREFILE" '.data.Corefile = $cf' \
-    | kubectl -n kube-system apply -f - >/dev/null
+    | kubectl_get -n kube-system apply -f - >/dev/null
 
   log "Inserted zone block for '${ZONE}' forwarding to ${DOCKER_IP} into kube-system/coredns ConfigMap."
   log "Restarting the CoreDNS deployment..."
-  kubectl -n kube-system rollout restart deployment coredns
+  kubectl_get -n kube-system rollout restart deployment coredns
   log "Done."
+  [[ -n "${TMPDIR:-}" ]] && rm -rf "${TMPDIR}" && TMPDIR=""
 fi

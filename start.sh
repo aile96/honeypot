@@ -18,93 +18,112 @@ on_exit() {
     echo "[$end_ts] Script failed with exit code ${exit_code} (duration: ${duration}s)" >&2
   fi
 }
-trap on_exit EXIT
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_VERSION=2.0.2
 export PROJECT_ROOT IMAGE_VERSION
 
+# === Load shared utilities ===
+COMMON_LIB="${PROJECT_ROOT}/pb/scripts/lib/common.sh"
+if [[ ! -f "$COMMON_LIB" ]]; then
+  printf "[ERROR] Common library not found: %s\n" "$COMMON_LIB" >&2
+  exit 1
+fi
+source "$COMMON_LIB"
+trap_add on_exit EXIT
+
 # === Load variables from config file ===
+CONFIG_LOADER="${PROJECT_ROOT}/pb/scripts/lib/load_config.sh"
+if [[ ! -f "$CONFIG_LOADER" ]]; then
+  err "Configuration loader not found: $CONFIG_LOADER"
+  exit 1
+fi
+source "$CONFIG_LOADER"
+
 ENV_FILE="${PROJECT_ROOT}/configuration.conf"
-if [[ ! -f "$ENV_FILE" ]]; then
-  err "Configuration file not found: $ENV_FILE" >&2
+if ! load_env_file "$ENV_FILE"; then
+  err "Failed to load configuration from: $ENV_FILE"
   exit 1
 fi
 
-# Parse $ENV_FILE and export KEY=VALUE pairs (supports <<HEREDOC, 'single', "double")
-while IFS= read -r line || [[ -n "$line" ]]; do
-  # Skip blank lines and comments (optionally indented)
-  [[ -z "${line//[[:space:]]/}" ]] && continue
-  [[ "${line#"${line%%[![:space:]]*}"}" =~ ^# ]] && continue
+STEP_RETRY_ATTEMPTS="${STEP_RETRY_ATTEMPTS:-1}"
+STEP_RETRY_DELAY_SECONDS="${STEP_RETRY_DELAY_SECONDS:-0}"
 
-  # ---- Here-doc style: KEY<<MARKER ----
-  if [[ "$line" == *'<<'* ]]; then
-    lhs="${line%%<<*}"
-    rhs="${line#*<<}"
+validate_retry_value() {
+  local name="$1"
+  local value="$2"
+  local min="$3"
+  [[ "${value}" =~ ^[0-9]+$ ]] || die "${name} must be an integer >= ${min} (got '${value}')."
+  (( value >= min )) || die "${name} must be >= ${min} (got '${value}')."
+}
 
-    # trim spaces around key and marker
-    key="${lhs#"${lhs%%[![:space:]]*}"}"; key="${key%"${key##*[![:space:]]}"}"
-    marker="${rhs#"${rhs%%[![:space:]]*}"}"; marker="${marker%"${marker##*[![:space:]]}"}"
+step_retry_key() {
+  local step_name
+  step_name="$(basename "$1")"
+  step_name="${step_name%.sh}"
+  step_name="${step_name^^}"
+  step_name="${step_name//[^A-Z0-9]/_}"
+  printf '%s' "${step_name}"
+}
 
-    # strip optional single/double quotes around marker
-    case "$marker" in
-      \"*\") marker="${marker#\"}"; marker="${marker%\"}" ;;
-      \'*\') marker="${marker#\'}"; marker="${marker%\'}" ;;
-    esac
+resolve_step_retry_policy() {
+  local step_script="$1"
+  local step_key attempts_var delay_var attempts delay
+  local attempts_label="STEP_RETRY_ATTEMPTS"
+  local delay_label="STEP_RETRY_DELAY_SECONDS"
 
-    value=''
-    while IFS= read -r docline; do
-      [[ "$docline" == "$marker" ]] && break
-      value+="${docline}"$'\n'
-    done
-    value="${value%$'\n'}"   # remove trailing newline
-    export "$key=$value"
-    continue
+  step_key="$(step_retry_key "${step_script}")"
+  attempts_var="STEP_RETRY_ATTEMPTS_${step_key}"
+  delay_var="STEP_RETRY_DELAY_SECONDS_${step_key}"
+
+  if [[ "${!attempts_var+x}" == "x" ]]; then
+    attempts="${!attempts_var}"
+    attempts_label="${attempts_var}"
+  else
+    attempts="${STEP_RETRY_ATTEMPTS}"
+  fi
+  if [[ "${!delay_var+x}" == "x" ]]; then
+    delay="${!delay_var}"
+    delay_label="${delay_var}"
+  else
+    delay="${STEP_RETRY_DELAY_SECONDS}"
   fi
 
-  # ---- Normal KEY=VALUE line ----
-  if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
-    key="${BASH_REMATCH[1]}"
-    raw="${BASH_REMATCH[2]}"
+  validate_retry_value "${attempts_label}" "${attempts}" 1
+  validate_retry_value "${delay_label}" "${delay}" 0
 
-    # trim surrounding spaces
-    raw="${raw#"${raw%%[![:space:]]*}"}"
-    raw="${raw%"${raw##*[![:space:]]}"}"
+  printf '%s;%s' "${attempts}" "${delay}"
+}
 
-    # helper: safely assign and export without word-splitting
-    _export_kv() { local k="$1" v="$2"; printf -v "$k" '%s' "$v"; export "$k"; }
+source_step_once() {
+  local step_script="$1"
+  [[ -f "${step_script}" ]] || die "Step script not found: ${step_script}"
+  log "Running step: $(basename "${step_script}")"
+  source "${step_script}"
+}
 
-    # Single quotes → literal (no escape processing)
-    if [[ "$raw" =~ ^\'(.*)\'$ ]]; then
-      _export_kv "$key" "${BASH_REMATCH[1]}"
-      continue
-    fi
+run_step_with_retry() {
+  local step_script="$1"
+  local step_name policy attempts delay
 
-    # Double quotes → first unescape \" → ", then decode \n, \t, \\
-    if [[ "$raw" =~ ^\"(.*)\"$ ]]; then
-      inner="${BASH_REMATCH[1]}"
-      # 1) replace \" → "
-      inner="${inner//\\\"/\"}"
-      # 2) interpret other escapes (\n, \t, \\ etc.)
-      value="$(printf '%b' "$inner")"
-      _export_kv "$key" "$value"
-      continue
-    fi
+  step_name="$(basename "${step_script}")"
+  policy="$(resolve_step_retry_policy "${step_script}")"
+  attempts="${policy%%;*}"
+  delay="${policy##*;}"
 
-    # Unquoted → take as-is
-    _export_kv "$key" "$raw"
-    continue
-  fi
+  log "Step retry policy for ${step_name}: attempts=${attempts}, delay=${delay}s."
+  retry_cmd "${attempts}" "${delay}" "step ${step_name}" source_step_once "${step_script}"
+}
 
-  # ---- Unrecognized line ----
-  echo "Warning: ignoring unrecognized line: $line" >&2
-done < "$ENV_FILE"
+STEP_SCRIPTS=(
+  "${PROJECT_ROOT}/pb/scripts/00_ensure_deps.sh"
+  "${PROJECT_ROOT}/pb/scripts/01_kind_cluster.sh"
+  "${PROJECT_ROOT}/pb/scripts/02_setup_underlay.sh"
+  "${PROJECT_ROOT}/pb/scripts/03_run_underlay.sh"
+  "${PROJECT_ROOT}/pb/scripts/04_build_deploy.sh"
+  "${PROJECT_ROOT}/pb/scripts/05_setup_k8s.sh"
+)
 
-source "${PROJECT_ROOT}/pb/scripts/00_ensure_deps.sh"
-source "${PROJECT_ROOT}/pb/scripts/01_kind_cluster.sh"
-source "${PROJECT_ROOT}/pb/scripts/02_setup_underlay.sh"
-source "${PROJECT_ROOT}/pb/scripts/03_run_underlay.sh"
-source "${PROJECT_ROOT}/pb/scripts/04_build_deploy.sh"
-source "${PROJECT_ROOT}/pb/scripts/05_setup_k8s.sh"
-
-on_exit
+for step_script in "${STEP_SCRIPTS[@]}"; do
+  run_step_with_retry "${step_script}"
+done

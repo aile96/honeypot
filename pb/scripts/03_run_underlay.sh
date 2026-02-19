@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# === Logging utilities ===
-log()  { printf "\033[1;36m[INFO]\033[0m %s\n" "$*"; }
-warn() { printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
-err()  { printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
-die()  { printf "\033[1;31m[ERROR]\033[0m %s\n" "$*" >&2; exit 1; }
+SCRIPTS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMON_LIB="${SCRIPTS_ROOT}/lib/common.sh"
+if [[ ! -f "${COMMON_LIB}" ]]; then
+  printf "[ERROR] Common library not found: %s\n" "${COMMON_LIB}" >&2
+  return 1 2>/dev/null || exit 1
+fi
+source "${COMMON_LIB}"
 
 # === Defaults (adjust if needed) ===
 CP_NETWORK=${CP_NETWORK:-minikube}
 BUILD_CONTAINERS_DOCKER=${BUILD_CONTAINERS_DOCKER:-true}
+DOCKER_BUILD_PARALLELISM=${DOCKER_BUILD_PARALLELISM:-4}
+DOCKER_BUILD_RETRY_ATTEMPTS=${DOCKER_BUILD_RETRY_ATTEMPTS:-3}
+DOCKER_BUILD_RETRY_DELAY_SECONDS=${DOCKER_BUILD_RETRY_DELAY_SECONDS:-5}
 IMAGE_VERSION=${IMAGE_VERSION:-2.0.2}
 REGISTRY_NAME=${REGISTRY_NAME:-registry}
 REGISTRY_PORT=${REGISTRY_PORT:-5000}
@@ -19,14 +24,31 @@ CALDERA_CONTROLLER=${CALDERA_CONTROLLER:-caldera.cont}
 ATTACKER=${ATTACKER:-caldera.outs}
 CONTROL_PLANE_NODE=${CONTROL_PLANE_NODE:-kind-control-plane}
 KUBESERVER_PORT=${KUBESERVER_PORT:-6443}
-REGISTRY_USER=${REGISTRY_USER:-testuser}
-REGISTRY_PASS=${REGISTRY_PASS:-testpassword}
+KUBE_CONTEXT="${KUBE_CONTEXT:-}"
+REGISTRY_USER="${REGISTRY_USER:?REGISTRY_USER must be set}"
+REGISTRY_PASS="${REGISTRY_PASS:?REGISTRY_PASS must be set}"
 MEM_NAMESPACE=${MEM_NAMESPACE:-mem}
 DMZ_NAMESPACE=${DMZ_NAMESPACE:-dmz}
 APP_NAMESPACE=${APP_NAMESPACE:-app}
 PAY_NAMESPACE=${PAY_NAMESPACE:-pay}
+DAT_NAMESPACE=${DAT_NAMESPACE:-dat}
+TST_NAMESPACE=${TST_NAMESPACE:-tst}
 FRONTEND_PROXY_IP=${FRONTEND_PROXY_IP:-127.0.0.1}
+GENERIC_SVC_PORT=${GENERIC_SVC_PORT:-8085}
+GENERIC_SVC_ADDR=${GENERIC_SVC_ADDR:-127.0.0.1}
 ADV_LIST=${ADV_LIST:-"KC1 – Image@cluster, KC2 – WiFi@outside, KC3 – FlagATT@outside, KC4 – CRSocket@outside, KC5 – Certificate@outside, KC6 – Etcd@outside"}
+
+normalize_bool_var BUILD_CONTAINERS_DOCKER
+[[ "${DOCKER_BUILD_PARALLELISM}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_PARALLELISM must be an integer >= 1"
+(( DOCKER_BUILD_PARALLELISM >= 1 )) || die "DOCKER_BUILD_PARALLELISM must be >= 1"
+[[ "${DOCKER_BUILD_RETRY_ATTEMPTS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_ATTEMPTS must be an integer >= 1"
+(( DOCKER_BUILD_RETRY_ATTEMPTS >= 1 )) || die "DOCKER_BUILD_RETRY_ATTEMPTS must be >= 1"
+[[ "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_DELAY_SECONDS must be an integer >= 0"
+require_port_var REGISTRY_PORT
+require_port_var GENERIC_SVC_PORT
+[[ -n "${CP_NETWORK}" ]] || die "CP_NETWORK must not be empty."
+req docker
+req kubectl
 
 # Transform service name to uppercase ENV token (replace non-alnum with underscore)
 svc_env_name() {
@@ -39,10 +61,21 @@ is_enabled() {
   local svc="$1"
   local varname
   varname="$(svc_env_name "$svc")_ENABLE"
-  if [ "${!varname+set}" = "set" ]; then
-    [[ "${!varname}" == "true" ]]
-  else
+  if [[ "${!varname+set}" != "set" ]]; then
     return 1
+  fi
+  case "${!varname,,}" in
+    true) return 0 ;;
+    false) return 1 ;;
+    *) die "Invalid boolean for ${varname}: '${!varname}' (expected true|false)." ;;
+  esac
+}
+
+kubectl_ctx() {
+  if [[ -n "${KUBE_CONTEXT}" ]]; then
+    kubectl --context "${KUBE_CONTEXT}" "$@"
+  else
+    kubectl "$@"
   fi
 }
 
@@ -50,6 +83,83 @@ is_enabled() {
 image_exists() {
   local img="$1"
   docker image inspect "$img" >/dev/null 2>&1
+}
+
+ensure_local_image_or_die() {
+  local img="$1"
+  image_exists "${img}" || die "Required image not found locally: ${img}"
+}
+
+build_image_if_needed() {
+  local img_name="$1"
+  local build_ctx="$2"
+  local dockerfile="$3"
+  shift 3
+  local -a buildargs=( "$@" )
+
+  if is_true "${BUILD_CONTAINERS_DOCKER}" || ! image_exists "${img_name}"; then
+    log "Building ${img_name} from ${build_ctx} (dockerfile: ${dockerfile})"
+    retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker build ${img_name}" \
+      docker build -t "${img_name}" -f "${dockerfile}" "${buildargs[@]}" "${build_ctx}"
+  else
+    log "Image ${img_name} already present, skipping build."
+  fi
+}
+
+build_required_images() {
+  local -a pids=()
+  local -a labels=()
+  local -a failed=()
+  local i
+
+  queue_image_build() {
+    local label="$1"
+    shift
+
+    build_image_if_needed "$@" &
+    pids+=("$!")
+    labels+=("${label}")
+
+    if (( ${#pids[@]} >= DOCKER_BUILD_PARALLELISM )); then
+      local pid="${pids[0]}"
+      local done_label="${labels[0]}"
+      pids=("${pids[@]:1}")
+      labels=("${labels[@]:1}")
+      if ! wait "${pid}"; then
+        failed+=("${done_label}")
+      fi
+    fi
+  }
+
+  if is_enabled "load-generator"; then
+    queue_image_build "load-generator" "load-generator:${IMAGE_VERSION}" "./src/load-generator" "./src/load-generator/Dockerfile"
+  fi
+
+  if is_enabled "samba"; then
+    queue_image_build "samba" "samba:${IMAGE_VERSION}" "./src/samba" "./src/samba/Dockerfile"
+  fi
+
+  if is_enabled "caldera-controller"; then
+    queue_image_build "caldera-controller" "caldera-controller:${IMAGE_VERSION}" "./src/caldera-controller" "./src/caldera-controller/Dockerfile"
+  fi
+
+  if is_enabled "attacker"; then
+    queue_image_build "attacker" "attacker:${IMAGE_VERSION}" "./src/attacker" "./src/attacker/Dockerfile" \
+      --build-arg DOCKER_DAEMON="1" \
+      --build-arg CALDERA_URL="http://${CALDERA_SERVER}:8888" \
+      --build-arg GROUP="outside" \
+      --build-arg ATTACKERADDR="${ATTACKER}"
+  fi
+
+  for i in "${!pids[@]}"; do
+    if ! wait "${pids[$i]}"; then
+      failed+=("${labels[$i]}")
+    fi
+  done
+
+  if (( ${#failed[@]} > 0 )); then
+    die "Image build failed for: ${failed[*]}"
+  fi
 }
 
 # Ensure Docker network exists (create if missing)
@@ -75,6 +185,38 @@ run_container() {
   docker run -d "${run_args[@]}"
 }
 
+copy_into_container_or_die() {
+  local src_path="$1"
+  local container_name="$2"
+  local target_path="$3"
+
+  [[ -e "${src_path}" ]] || die "Required source path not found for docker cp: ${src_path}"
+  docker ps -a --format '{{.Names}}' | grep -qx "${container_name}" || die "Container '${container_name}' not found for docker cp."
+  docker cp "${src_path}" "${container_name}:${target_path}" || die "Failed to copy '${src_path}' into '${container_name}:${target_path}'."
+}
+
+run_caldera_server_service() {
+  local svc="caldera-server"
+  local img_name="ghcr.io/mitre/caldera:5.2.0"
+
+  if ! is_enabled "$svc"; then
+    log "Skipping service 'caldera-server' (env ${svc}_ENABLE != true)"
+    return 0
+  fi
+
+  validate_image_or_die "$img_name"
+  run_container "${CALDERA_SERVER}" \
+    --name "${CALDERA_SERVER}" \
+    --hostname "${CALDERA_SERVER}" \
+    --restart unless-stopped \
+    --network "${CP_NETWORK}" \
+    -v "./pb/docker/caldera/local.yml:/usr/src/app/conf/local.yml:Z" \
+    -v "./pb/docker/caldera/adversaries:/usr/src/app/plugins/stockpile/data/adversaries/personal:Z" \
+    -v "./pb/docker/caldera/abilities:/usr/src/app/plugins/stockpile/data/abilities/personal:Z" \
+    -e "TZ=Europe/Rome" \
+    "${img_name}"
+}
+
 # Wait for a container to become healthy
 wait_for_health() {
   local cname="$1"
@@ -89,8 +231,8 @@ wait_for_health() {
       return 1
     fi
     local status
-    status=$(docker inspect --format '{{.State.Health.Status}}' "$cname" 2>/dev/null || echo "no-health")
-    if [ "$status" = "healthy" ]; then
+    status=$(docker inspect --format '{{.State.Status}}' "$cname" 2>/dev/null || echo "no-health")
+    if [ "$status" = "running" ]; then
       log "Container '${cname}' is healthy."
       return 0
     fi
@@ -132,12 +274,13 @@ validate_image_or_die() {
 }
 
 # === MAIN ===
-KUBESERVER_PORT="$(kubectl -n default get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || echo 6443)"
+KUBESERVER_PORT="$(kubectl_ctx -n default get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || echo 6443)"
 export KUBESERVER_PORT
-K8S_IMAGE="$(kubectl get pod -n kube-system -l component=kube-apiserver -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}' 2>/dev/null || true)"
+K8S_IMAGE="$(kubectl_ctx get pod -n kube-system -l component=kube-apiserver -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}' 2>/dev/null || true)"
 export K8S_IMAGE
 
 ensure_network "$CP_NETWORK"
+build_required_images
 
 # -------- registry --------
 svc="registry"
@@ -164,14 +307,7 @@ run_container "${CONTAINER_NAME}" \
 svc="load-generator"
 if is_enabled "$svc"; then
   IMG_NAME="load-generator:${IMAGE_VERSION}"
-  BUILD_CTX="./src/load-generator"
-  DOCKERFILE="./src/load-generator/Dockerfile"
-  if [[ "${BUILD_CONTAINERS_DOCKER}" == "true" ]] || ! image_exists "${IMG_NAME}"; then
-    log "Building ${IMG_NAME} from ${BUILD_CTX} (dockerfile: ${DOCKERFILE})"
-    docker build -t "${IMG_NAME}" -f "${DOCKERFILE}" "${BUILD_CTX}"
-  else
-    log "Image ${IMG_NAME} already present, skipping build."
-  fi
+  ensure_local_image_or_die "${IMG_NAME}"
   validate_image_or_die "$IMG_NAME"
   run_container "load-generator" \
     --name "load-generator" \
@@ -196,14 +332,7 @@ fi
 svc="samba"
 if is_enabled "$svc"; then
   IMG_NAME="samba:${IMAGE_VERSION}"
-  BUILD_CTX="./src/samba"
-  DOCKERFILE="Dockerfile"
-  if [[ "${BUILD_CONTAINERS_DOCKER}" == "true" ]] || ! image_exists "${IMG_NAME}"; then
-    log "Building ${IMG_NAME} from ${BUILD_CTX}"
-    docker build -t "${IMG_NAME}" -f "${BUILD_CTX}/${DOCKERFILE}" "${BUILD_CTX}"
-  else
-    log "Image ${IMG_NAME} already present, skipping build."
-  fi
+  ensure_local_image_or_die "${IMG_NAME}"
   validate_image_or_die "$IMG_NAME"
   run_container "samba-pv" \
     --name "samba-pv" \
@@ -257,14 +386,7 @@ fi
 svc="caldera-controller"
 if is_enabled "$svc"; then
   IMG_NAME="caldera-controller:${IMAGE_VERSION}"
-  BUILD_CTX="./src/caldera-controller"
-  DOCKERFILE="./src/caldera-controller/Dockerfile"
-  if [[ "${BUILD_CONTAINERS_DOCKER}" == "true" ]] || ! image_exists "${IMG_NAME}"; then
-    log "Building ${IMG_NAME} from ${BUILD_CTX}"
-    docker build -t "${IMG_NAME}" -f "${DOCKERFILE}" "${BUILD_CTX}"
-  else
-    log "Image ${IMG_NAME} already present, skipping build."
-  fi
+  ensure_local_image_or_die "${IMG_NAME}"
   validate_image_or_die "$IMG_NAME"
 
   # Collect KC-related envs (as arrays)
@@ -294,21 +416,12 @@ else
 fi
 
 # -------- attacker --------
+run_caldera_server_service
+
 svc="attacker"
 if is_enabled "$svc"; then
   IMG_NAME="attacker:${IMAGE_VERSION}"
-  BUILD_CTX="./src/attacker"
-  DOCKERFILE="./src/attacker/Dockerfile"
-  if [[ "${BUILD_CONTAINERS_DOCKER}" == "true" ]] || ! image_exists "${IMG_NAME}"; then
-    log "Building ${IMG_NAME} from ${BUILD_CTX}"
-    docker build -t "${IMG_NAME}" -f "${DOCKERFILE}" "${BUILD_CTX}" \
-      --build-arg DOCKER_DAEMON="1" \
-      --build-arg CALDERA_URL="http://${CALDERA_SERVER}:8888" \
-      --build-arg GROUP="outside" \
-      --build-arg ATTACKERADDR="${ATTACKER}"
-  else
-    log "Image ${IMG_NAME} already present, skipping build."
-  fi
+  ensure_local_image_or_die "${IMG_NAME}"
   validate_image_or_die "$IMG_NAME"
 
   # If caldera-server is enabled, wait for it to become healthy before starting attacker
@@ -353,31 +466,10 @@ if is_enabled "$svc"; then
     "${KC_ENVS[@]}" \
     "${IMG_NAME}"
 
-  docker cp ./pb/docker/attacker/apiserver "${ATTACKER}:/apiserver"
-  docker cp ./pb/docker/attacker/iphost "${ATTACKER}:/tmp/iphost"
+  copy_into_container_or_die "./pb/docker/attacker/apiserver" "${ATTACKER}" "/apiserver"
+  copy_into_container_or_die "./pb/docker/attacker/iphost" "${ATTACKER}" "/tmp/iphost"
 else
   log "Skipping service 'attacker' (env ${svc}_ENABLE != true)"
-fi
-
-# -------- caldera-server --------
-svc="caldera-server"
-if is_enabled "$svc"; then
-  IMG_NAME="ghcr.io/mitre/caldera:5.2.0"
-  CONTAINER_NAME="${CALDERA_SERVER}"
-  HOSTNAME="${CALDERA_SERVER}"
-  validate_image_or_die "$IMG_NAME"
-  run_container "${CONTAINER_NAME}" \
-    --name "${CONTAINER_NAME}" \
-    --hostname "${HOSTNAME}" \
-    --restart unless-stopped \
-    --network "${CP_NETWORK}" \
-    -v "./pb/docker/caldera/local.yml:/usr/src/app/conf/local.yml:Z" \
-    -v "./pb/docker/caldera/adversaries:/usr/src/app/plugins/stockpile/data/adversaries/personal:Z" \
-    -v "./pb/docker/caldera/abilities:/usr/src/app/plugins/stockpile/data/abilities/personal:Z" \
-    -e "TZ=Europe/Rome" \
-    "${IMG_NAME}"
-else
-  log "Skipping service 'caldera-server' (env ${svc}_ENABLE != true)"
 fi
 
 log "All requested services processed."

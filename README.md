@@ -23,13 +23,13 @@
 
 ## Overview
 
-This thesis delivers an **automated platform** that **builds, deploys and tests** a **vulnerable Kubernetes cluster** on a single host using **KinD (Kubernetes in Docker)** or **Minikube**. On top of the cluster, it deploys a **microservices** application (an adapted **OpenTelemetry Astronomy Shop**) with **toggleable vulnerabilities**, together with an **observability stack** (Prometheus, Grafana, Jaeger, OpenTelemetry Collector, optionally OpenSearch).
+This thesis delivers an **automated platform** that **builds, deploys and tests** a **vulnerable Kubernetes cluster** on a single host using **KinD (Kubernetes in Docker)** or **Minikube**. On top of the cluster, it deploys a **microservices** application (an adapted **OpenTelemetry Astronomy Shop**) with **toggleable vulnerabilities**, together with an **observability stack** (Prometheus, Grafana, Jaeger, OpenTelemetry Collector, OpenSearch).
 
 The platform **orchestrates kill chains** with **MITRE Caldera** (adversary emulation), mapped to **MITRE ATT&CK**, enabling **repeatable** attack/defense experiments and practical **CTI** generation.
 
 **Single entry point:** `./start.sh` runs a **6‑stage pipeline**:
 1. **Ensure deps** (`pb/scripts/00_ensure_deps.sh`) – basic tooling/context checks.
-2. **Cluster** (`pb/scripts/01_kind_cluster.sh`) – create a local cluster (KinD/Minikube) **only if** none is reachable via `kubectl`.
+2. **Cluster** (`pb/scripts/01_kind_cluster.sh`) – resolve target (`kind`/`minikube`) from `TARGET` or `KIND_CLUSTER`, then ensure the corresponding profile/context is reachable (create/start only that target profile when needed).
 3. **Underlay setup** (`pb/scripts/02_setup_underlay.sh`) – generate registry CA/credentials, compute a MetalLB IP, and apply cluster‑level switches (e.g., kubelet RO port, etcd exposure, anonymous auth).
 4. **Underlay run** (`pb/scripts/03_run_underlay.sh`) – start supporting Docker containers (registry, proxy, Caldera server/controller, attacker, Samba, load generator).
 5. **Build & deploy** (`pb/scripts/04_build_deploy.sh`) – build images, push to the local registry, deploy Helm charts (additions, telemetry, Astronomy Shop).
@@ -65,10 +65,10 @@ A full cleanup script is provided: `./remove_all.sh`.
 **Key components**:
 - **Kubernetes cluster**: KinD or Minikube. Current config default is **Minikube** (`KIND_CLUSTER=0`), while KinD is generally recommended. Worker count configurable via `WORKERS`.
 - **Application**: *Astronomy Shop* microservices with optional vulnerabilities (e.g., `dnsGrant`, `deployGrant`, `anonymousGrant`, `currencyGrant`) and **NetworkPolicy** toggles.
-- **Telemetry**: OTel Collector, Prometheus, Grafana, Jaeger, (opt.) OpenSearch. **Open** or **protected** mode (`LOG_OPEN`).
+- **Telemetry**: OTel Collector, Prometheus, Grafana, Jaeger, OpenSearch. **Open** or **protected** mode (`LOG_OPEN`).
 - **Underlay** (supporting containers on the Docker host):
   - **Local registry** (default `registry:5000`, Docker-network only; used for image pushes).
-  - **Reverse proxy** exposing the **app frontend** on `:8080` and **Caldera** on `:8888`.
+  - **Reverse proxy** exposing the **app frontend** on `:8080`, **Caldera** on `:8888`, and a generic forwarding port (`GENERIC_SVC_PORT`, default `:8085`).
   - **MITRE Caldera** server and **controller** (auto‑starting operations).
   - **Attacker** (kill chain scripts) and **Load Generator** (Locust).
   - **Samba** for CSI SMB (persistent volumes).
@@ -89,15 +89,15 @@ A full cleanup script is provided: `./remove_all.sh`.
 - **Software** (available in PATH):
   - **Docker** (Engine/Desktop) running
   - **kubectl** (≥ 1.28; cluster defaults to K8s 1.30.x)
-  - **kind** (≥ 0.22) **or** **minikube** (≥ 1.33), required when `./start.sh` needs to create a cluster
+  - Cluster manager binary for the selected target: **minikube** (≥ 1.33, default target with `KIND_CLUSTER=0`) or **kind** (≥ 0.22, if `KIND_CLUSTER=1` or `TARGET=kind`)
   - **helm** (≥ 3.12)
   - `docker buildx` (Buildx plugin)
   - `htpasswd` (from `apache2-utils` / `httpd-tools`)
   - **jq**, **curl**, **openssl**
-- **Open ports** (defaults): `8080` (frontend proxy), `8888` (Caldera proxy).
+- **Open ports** (defaults): `8080` (frontend proxy), `8888` (Caldera proxy), `8085` (generic proxy service).
 
 > The script `pb/scripts/00_ensure_deps.sh` performs basic checks and fails with clear messages if something is missing.
-> If a cluster is already reachable via `kubectl`, `pb/scripts/01_kind_cluster.sh` skips cluster creation.
+> `pb/scripts/01_kind_cluster.sh` checks the target profile/context (`kind-<name>` or `<minikube-profile>`), not any arbitrary reachable cluster context.
 
 ---
 
@@ -108,9 +108,14 @@ Most options live in **`configuration.conf`** (loaded by `./start.sh`); some adv
 ### Cluster choice
 - `KIND_CLUSTER=1` to use **KinD**.  
   If `KIND_CLUSTER=0`, target is **Minikube** (**default in current `configuration.conf`**).
+- `TARGET=kind|minikube` can explicitly override target selection.
+- `CLUSTER_PROFILE=<name>` is used as default profile/cluster name for both engines.
+- `KIND_CLUSTER_NAME` and `MINIKUBE_PROFILE` can override names independently.
+- `KUBE_CONTEXT` (exported by the cluster step) is the context used by subsequent scripts.
 - `K8S_VERSION=1.30.0` cluster version (**optional in `configuration.conf`**; default from `pb/scripts/01_kind_cluster.sh`).
 - `WORKERS=2` number of workers (must be ≥2, **optional in `configuration.conf`**; default from `pb/scripts/01_kind_cluster.sh`).  
   (Minikube creates `WORKERS+1` total nodes; KinD creates `WORKERS` workers + 1 control-plane.)
+- `LOAD_IMAGES=true|false` toggles base image pre-pull/load during **new** cluster creation (`false` by default).
 
 ### Image registry
 - `REGISTRY_NAME=registry` – helper/hostname.
@@ -120,7 +125,8 @@ Most options live in **`configuration.conf`** (loaded by `./start.sh`); some adv
 ### Telemetry
 - `LOG_OPEN=true|false` – selects *noauth*/**auth** values for the `telemetry` chart.
 - `LOG_TOKEN=true|false` – enables/disables synthetic token log generation (used by some scenarios).
-- Dashboards & collectors are deployed automatically (Grafana, Jaeger, Prometheus, OTel Collector, opt. OpenSearch).
+- Dashboards & collectors are deployed automatically (Grafana, Jaeger, Prometheus, OTel Collector, OpenSearch).
+- Note: current `pb/scripts/04_build_deploy.sh` sets `opensearch.enabled=true` in telemetry overrides.
 
 ### Vulnerabilities (chart `additions` → `values.yaml`)
 - `DNS_GRANT=true|false`
@@ -147,6 +153,20 @@ Enable/disable optional underlay containers started by `pb/scripts/03_run_underl
 - `ATTACKER_ENABLE=true|false`
 - `SAMBA_ENABLE=true|false`
 - `LOAD_GENERATOR_ENABLE=true|false`
+- `DOCKER_BUILD_PARALLELISM=<n>` – max concurrent Docker builds (`1` = sequential, script fallback default `4`; current `configuration.conf` sets `8`).
+- `DOCKER_BUILD_RETRY_ATTEMPTS=<n>` – max attempts for each Docker build/push (`>=1`, default `3`).
+- `DOCKER_BUILD_RETRY_DELAY_SECONDS=<n>` – wait time between retries (`>=0`, default `5` seconds).
+
+### Image build/deploy concurrency
+- `DOCKER_BUILD_PARALLELISM=<n>` also applies to `pb/scripts/04_build_deploy.sh` for application image build/push parallelism (`1` = sequential, script fallback default `4`; current `configuration.conf` sets `8`).
+- `DOCKER_BUILD_RETRY_ATTEMPTS=<n>` and `DOCKER_BUILD_RETRY_DELAY_SECONDS=<n>` also apply to `pb/scripts/04_build_deploy.sh`.
+
+### Pipeline step retries (`start.sh`)
+- `STEP_RETRY_ATTEMPTS=<n>` – max attempts for each pipeline step script (`>=1`, default `1`).
+- `STEP_RETRY_DELAY_SECONDS=<n>` – wait between attempts for each step (`>=0`, default `0` seconds).
+- `STEP_RETRY_ATTEMPTS_<STEP_KEY>=<n>` – optional per-step attempts override.
+- `STEP_RETRY_DELAY_SECONDS_<STEP_KEY>=<n>` – optional per-step delay override.
+- `STEP_KEY` is the step basename uppercased with non-alphanumeric chars replaced by `_` (example: `04_build_deploy.sh` -> `04_BUILD_DEPLOY`).
 
 ### Kill chains (MITRE Caldera)
 - `ADV_LIST="KC1 – Image@cluster, KC2 – WiFi@outside, ..."` – order and **agent group** (`cluster`/`outside`).  
@@ -210,6 +230,7 @@ Then open:
   - `admin / admin`  
   - `red / admin`  
   - `blue / admin`  
+- **Generic proxy service**: <http://localhost:8085> (default; controlled by `GENERIC_SVC_PORT`).
 - **Local registry**: `registry:5000` (used internally for image pushes).
 
 > Some telemetry endpoints (Grafana/Jaeger/Prometheus/OpenSearch) are **in‑cluster**; use `kubectl port-forward` unless already published via the proxy.
@@ -277,7 +298,7 @@ To remove **everything** (helper containers, cluster):
 ```bash
 ./remove_all.sh
 ```
-> `remove_all.sh` deletes both KinD and Minikube clusters (if present) and removes Docker networks named `kind`/`minikube`.
+> `remove_all.sh` deletes the configured KinD cluster (`KIND_CLUSTER_NAME`) and/or Minikube profile (`MINIKUBE_PROFILE`) if present, then attempts to remove Docker networks `kind`/`minikube` when unused.
 
 Alternatively:
 ```bash
@@ -300,13 +321,14 @@ docker rm -f ...        # all docker supporting network
 
 > The following variables are sourced from `configuration.conf` and/or from script defaults/runtime exports in `pb/scripts/*.sh`.
 
-- **Cluster**: `KIND_CLUSTER`, `WORKERS`, `K8S_VERSION`
+- **Cluster**: `KIND_CLUSTER`, `TARGET`, `CLUSTER_PROFILE`, `KIND_CLUSTER_NAME`, `MINIKUBE_PROFILE`, `KUBE_CONTEXT`, `WORKERS`, `K8S_VERSION`, `LOAD_IMAGES`
 - **Registry**: `REGISTRY_NAME`, `REGISTRY_PORT`, `REGISTRY_USER`, `REGISTRY_PASS`
 - **Proxy/Service**: `PROXY`, `CALDERA_SERVER`, `CALDERA_CONTROLLER`, `ATTACKER`, `GENERIC_SVC_PORT`
 - **Telemetry**: `LOG_OPEN`, `LOG_TOKEN`
 - **Kill chains**: `ADV_LIST`, `ADV_NAME`, `ENABLEKC1..6`, `SCRIPT_PRE_KC*`, `SCRIPT_POST_KC*`
 - **Vulnerabilities (Helm additions)**: `DNS_GRANT`, `DEPLOY_GRANT`, `ANONYMOUS_GRANT`, `CURRENCY_GRANT`
 - **Cluster-level toggles**: `OPEN_PORTS`, `ETCD_EXPOSURE`, `ANONYMOUS_AUTH`, `RECURSIVE_DNS`, `MISSING_POLICY`
+- **Pipeline retries**: `STEP_RETRY_ATTEMPTS`, `STEP_RETRY_DELAY_SECONDS`, `STEP_RETRY_ATTEMPTS_<STEP_KEY>`, `STEP_RETRY_DELAY_SECONDS_<STEP_KEY>`
 - **Underlay services**: `*_ENABLE` flags (e.g., `PROXY_ENABLE`, `CALDERA_SERVER_ENABLE`, `ATTACKER_ENABLE`, ...)
 - **Namespaces**: `APP_NAMESPACE`, `DAT_NAMESPACE`, `DMZ_NAMESPACE`, `MEM_NAMESPACE`, `PAY_NAMESPACE`, `TST_NAMESPACE`
 - **Script/runtime derived or optional overrides**: `FRONTEND_PROXY_IP`, `INTERNAL_REGISTRY`, `INSECURE_REGISTRY`

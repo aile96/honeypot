@@ -48,6 +48,7 @@ fi
 
 STEP_RETRY_ATTEMPTS="${STEP_RETRY_ATTEMPTS:-1}"
 STEP_RETRY_DELAY_SECONDS="${STEP_RETRY_DELAY_SECONDS:-0}"
+HOOKS_DIR="${PROJECT_ROOT}/pb/scripts/hooks"
 
 validate_retry_value() {
   local name="$1"
@@ -115,6 +116,44 @@ run_step_with_retry() {
   retry_cmd "${attempts}" "${delay}" "step ${step_name}" source_step_once "${step_script}"
 }
 
+step_index_from_script() {
+  local step_name="$1"
+  step_name="$(basename "${step_name}")"
+
+  if [[ "${step_name}" =~ ^([0-9]{2})_ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  return 1
+}
+
+run_post_step_hook() {
+  local step_script="$1"
+  local step_name step_index hook_script rc
+  step_name="$(basename "${step_script}")"
+
+  if ! step_index="$(step_index_from_script "${step_script}")"; then
+    warn "Cannot derive step index for ${step_name}; skipping post-step hook."
+    return 0
+  fi
+
+  hook_script="${HOOKS_DIR}/HOOK_POST_${step_index}.sh"
+  if [[ ! -f "${hook_script}" ]]; then
+    warn "Post-step hook not found for ${step_name}: ${hook_script} (skipping)."
+    return 0
+  fi
+
+  log "Running post-step hook for ${step_name}: $(basename "${hook_script}")"
+  if HOOK_STEP_SCRIPT="${step_script}" HOOK_STEP_NAME="${step_name}" bash "${hook_script}"; then
+    return 0
+  fi
+
+  rc=$?
+  err "Post-step hook failed for ${step_name}: ${hook_script} (exit=${rc}). Continuing."
+  return 0
+}
+
 STEP_SCRIPTS=(
   "${PROJECT_ROOT}/pb/scripts/00_ensure_deps.sh"
   "${PROJECT_ROOT}/pb/scripts/01_kind_cluster.sh"
@@ -126,4 +165,5 @@ STEP_SCRIPTS=(
 
 for step_script in "${STEP_SCRIPTS[@]}"; do
   run_step_with_retry "${step_script}"
+  run_post_step_hook "${step_script}"
 done

@@ -44,6 +44,8 @@ normalize_bool_var LOAD_IMAGES
 IMAGE_PARALLELISM="${IMAGE_PARALLELISM:-8}"
 [[ "${IMAGE_PARALLELISM}" =~ ^[0-9]+$ ]] || die "IMAGE_PARALLELISM must be an integer >= 1"
 (( IMAGE_PARALLELISM >= 1 )) || die "IMAGE_PARALLELISM must be >= 1"
+CILIUM_HELM_TIMEOUT="${CILIUM_HELM_TIMEOUT:-10m}"
+CILIUM_VERSION="${CILIUM_VERSION:-}"
 
 # Images to pre-pull & load ONLY when creating a brand-new cluster
 IMAGES=(
@@ -166,7 +168,7 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 networking:
   ipFamily: ipv4
-  disableDefaultCNI: false
+  disableDefaultCNI: true
   podSubnet: "10.244.0.0/16"
   serviceSubnet: "10.96.0.0/12"
 nodes:
@@ -182,9 +184,35 @@ create_minikube_cluster() {
     --profile="${MINIKUBE_PROFILE}" \
     --kubernetes-version="v${K8S_VERSION}" \
     --listen-address=0.0.0.0 \
+    --cni=false \
     --nodes="${MINIKUBE_NODES}" \
     --cpus="${MINIKUBE_CPUS}" \
     --memory="${MINIKUBE_MEM_MB}"
+}
+
+install_cilium_cni() {
+  local -a helm_cmd=(
+    upgrade --install
+    cilium
+    cilium/cilium
+    --namespace kube-system
+    --create-namespace
+    --kube-context "${KUBE_CONTEXT}"
+    --set ipam.mode=kubernetes
+    --wait
+    --timeout "${CILIUM_HELM_TIMEOUT}"
+  )
+
+  req helm
+  log "Installing Cilium CNI via Helm on context '${KUBE_CONTEXT}'..."
+  helm repo add cilium https://helm.cilium.io >/dev/null
+  helm repo update cilium >/dev/null
+
+  if [[ -n "${CILIUM_VERSION}" ]]; then
+    helm_cmd+=(--version "${CILIUM_VERSION}")
+  fi
+
+  helm "${helm_cmd[@]}"
 }
 
 run_images_in_parallel() {
@@ -308,6 +336,7 @@ case "$TARGET" in
       check_system_resources
     fi
     create_kind_cluster
+    install_cilium_cni
     if is_true "${LOAD_IMAGES}"; then
       pull_images_if_needed
       load_images_into_kind
@@ -341,6 +370,7 @@ case "$TARGET" in
       check_system_resources
     fi
     create_minikube_cluster
+    install_cilium_cni
     if is_true "${LOAD_IMAGES}"; then
       pull_images_if_needed
       load_images_into_minikube

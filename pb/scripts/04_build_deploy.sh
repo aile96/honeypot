@@ -12,6 +12,7 @@ PROJECT_ROOT="$(cd "${SCRIPTS_ROOT}/../.." && pwd)"
 RESOURCES_ROOT="${SCRIPTS_ROOT}/res"
 ADDITIONS_OVERRIDES_TEMPLATE="${RESOURCES_ROOT}/additions_overrides.yaml.tpl"
 ASTRONOMY_OVERRIDES_TEMPLATE="${RESOURCES_ROOT}/astronomy_overrides.yaml.tpl"
+TELEMETRY_OVERRIDES_TEMPLATE="${RESOURCES_ROOT}/telemetry_overrides.yaml.tpl"
 
 # =========================================
 # Parameters (env overridable)
@@ -56,7 +57,7 @@ DOCKER_BUILD_TIMEOUT_SECONDS="${DOCKER_BUILD_TIMEOUT_SECONDS:-0}"
 PLATFORM="${PLATFORM:-}"
 
 # Helm
-HELM_TIMEOUT="${HELM_TIMEOUT:-1h}"
+HELM_TIMEOUT="${HELM_TIMEOUT:-20m}"
 
 # Docker helper (dedicated daemon/socket via docker:dind)
 DOCKER_HELPER_IMAGE="${DOCKER_HELPER_IMAGE:-docker:26.1-dind}"
@@ -312,6 +313,14 @@ ensure_image(){
   local -a buildargs=( "$@" )
   local tag; tag="$(tag_for "$name")"
 
+  # Present in helper's daemon?
+  if local_image_exists "$tag"; then
+    log "Pushing only (found locally in helper, missing remotely): $tag"
+    retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker push ${tag}" \
+      d push "$tag"
+    return
+  fi
+
   # Force rebuild/push
   if is_true "$BUILD_CONTAINERS_K8S"; then
     helper_build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"; return
@@ -320,14 +329,6 @@ ensure_image(){
   # Already in remote registry?
   if remote_image_exists "$tag"; then
     log "Skipping build ($name): already in registry -> $tag"; return
-  fi
-
-  # Present in helper's daemon?
-  if local_image_exists "$tag"; then
-    log "Pushing only (found locally in helper, missing remotely): $tag"
-    retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker push ${tag}" \
-      d push "$tag"
-    return
   fi
 
   # Otherwise, build and push directly from helper daemon.
@@ -466,25 +467,7 @@ deploy_helm(){
   TELEMETRY_VALUES="helm-charts/telemetry/values-$(bool_text LOG_OPEN true noauth auth).yaml"
   telemetry_overrides="$(mktemp)"
   trap_add "rm -f '${telemetry_overrides}'" EXIT
-  cat > "${telemetry_overrides}" <<EOF
-opentelemetry-collector:
-  enabled: true
-  config:
-    receivers:
-      "httpcheck/frontend-proxy":
-        targets:
-          - endpoint: "http://frontend-proxy.${DMZ_NAMESPACE}:8080"
-      redis:
-        endpoint: "valkey-cart.${DAT_NAMESPACE}:6379"
-jaeger:
-  enabled: true
-prometheus:
-  enabled: true
-grafana:
-  enabled: true
-opensearch:
-  enabled: true
-EOF
+  render_values_template "${TELEMETRY_OVERRIDES_TEMPLATE}" "${telemetry_overrides}"
 
   helm upgrade --install honeypot-telemetry helm-charts/telemetry \
     --namespace "${MEM_NAMESPACE}" --create-namespace \

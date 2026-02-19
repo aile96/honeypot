@@ -8,13 +8,17 @@ if [[ ! -f "${COMMON_LIB}" ]]; then
   return 1 2>/dev/null || exit 1
 fi
 source "${COMMON_LIB}"
+PROJECT_ROOT="${PROJECT_ROOT:-$(cd "${SCRIPTS_ROOT}/../.." && pwd)}"
 
 # === Defaults (adjust if needed) ===
 CP_NETWORK=${CP_NETWORK:-minikube}
 BUILD_CONTAINERS_DOCKER=${BUILD_CONTAINERS_DOCKER:-true}
+CACHE_IMAGE_REGISTRY=${CACHE_IMAGE_REGISTRY:-true}
+REGISTRY_DATA_DIR=${REGISTRY_DATA_DIR:-${PROJECT_ROOT}/pb/docker/registry/data}
 DOCKER_BUILD_PARALLELISM=${DOCKER_BUILD_PARALLELISM:-4}
 DOCKER_BUILD_RETRY_ATTEMPTS=${DOCKER_BUILD_RETRY_ATTEMPTS:-3}
 DOCKER_BUILD_RETRY_DELAY_SECONDS=${DOCKER_BUILD_RETRY_DELAY_SECONDS:-5}
+DOCKER_BUILD_TIMEOUT_SECONDS=${DOCKER_BUILD_TIMEOUT_SECONDS:-0}
 IMAGE_VERSION=${IMAGE_VERSION:-2.0.2}
 REGISTRY_NAME=${REGISTRY_NAME:-registry}
 REGISTRY_PORT=${REGISTRY_PORT:-5000}
@@ -39,11 +43,16 @@ GENERIC_SVC_ADDR=${GENERIC_SVC_ADDR:-127.0.0.1}
 ADV_LIST=${ADV_LIST:-"KC1 – Image@cluster, KC2 – WiFi@outside, KC3 – FlagATT@outside, KC4 – CRSocket@outside, KC5 – Certificate@outside, KC6 – Etcd@outside"}
 
 normalize_bool_var BUILD_CONTAINERS_DOCKER
+normalize_bool_var CACHE_IMAGE_REGISTRY
 [[ "${DOCKER_BUILD_PARALLELISM}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_PARALLELISM must be an integer >= 1"
 (( DOCKER_BUILD_PARALLELISM >= 1 )) || die "DOCKER_BUILD_PARALLELISM must be >= 1"
 [[ "${DOCKER_BUILD_RETRY_ATTEMPTS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_ATTEMPTS must be an integer >= 1"
 (( DOCKER_BUILD_RETRY_ATTEMPTS >= 1 )) || die "DOCKER_BUILD_RETRY_ATTEMPTS must be >= 1"
 [[ "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_DELAY_SECONDS must be an integer >= 0"
+[[ "${DOCKER_BUILD_TIMEOUT_SECONDS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_TIMEOUT_SECONDS must be an integer >= 0"
+if (( DOCKER_BUILD_TIMEOUT_SECONDS > 0 )); then
+  req timeout
+fi
 require_port_var REGISTRY_PORT
 require_port_var GENERIC_SVC_PORT
 [[ -n "${CP_NETWORK}" ]] || die "CP_NETWORK must not be empty."
@@ -85,6 +94,24 @@ image_exists() {
   docker image inspect "$img" >/dev/null 2>&1
 }
 
+run_with_docker_build_timeout() {
+  local rc=0
+
+  if (( DOCKER_BUILD_TIMEOUT_SECONDS <= 0 )); then
+    if "$@"; then
+      return 0
+    fi
+    rc=$?
+    return "${rc}"
+  fi
+
+  if timeout "${DOCKER_BUILD_TIMEOUT_SECONDS}s" "$@"; then
+    return 0
+  fi
+  rc=$?
+  return "${rc}"
+}
+
 ensure_local_image_or_die() {
   local img="$1"
   image_exists "${img}" || die "Required image not found locally: ${img}"
@@ -100,7 +127,7 @@ build_image_if_needed() {
   if is_true "${BUILD_CONTAINERS_DOCKER}" || ! image_exists "${img_name}"; then
     log "Building ${img_name} from ${build_ctx} (dockerfile: ${dockerfile})"
     retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker build ${img_name}" \
-      docker build -t "${img_name}" -f "${dockerfile}" "${buildargs[@]}" "${build_ctx}"
+      run_with_docker_build_timeout docker build -t "${img_name}" -f "${dockerfile}" "${buildargs[@]}" "${build_ctx}"
   else
     log "Image ${img_name} already present, skipping build."
   fi
@@ -288,6 +315,15 @@ REG_IMAGE="registry:2"
 CONTAINER_NAME="${REGISTRY_NAME}"
 HOSTNAME="${REGISTRY_NAME}"
 validate_image_or_die "$REG_IMAGE"
+registry_storage_mount=()
+if is_true "${CACHE_IMAGE_REGISTRY}"; then
+  mkdir -p "${REGISTRY_DATA_DIR}"
+  registry_storage_mount=( -v "${REGISTRY_DATA_DIR}:/var/lib/registry:Z" )
+  log "Registry image cache enabled at '${REGISTRY_DATA_DIR}'."
+else
+  log "Registry image cache disabled (CACHE_IMAGE_REGISTRY=false)."
+fi
+
 run_container "${CONTAINER_NAME}" \
   --name "${CONTAINER_NAME}" \
   --hostname "${HOSTNAME}" \
@@ -301,6 +337,7 @@ run_container "${CONTAINER_NAME}" \
   -e "REGISTRY_HTTP_TLS_CERTIFICATE=/auth/certs/domain.crt" \
   -e "REGISTRY_HTTP_TLS_KEY=/auth/certs/domain.key" \
   -v "./pb/docker/registry:/auth:Z" \
+  "${registry_storage_mount[@]}" \
   "${REG_IMAGE}"
 
 # -------- load-generator --------

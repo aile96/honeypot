@@ -15,14 +15,14 @@ source "$COMMON_LIB"
 CONFIG_LOADER="${PROJECT_ROOT}/pb/scripts/lib/load_config.sh"
 if [[ ! -f "$CONFIG_LOADER" ]]; then
   err "Configuration loader not found: $CONFIG_LOADER"
-  return_or_exit 1
+  return 1 2>/dev/null || exit 1
 fi
 source "$CONFIG_LOADER"
 
 ENV_FILE="${PROJECT_ROOT}/configuration.conf"
 if ! load_env_file "$ENV_FILE"; then
   err "Failed to load configuration from: $ENV_FILE"
-  return_or_exit 1
+  return 1 2>/dev/null || exit 1
 fi
 
 CLUSTER_PROFILE="${CLUSTER_PROFILE:-honeypotlab}"

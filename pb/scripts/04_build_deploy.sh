@@ -9,6 +9,9 @@ if [[ ! -f "${COMMON_LIB}" ]]; then
 fi
 source "${COMMON_LIB}"
 PROJECT_ROOT="$(cd "${SCRIPTS_ROOT}/../.." && pwd)"
+RESOURCES_ROOT="${SCRIPTS_ROOT}/res"
+ADDITIONS_OVERRIDES_TEMPLATE="${RESOURCES_ROOT}/additions_overrides.yaml.tpl"
+ASTRONOMY_OVERRIDES_TEMPLATE="${RESOURCES_ROOT}/astronomy_overrides.yaml.tpl"
 
 # =========================================
 # Parameters (env overridable)
@@ -47,6 +50,7 @@ BUILD_CONTAINERS_K8S="${BUILD_CONTAINERS_K8S:-false}"
 DOCKER_BUILD_PARALLELISM="${DOCKER_BUILD_PARALLELISM:-4}"
 DOCKER_BUILD_RETRY_ATTEMPTS="${DOCKER_BUILD_RETRY_ATTEMPTS:-3}"
 DOCKER_BUILD_RETRY_DELAY_SECONDS="${DOCKER_BUILD_RETRY_DELAY_SECONDS:-5}"
+DOCKER_BUILD_TIMEOUT_SECONDS="${DOCKER_BUILD_TIMEOUT_SECONDS:-0}"
 
 # Optional multi-arch build (e.g., "linux/amd64,linux/arm64")
 PLATFORM="${PLATFORM:-}"
@@ -70,6 +74,10 @@ normalize_bool_var BUILD_CONTAINERS_K8S
 [[ "${DOCKER_BUILD_RETRY_ATTEMPTS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_ATTEMPTS must be an integer >= 1"
 (( DOCKER_BUILD_RETRY_ATTEMPTS >= 1 )) || die "DOCKER_BUILD_RETRY_ATTEMPTS must be >= 1"
 [[ "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_DELAY_SECONDS must be an integer >= 0"
+[[ "${DOCKER_BUILD_TIMEOUT_SECONDS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_TIMEOUT_SECONDS must be an integer >= 0"
+if (( DOCKER_BUILD_TIMEOUT_SECONDS > 0 )); then
+  req timeout
+fi
 require_port_var REGISTRY_PORT
 [[ -n "${REGISTRY_NAME}" ]] || die "REGISTRY_NAME must not be empty."
 [[ -n "${DOCKER_HELPER_NAME}" ]] || die "DOCKER_HELPER_NAME must not be empty."
@@ -151,6 +159,24 @@ stop_docker_helper() {
 # Execute Docker CLI inside helper
 d() { docker exec "${DOCKER_HELPER_NAME}" docker "$@"; }
 
+run_with_docker_build_timeout() {
+  local rc=0
+
+  if (( DOCKER_BUILD_TIMEOUT_SECONDS <= 0 )); then
+    if "$@"; then
+      return 0
+    fi
+    rc=$?
+    return "${rc}"
+  fi
+
+  if timeout "${DOCKER_BUILD_TIMEOUT_SECONDS}s" "$@"; then
+    return 0
+  fi
+  rc=$?
+  return "${rc}"
+}
+
 # Normalized boolean helpers for env-driven Helm values.
 bool_env_value() {
   local var_name="$1"
@@ -195,6 +221,19 @@ bool_text() {
   else
     printf '%s' "$on_false"
   fi
+}
+
+render_values_template() {
+  local template_path="$1"
+  local output_path="$2"
+  local template_body=""
+
+  [[ -f "${template_path}" ]] || die "Template file not found: ${template_path}"
+  template_body="$(< "${template_path}")"
+
+  eval "cat <<__HONEY_TEMPLATE__
+${template_body}
+__HONEY_TEMPLATE__" > "${output_path}"
 }
 
 # =========================================
@@ -259,10 +298,10 @@ helper_build_and_push(){
   if [[ -n "${PLATFORM}" ]]; then
     ensure_helper_builder
     retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "buildx+push ${tag}" \
-      d buildx build --platform "${PLATFORM}" -t "${tag}" -f "${abs_df}" "${buildargs[@]}" "${abs_ctx}" --push
+      run_with_docker_build_timeout docker exec "${DOCKER_HELPER_NAME}" docker buildx build --platform "${PLATFORM}" -t "${tag}" -f "${abs_df}" "${buildargs[@]}" "${abs_ctx}" --push
   else
     retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker build ${tag}" \
-      d build -t "${tag}" -f "${abs_df}" "${buildargs[@]}" "${abs_ctx}"
+      run_with_docker_build_timeout docker exec "${DOCKER_HELPER_NAME}" docker build -t "${tag}" -f "${abs_df}" "${buildargs[@]}" "${abs_ctx}"
     retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker push ${tag}" \
       d push "${tag}"
   fi
@@ -415,83 +454,7 @@ deploy_helm(){
   local additions_overrides
   additions_overrides="$(mktemp)"
   trap_add "rm -f '${additions_overrides}'" EXIT
-  cat > "${additions_overrides}" <<EOF
-default:
-  image:
-    repository: "${REGISTRY_NAME}:${REGISTRY_PORT}"
-    version: "${IMAGE_VERSION}"
-networkPolicies:
-  enabled: true
-  rules:
-    dmz:
-      name: "${DMZ_NAMESPACE}"
-      ingress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${TST_NAMESPACE}, kube-system"
-      egress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${TST_NAMESPACE}, kube-system"
-    pay:
-      name: "${PAY_NAMESPACE}"
-      ingress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${DAT_NAMESPACE}, kube-system"
-      egress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${DAT_NAMESPACE}, kube-system"
-    app:
-      name: "${APP_NAMESPACE}"
-      ingress: "${DAT_NAMESPACE}, ${MEM_NAMESPACE}, ${DMZ_NAMESPACE}, ${PAY_NAMESPACE}, kube-system"
-      egress: "${DAT_NAMESPACE}, ${MEM_NAMESPACE}, ${DMZ_NAMESPACE}, ${PAY_NAMESPACE}, kube-system"
-    dat:
-      name: "${DAT_NAMESPACE}"
-      ingress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${PAY_NAMESPACE}, kube-system"
-      egress: "${APP_NAMESPACE}, ${MEM_NAMESPACE}, ${PAY_NAMESPACE}, kube-system"
-    mem:
-      name: "${MEM_NAMESPACE}"
-      ingress: "${DAT_NAMESPACE}, ${APP_NAMESPACE}, ${DMZ_NAMESPACE}, ${PAY_NAMESPACE}, ${TST_NAMESPACE}, kube-system"
-      egress: "${DAT_NAMESPACE}, ${APP_NAMESPACE}, ${DMZ_NAMESPACE}, ${PAY_NAMESPACE}, ${TST_NAMESPACE}, kube-system"
-    tst:
-      name: "${TST_NAMESPACE}"
-      ingress: "${MEM_NAMESPACE}, ${DMZ_NAMESPACE}, kube-system"
-      egress: "${MEM_NAMESPACE}, ${DMZ_NAMESPACE}, kube-system"
-postgres:
-  enabled: true
-  namespace: "${DAT_NAMESPACE}"
-config:
-  enabled: true
-  objects:
-    flagd-credentials-ui:
-      namespace: "${MEM_NAMESPACE}"
-      type: "$(bool_text FLAGD_CONFIGMAP true configmap secret)"
-    proto:
-      namespace: "${APP_NAMESPACE}"
-    product-catalog-products:
-      namespace: "${APP_NAMESPACE}"
-    flagd-config:
-      namespace: "${MEM_NAMESPACE}"
-    dbcurrency-creds:
-      namespace: "${APP_NAMESPACE}"
-    dbcurrency:
-      namespace: "${DAT_NAMESPACE}"
-    dbpayment:
-      namespace: "${DAT_NAMESPACE}"
-    dbauth:
-      namespace: "${DAT_NAMESPACE}"
-    smb-creds:
-      namespace: "${MEM_NAMESPACE}"
-RBAC:
-  enabled: true
-namespaces:
-  enabled: true
-  list: "${APP_NAMESPACE}, ${DMZ_NAMESPACE}, ${DAT_NAMESPACE}, ${PAY_NAMESPACE}, ${MEM_NAMESPACE}, ${TST_NAMESPACE}"
-pool:
-  enabled: true
-  ips: "${FRONTEND_PROXY_IP:-}-${GENERIC_SVC_ADDR:-}"
-volumes:
-  enabled: $(helm_bool SAMBA_ENABLE true)
-registryAuth:
-  enabled: true
-  username: "${REGISTRY_USER:-}"
-  password: "${REGISTRY_PASS:-}"
-vulnerabilities:
-  dnsGrant: $(helm_bool DNS_GRANT true)
-  deployGrant: $(helm_bool DEPLOY_GRANT true)
-  anonymousGrant: $(helm_bool_all ANONYMOUS_AUTH false ANONYMOUS_GRANT false)
-  currencyGrant: $(helm_bool CURRENCY_GRANT true)
-EOF
+  render_values_template "${ADDITIONS_OVERRIDES_TEMPLATE}" "${additions_overrides}"
 
   helm upgrade --install honeypot-additions helm-charts/additions \
     --wait --timeout "${HELM_TIMEOUT}" \
@@ -529,122 +492,36 @@ EOF
     -f "${TELEMETRY_VALUES}" \
     -f "${telemetry_overrides}"
 
+  local astronomy_overrides
+  astronomy_overrides="$(mktemp)"
+  trap_add "rm -f '${astronomy_overrides}'" EXIT
+  render_values_template "${ASTRONOMY_OVERRIDES_TEMPLATE}" "${astronomy_overrides}"
+
   # honeypot-astronomy-shop
   helm upgrade --install honeypot-astronomy-shop helm-charts/astronomy-shop \
     --wait --timeout "${HELM_TIMEOUT}" \
     -f helm-charts/astronomy-shop/values.yaml \
-    --set-string default.image.repository="${REGISTRY_NAME}:${REGISTRY_PORT}" \
-    --set-string default.image.tag="${IMAGE_VERSION}" \
-    --set components.test-image.enabled=true \
-    --set components.frontend-proxy.enabled=true \
-    --set components.image-provider.enabled=true \
-    --set components.valkey-cart.enabled=true \
-    --set components.payment.enabled=true \
-    --set components.flagd.enabled=true \
-    --set components.traffic-controller.enabled=true \
-    --set components.accounting.enabled=true \
-    --set components.ad.enabled=true \
-    --set components.auth.enabled=true \
-    --set components.cart.enabled=true \
-    --set components.checkout.enabled=true \
-    --set components.currency.enabled=true \
-    --set components.email.enabled=true \
-    --set components.fraud-detection.enabled=true \
-    --set components.frontend.enabled=true \
-    --set components.product-catalog.enabled=true \
-    --set components.quote.enabled=true \
-    --set components.recommendation.enabled=true \
-    --set components.shipping.enabled=true \
-    --set components.smtp.enabled=true \
-    --set components.kafka.enabled=true \
-    --set "default.env[1].value=otel-collector.${MEM_NAMESPACE}" \
-    --set "components.accounting.namespace=${APP_NAMESPACE}" \
-    --set "components.ad.namespace=${APP_NAMESPACE}" \
-    --set "components.ad.env[1].value=flagd.${MEM_NAMESPACE}" \
-    --set "components.auth.namespace=${APP_NAMESPACE}" \
-    --set "components.auth.env[0].value=postgres-auth.${DAT_NAMESPACE}" \
+    -f "${astronomy_overrides}" \
     --set "components.auth.initContainers[0].env[0].value=postgres-auth.${DAT_NAMESPACE}" \
-    --set "components.cart.namespace=${APP_NAMESPACE}" \
-    --set "components.cart.env[2].value=valkey-cart.${DAT_NAMESPACE}:6379" \
-    --set "components.cart.env[3].value=flagd.${MEM_NAMESPACE}" \
     --set "components.cart.initContainers[0].env[0].value=valkey-cart.${DAT_NAMESPACE}" \
-    --set "components.checkout.namespace=${APP_NAMESPACE}" \
-    --set "components.checkout.env[8].value=flagd.${MEM_NAMESPACE}" \
     --set "components.checkout.initContainers[1].env[0].value=flagd.${MEM_NAMESPACE}" \
     --set "components.checkout.sidecarContainers[0].imageOverride.repository=${REGISTRY_NAME}:${REGISTRY_PORT}/sidecar-enc" \
     --set "components.checkout.sidecarContainers[0].env[3].value=flagd.${MEM_NAMESPACE}" \
     --set "components.checkout.sidecarContainers[1].imageOverride.repository=${REGISTRY_NAME}:${REGISTRY_PORT}/sidecar-enc" \
     --set "components.checkout.sidecarContainers[1].env[2].value=payment.${PAY_NAMESPACE}:8080" \
     --set "components.checkout.sidecarContainers[1].env[3].value=flagd.${MEM_NAMESPACE}" \
-    --set "components.currency.namespace=${APP_NAMESPACE}" \
-    --set "components.currency.env[4].value=postgres.${DAT_NAMESPACE}" \
-    --set "components.currency.env[10].value=flagd.${MEM_NAMESPACE}" \
     --set "components.currency.initContainers[0].env[0].value=postgres.${DAT_NAMESPACE}" \
-    --set "components.email.namespace=${APP_NAMESPACE}" \
-    --set "components.fraud-detection.namespace=${APP_NAMESPACE}" \
-    --set "components.fraud-detection.env[1].value=flagd.${MEM_NAMESPACE}" \
-    --set "components.frontend.namespace=${APP_NAMESPACE}" \
-    --set "components.frontend.env[10].value=flagd.${MEM_NAMESPACE}" \
     --set "components.frontend.initContainers[0].env[0].value=flagd.${MEM_NAMESPACE}" \
     --set "components.frontend.sidecarContainers[0].imageOverride.repository=${REGISTRY_NAME}:${REGISTRY_PORT}/sidecar-enc" \
     --set "components.frontend.sidecarContainers[0].env[3].value=flagd.${MEM_NAMESPACE}" \
-    --set "components.frontend-proxy.namespace=${DMZ_NAMESPACE}" \
-    --set "components.frontend-proxy.service.loadBalancerIP=${FRONTEND_PROXY_IP:-}" \
-    --set "components.frontend-proxy.env[1].value=flagd.${MEM_NAMESPACE}" \
-    --set "components.frontend-proxy.env[3].value=flagd.${MEM_NAMESPACE}" \
-    --set "components.frontend-proxy.env[5].value=frontend.${APP_NAMESPACE}" \
-    --set "components.frontend-proxy.env[7].value=grafana.${MEM_NAMESPACE}" \
-    --set "components.frontend-proxy.env[11].value=jaeger-query.${MEM_NAMESPACE}" \
-    --set "components.image-provider.namespace=${DMZ_NAMESPACE}" \
-    --set "components.image-updater.namespace=${MEM_NAMESPACE}" \
-    --set "components.image-updater.imageOverride.repository=${REGISTRY_NAME}:${REGISTRY_PORT}/controller" \
-    --set "components.image-updater.env[2].value=${REGISTRY_NAME}:${REGISTRY_PORT}" \
-    --set "components.image-updater.env[3].value=${REGISTRY_USER:-}" \
-    --set "components.image-updater.env[4].value=${REGISTRY_PASS:-}" \
-    --set "components.payment.namespace=${PAY_NAMESPACE}" \
-    --set "components.payment.env[1].value=flagd.${MEM_NAMESPACE}" \
-    --set "components.payment.env[4].value=postgres-payment.${DAT_NAMESPACE}" \
     --set "components.payment.initContainers[0].env[0].value=flagd.${MEM_NAMESPACE}" \
     --set "components.payment.initContainers[1].env[0].value=postgres-payment.${DAT_NAMESPACE}" \
     --set "components.payment.sidecarContainers[0].imageOverride.repository=${REGISTRY_NAME}:${REGISTRY_PORT}/sidecar-enc" \
     --set "components.payment.sidecarContainers[0].env[3].value=flagd.${MEM_NAMESPACE}" \
-    --set "components.product-catalog.namespace=${APP_NAMESPACE}" \
-    --set "components.product-catalog.env[2].value=flagd.${MEM_NAMESPACE}" \
-    --set "components.quote.namespace=${APP_NAMESPACE}" \
-    --set "components.recommendation.namespace=${APP_NAMESPACE}" \
-    --set "components.recommendation.env[4].value=flagd.${MEM_NAMESPACE}" \
-    --set "components.shipping.namespace=${APP_NAMESPACE}" \
-    --set "components.smtp.namespace=${DMZ_NAMESPACE}" \
-    --set "components.flagd.namespace=${MEM_NAMESPACE}" \
-    --set "components.kafka.namespace=${APP_NAMESPACE}" \
-    --set "components.test-image.namespace=${TST_NAMESPACE}" \
-    --set "components.test-image.imageOverride.repository=${REGISTRY_NAME}:${REGISTRY_PORT}/attacker" \
-    --set "components.test-image.env[0].value=http://${CALDERA_SERVER:-}:8888" \
-    --set "components.test-image.env[2].value=${MEM_NAMESPACE}" \
-    --set "components.test-image.env[3].value=${DMZ_NAMESPACE}" \
-    --set "components.test-image.env[4].value=${APP_NAMESPACE}" \
-    --set "components.test-image.env[5].value=${PAY_NAMESPACE}" \
-    --set "components.test-image.env[6].value=${ATTACKER:-}" \
-    --set "components.test-image.env[7].value=${KC0101:-}" \
-    --set "components.test-image.env[8].value=${KC0102:-}" \
-    --set "components.test-image.env[9].value=${KC0103:-}" \
-    --set "components.test-image.env[10].value=${KC0104:-}" \
-    --set "components.test-image.env[11].value=${KC0105:-}" \
-    --set "components.test-image.env[12].value=${KC0106:-}" \
-    --set "components.test-image.env[13].value=${KC0107:-}" \
-    --set "components.test-image.env[14].value=${KC0108:-}" \
-    --set "components.traffic-controller.namespace=${MEM_NAMESPACE}" \
-    --set "components.traffic-controller.imageOverride.repository=${REGISTRY_NAME}:${REGISTRY_PORT}/controller" \
     --set "components.traffic-controller.sidecarContainers[0].imageOverride.repository=${REGISTRY_NAME}:${REGISTRY_PORT}/traffic-translator" \
-    --set "components.valkey-cart.namespace=${DAT_NAMESPACE}" \
-    --set "components.traffic-controller.env[4].value=$(bool_text LOG_TOKEN true synthetic-log.sh null.sh)" \
-    --set "components.image-updater.enabled=$(helm_bool AUTO_DEPLOY true)" \
-    --set "components.smtp.hostNetwork=$(helm_bool HOST_NETWORK true)" \
-    --set "components.smtp.env[0].value=$(helm_bool RCE_VULN true)" \
     --set "components.smtp.additionalVolumes[0].hostPath.path=$(bool_text SOCKET_SHARED true "$CRICTL_RUNTIME_PATH" /tmp/disabled-containerd.sock)" \
     --set "components.smtp.additionalVolumes[0].hostPath.type=$(bool_text SOCKET_SHARED true Socket FileOrCreate)" \
     --set "components.smtp.volumeMounts[0].mountPath=/host/run/containerd/containerd.sock" \
-    --set "components.currency.env[9].value=$(helm_bool FLAGD_FEATURES true)" \
     --set "components.checkout.sidecarContainers[0].env[7].value=$(helm_bool FLAGD_FEATURES true)" \
     --set "components.checkout.sidecarContainers[1].env[7].value=$(helm_bool FLAGD_FEATURES true)" \
     --set "components.frontend.sidecarContainers[0].env[7].value=$(helm_bool FLAGD_FEATURES true)" \

@@ -247,14 +247,14 @@ else
 
   if ! docker ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
     warn "Container '${CONTAINER_NAME}' not found. Skipping attacker DNS zone insertion."
-    return_or_exit 0
+    return 0 2>/dev/null || exit 0
   fi
 
   # get docker IP (first network IP)
   DOCKER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null || true)
   if [[ -z "${DOCKER_IP}" ]]; then
     err "Could not determine IP for docker container '${CONTAINER_NAME}'. Aborting."
-    return_or_exit 1
+    return 1 2>/dev/null || exit 1
   fi
 
   # Build the zone block (no leading indentation)
@@ -271,13 +271,13 @@ EOF
   CURRENT_COREFILE="$(kubectl_get -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' 2>/dev/null || true)"
   if [[ -z "${CURRENT_COREFILE}" ]]; then
     err "Failed to read kube-system/coredns Corefile. Aborting."
-    return_or_exit 1
+    return 1 2>/dev/null || exit 1
   fi
 
   # If the zone block already exists (top-level "zone" optionally with :port), exit
   if printf '%s\n' "${CURRENT_COREFILE}" | grep -qE "^[[:space:]]*${ZONE}(:[0-9]+)?[[:space:]]*\\{" ; then
     log "Zone block for '${ZONE}' already present in Corefile. Nothing to do."
-    return_or_exit 0
+    return 0 2>/dev/null || exit 0
   fi
 
   # Remove any pre-existing occurrences of the same zone block (balanced-brace removal),
@@ -332,7 +332,7 @@ EOF
   if ! command -v jq >/dev/null 2>&1; then
     [[ -n "${TMPDIR:-}" ]] && rm -rf "${TMPDIR}" && TMPDIR=""
     err "jq is required to safely patch the ConfigMap but was not found. Install jq and retry."
-    return_or_exit 1
+    return 1 2>/dev/null || exit 1
   fi
 
   kubectl_get -n kube-system get cm coredns -o json \

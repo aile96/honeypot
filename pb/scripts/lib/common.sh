@@ -11,6 +11,8 @@ warn() { printf "\033[1;33m[WARN]\033[0m %s\n" "$*" >&2; }
 err()  { printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
 
 # Return when sourced, exit when executed directly.
+# Note: if this helper is invoked from a function, `return` exits only that function.
+# For top-level early exits in sourced scripts, use: `return <code> 2>/dev/null || exit <code>`.
 return_or_exit() {
   local code="${1:-0}"
   local caller_file=""

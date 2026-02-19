@@ -289,14 +289,14 @@ case "$TARGET" in
       if kind_profile_reachable; then
         warn "Kind cluster '${KIND_CLUSTER_NAME}' is already reachable."
         warn "Full skip: no creation, no image pulls, no image loads."
-        return_or_exit 0
+        return 0 2>/dev/null || exit 0
       fi
       warn "Kind cluster '${KIND_CLUSTER_NAME}' exists but context 'kind-${KIND_CLUSTER_NAME}' is not reachable. Re-exporting kubeconfig..."
       kind export kubeconfig --name "${KIND_CLUSTER_NAME}" >/dev/null 2>&1 || true
       if kind_profile_reachable; then
         warn "Kind cluster '${KIND_CLUSTER_NAME}' became reachable after kubeconfig export."
         warn "Full skip: no creation, no image pulls, no image loads."
-        return_or_exit 0
+        return 0 2>/dev/null || exit 0
       fi
       die "Kind cluster '${KIND_CLUSTER_NAME}' exists but is still not reachable via context 'kind-${KIND_CLUSTER_NAME}'."
     fi
@@ -320,7 +320,7 @@ case "$TARGET" in
       if minikube_profile_reachable; then
         warn "Minikube profile '${MINIKUBE_PROFILE}' is already reachable."
         warn "Full skip: no creation, no image pulls, no image loads."
-        return_or_exit 0
+        return 0 2>/dev/null || exit 0
       fi
 
       log "Minikube profile '${MINIKUBE_PROFILE}' exists but is not reachable. Starting it..."
@@ -331,7 +331,7 @@ case "$TARGET" in
       fi
       create_minikube_cluster
       log "Minikube profile '${MINIKUBE_PROFILE}' started."
-      return_or_exit 0
+      return 0 2>/dev/null || exit 0
     fi
 
     log "No Minikube profile named '${MINIKUBE_PROFILE}' detected. Creating..."

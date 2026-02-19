@@ -1,6 +1,6 @@
 # Kubernetes Honeypot & Adversary Emulation Platform (KinD/Minikube)
 
-> Last update: 2026-02-16  
+> Last update: 2026-02-19  
 > **For isolated lab use only.** This platform runs *simulated* attacks via MITRE Caldera for research, training and defensive validation. **Do not use on production systems or third‑party infrastructure.**
 >
 > **Safety check:** verify your current `kubectl` context (`kubectl config current-context`) points to a local lab cluster (KinD/Minikube). The pipeline operates on whatever cluster is reachable and may patch control-plane/worker components depending on enabled vulnerability switches.
@@ -75,6 +75,7 @@ A full cleanup script is provided: `./remove_all.sh`.
 
 **Repo map** (where to look):
 - Pipeline scripts: `pb/scripts/*`
+- Rendered Helm override templates used by deploy step: `pb/scripts/res/{additions_overrides.yaml.tpl,astronomy_overrides.yaml.tpl}`
 - Underlay containers & Caldera content: `pb/docker/*`
 - Helm charts: `helm-charts/{additions,telemetry,astronomy-shop}`
 - Service sources and custom images: `src/*`
@@ -121,6 +122,8 @@ Most options live in **`configuration.conf`** (loaded by `./start.sh`); some adv
 - `REGISTRY_NAME=registry` – helper/hostname.
 - `REGISTRY_PORT=5000` – registry port (inside the Docker network).
 - `REGISTRY_USER`, `REGISTRY_PASS` – credentials.
+- `CACHE_IMAGE_REGISTRY=true|false` – enables/disables host-persisted registry data.
+- `REGISTRY_DATA_DIR=<path>` – optional host path for registry data cache mount (default: `pb/docker/registry/data`).
 
 ### Telemetry
 - `LOG_OPEN=true|false` – selects *noauth*/**auth** values for the `telemetry` chart.
@@ -153,13 +156,23 @@ Enable/disable optional underlay containers started by `pb/scripts/03_run_underl
 - `ATTACKER_ENABLE=true|false`
 - `SAMBA_ENABLE=true|false`
 - `LOAD_GENERATOR_ENABLE=true|false`
+- `CACHE_IMAGE_REGISTRY=true|false` – persist local registry image data on host path `pb/docker/registry/data` (`true` = cache enabled, `false` = ephemeral registry storage).
 - `DOCKER_BUILD_PARALLELISM=<n>` – max concurrent Docker builds (`1` = sequential, script fallback default `4`; current `configuration.conf` sets `8`).
 - `DOCKER_BUILD_RETRY_ATTEMPTS=<n>` – max attempts for each Docker build/push (`>=1`, default `3`).
 - `DOCKER_BUILD_RETRY_DELAY_SECONDS=<n>` – wait time between retries (`>=0`, default `5` seconds).
+- `DOCKER_BUILD_TIMEOUT_SECONDS=<n>` – timeout for each Docker build attempt in seconds (`>=0`; `0` disables timeout, current `configuration.conf` sets `600`).
 
 ### Image build/deploy concurrency
+- `BUILD_CONTAINERS_DOCKER=true|false` controls underlay image rebuild policy (`true` = force rebuild, `false` = build only if image is missing locally).
+- `BUILD_CONTAINERS_K8S=true|false` controls app image rebuild/push policy in `pb/scripts/04_build_deploy.sh` (`true` = force rebuild/push, `false` = skip when image already exists in registry).
 - `DOCKER_BUILD_PARALLELISM=<n>` also applies to `pb/scripts/04_build_deploy.sh` for application image build/push parallelism (`1` = sequential, script fallback default `4`; current `configuration.conf` sets `8`).
 - `DOCKER_BUILD_RETRY_ATTEMPTS=<n>` and `DOCKER_BUILD_RETRY_DELAY_SECONDS=<n>` also apply to `pb/scripts/04_build_deploy.sh`.
+- `DOCKER_BUILD_TIMEOUT_SECONDS=<n>` also applies to `pb/scripts/04_build_deploy.sh` Docker build/buildx steps (timeout per attempt; `0` disables timeout).
+
+### Helm overrides templates (`04_build_deploy.sh`)
+- Additions chart runtime overrides are rendered from `pb/scripts/res/additions_overrides.yaml.tpl`.
+- Astronomy Shop runtime overrides are rendered from `pb/scripts/res/astronomy_overrides.yaml.tpl`.
+- Templates are expanded at runtime with environment values (for example namespace names, registry coordinates, feature toggles), then passed to `helm upgrade --install` with `-f <rendered-temp-file>`.
 
 ### Pipeline step retries (`start.sh`)
 - `STEP_RETRY_ATTEMPTS=<n>` – max attempts for each pipeline step script (`>=1`, default `1`).
@@ -323,6 +336,7 @@ docker rm -f ...        # all docker supporting network
 
 - **Cluster**: `KIND_CLUSTER`, `TARGET`, `CLUSTER_PROFILE`, `KIND_CLUSTER_NAME`, `MINIKUBE_PROFILE`, `KUBE_CONTEXT`, `WORKERS`, `K8S_VERSION`, `LOAD_IMAGES`
 - **Registry**: `REGISTRY_NAME`, `REGISTRY_PORT`, `REGISTRY_USER`, `REGISTRY_PASS`
+- **Image build policy**: `BUILD_CONTAINERS_DOCKER`, `BUILD_CONTAINERS_K8S`, `CACHE_IMAGE_REGISTRY`, `REGISTRY_DATA_DIR`
 - **Proxy/Service**: `PROXY`, `CALDERA_SERVER`, `CALDERA_CONTROLLER`, `ATTACKER`, `GENERIC_SVC_PORT`
 - **Telemetry**: `LOG_OPEN`, `LOG_TOKEN`
 - **Kill chains**: `ADV_LIST`, `ADV_NAME`, `ENABLEKC1..6`, `SCRIPT_PRE_KC*`, `SCRIPT_POST_KC*`
@@ -330,6 +344,7 @@ docker rm -f ...        # all docker supporting network
 - **Cluster-level toggles**: `OPEN_PORTS`, `ETCD_EXPOSURE`, `ANONYMOUS_AUTH`, `RECURSIVE_DNS`, `MISSING_POLICY`
 - **Pipeline retries**: `STEP_RETRY_ATTEMPTS`, `STEP_RETRY_DELAY_SECONDS`, `STEP_RETRY_ATTEMPTS_<STEP_KEY>`, `STEP_RETRY_DELAY_SECONDS_<STEP_KEY>`
 - **Underlay services**: `*_ENABLE` flags (e.g., `PROXY_ENABLE`, `CALDERA_SERVER_ENABLE`, `ATTACKER_ENABLE`, ...)
+- **Docker build controls**: `DOCKER_BUILD_PARALLELISM`, `DOCKER_BUILD_RETRY_ATTEMPTS`, `DOCKER_BUILD_RETRY_DELAY_SECONDS`, `DOCKER_BUILD_TIMEOUT_SECONDS`
 - **Namespaces**: `APP_NAMESPACE`, `DAT_NAMESPACE`, `DMZ_NAMESPACE`, `MEM_NAMESPACE`, `PAY_NAMESPACE`, `TST_NAMESPACE`
 - **Script/runtime derived or optional overrides**: `FRONTEND_PROXY_IP`, `INTERNAL_REGISTRY`, `INSECURE_REGISTRY`
 

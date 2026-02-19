@@ -2,6 +2,7 @@
 set -euo pipefail
 KUBECONFIG="${KUBECONFIG:-$DATA_PATH/KC6/ops-admin.kubeconfig}"
 OUTFILE="${OUTFILE:-$DATA_PATH/KC6/secrets}"
+mkdir -p "$(dirname -- "$OUTFILE")"
 
 kubectl --kubeconfig "$KUBECONFIG" get secrets --all-namespaces -o json \
 | jq -r '
@@ -18,6 +19,6 @@ kubectl --kubeconfig "$KUBECONFIG" get secrets --all-namespaces -o json \
     })
   | [ .ns, .name, .type, .key, (.val | @base64d) ]
   | @tsv
-' > $OUTFILE
+' > "$OUTFILE"
 
 echo "Done: see all the secrets in $OUTFILE"

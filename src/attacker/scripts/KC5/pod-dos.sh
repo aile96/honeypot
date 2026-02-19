@@ -6,29 +6,14 @@ FILE_IP="/tmp/iphost"
 KEY_PATH="$BASE/ssh/ssh-key"
 LOG_DIR="$BASE/logs"
 PID_LIST="$BASE/pids"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NODE_IP_HELPER="${SCRIPT_DIR}/../common/list-node-ips.sh"
 
-list_node_ips() {
-  if [[ ! -f "$FILE_IP" ]]; then
-    echo "Error: file '$FILE_IP' not found" >&2
-    return 1
-  fi
+[[ -f "${NODE_IP_HELPER}" ]] || { echo "Missing helper: ${NODE_IP_HELPER}" >&2; exit 1; }
+# shellcheck source=../common/list-node-ips.sh
+source "${NODE_IP_HELPER}"
 
-  echo ">> Recover IPs list (file: $FILE_IP)..." >&2
-  awk -F'-' '
-    /^[[:space:]]*#/ { next }
-    /^[[:space:]]*$/ { next }
-    NF >= 2 {
-      ip=$1; host=$2
-      gsub(/^[ \t]+|[ \t\r]+$/, "", ip)
-      gsub(/^[ \t]+|[ \t\r]+$/, "", host)
-      if (host ~ /^worker([0-9]+)?$/ && ip ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
-        print ip
-      }
-    }
-  ' "$FILE_IP" | sort -u
-}
-
-mapfile -t nodes < <(list_node_ips | sed '/^$/d')
+mapfile -t nodes < <(list_worker_node_ips "$FILE_IP" | sed '/^$/d')
 if [[ "${#nodes[@]}" -eq 0 ]]; then
   echo "No node found"; exit 1
 fi

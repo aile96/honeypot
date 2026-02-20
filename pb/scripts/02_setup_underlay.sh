@@ -683,15 +683,27 @@ for n in "${ALL_NODES[@]}"; do
 done
 
 if (( ${#failed_nodes[@]} > 0 )); then
-  warn "Retrying registry setup after 60s for nodes: ${failed_nodes[*]}"
-  sleep 60
+  max_final_retries=3
+  retry_failed_nodes=("${failed_nodes[@]}")
 
-  retry_failed_nodes=()
-  for n in "${failed_nodes[@]}"; do
-    if ! install_on_node_container "$n"; then
-      warn "Registry setup failed again on $n"
-      retry_failed_nodes+=("$n")
+  for ((retry_attempt=1; retry_attempt<=max_final_retries; retry_attempt++)); do
+    warn "Retrying registry setup after 60s (attempt ${retry_attempt}/${max_final_retries}) for nodes: ${retry_failed_nodes[*]}"
+    sleep 60
+
+    current_failed_nodes=()
+    for n in "${retry_failed_nodes[@]}"; do
+      if ! install_on_node_container "$n"; then
+        warn "Registry setup failed again on $n (attempt ${retry_attempt}/${max_final_retries})"
+        current_failed_nodes+=("$n")
+      fi
+    done
+
+    if (( ${#current_failed_nodes[@]} == 0 )); then
+      retry_failed_nodes=()
+      break
     fi
+
+    retry_failed_nodes=("${current_failed_nodes[@]}")
   done
 
   if (( ${#retry_failed_nodes[@]} > 0 )); then

@@ -66,6 +66,10 @@ WORKDIR="${PROJECT_ROOT}"
 
 # Network the helper container will join
 CP_NETWORK="${CP_NETWORK:-bridge}"
+# API server IPs injected into NetworkPolicies (YAML list or "auto")
+KUBE_APISERVER_IPS="${KUBE_APISERVER_IPS:-auto}"
+# Deprecated fallback (host-only /32 or /128 entries)
+KUBE_APISERVER_CIDRS="${KUBE_APISERVER_CIDRS:-}"
 
 normalize_bool_var INTERNAL_REGISTRY
 normalize_bool_var INSECURE_REGISTRY
@@ -237,6 +241,160 @@ ${template_body}
 __HONEY_TEMPLATE__" > "${output_path}"
 }
 
+is_ipv4_literal() {
+  [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+}
+
+is_ipv6_literal() {
+  [[ "$1" == *:* ]]
+}
+
+is_loopback_ip() {
+  [[ "$1" == "127.0.0.1" || "$1" == "::1" ]]
+}
+
+normalize_legacy_kube_apiserver_cidrs() {
+  local legacy_payload="$1"
+  local stripped="${legacy_payload#[}"
+  stripped="${stripped%]}"
+  local -a raw_entries=()
+  local -a normalized_entries=()
+  local -A seen=()
+  local entry=""
+  local prefix=""
+
+  if [[ -z "${stripped//[[:space:]]/}" ]]; then
+    printf '[]'
+    return 0
+  fi
+
+  IFS=',' read -r -a raw_entries <<< "${stripped}"
+  for entry in "${raw_entries[@]}"; do
+    entry="$(sed -E 's/^[[:space:]]*"*//;s/"*[[:space:]]*$//' <<< "${entry}")"
+    [[ -n "${entry}" ]] || continue
+
+    if [[ "${entry}" == */* ]]; then
+      prefix="${entry##*/}"
+      if [[ "${prefix}" != "32" && "${prefix}" != "128" ]]; then
+        die "KUBE_APISERVER_CIDRS supports only host CIDRs (/32 or /128). Invalid entry: ${entry}"
+      fi
+      entry="${entry%/*}"
+    fi
+
+    if ! is_ipv4_literal "${entry}" && ! is_ipv6_literal "${entry}"; then
+      die "Invalid API server IP in KUBE_APISERVER_CIDRS: ${entry}"
+    fi
+    if is_loopback_ip "${entry}"; then
+      continue
+    fi
+    if [[ -n "${seen[${entry}]:-}" ]]; then
+      continue
+    fi
+
+    seen["${entry}"]=1
+    normalized_entries+=("\"${entry}\"")
+  done
+
+  if (( ${#normalized_entries[@]} == 0 )); then
+    printf '[]'
+    return 0
+  fi
+
+  printf '[%s]' "$(IFS=,; echo "${normalized_entries[*]}")"
+}
+
+discover_kube_apiserver_ips() {
+  local -a raw_ips=()
+  local -a unique_ips=()
+  local -a ip_list=()
+  local -A seen=()
+  local ip=""
+  local host=""
+  local host_only=""
+  local server_url=""
+  local ip_payload=""
+
+  if [[ "${KUBE_APISERVER_IPS}" != "auto" ]]; then
+    log "Using user-provided KUBE_APISERVER_IPS=${KUBE_APISERVER_IPS}"
+    return 0
+  fi
+
+  if [[ -n "${KUBE_APISERVER_CIDRS}" && "${KUBE_APISERVER_CIDRS}" != "auto" ]]; then
+    warn "KUBE_APISERVER_CIDRS is deprecated. Converting to host IP list for API server-only policy."
+    KUBE_APISERVER_IPS="$(normalize_legacy_kube_apiserver_cidrs "${KUBE_APISERVER_CIDRS}")"
+    export KUBE_APISERVER_IPS
+    log "Using API server IPs from KUBE_APISERVER_CIDRS: ${KUBE_APISERVER_IPS}"
+    return 0
+  fi
+
+  while IFS= read -r ip; do
+    [[ -n "${ip}" ]] && raw_ips+=("${ip}")
+  done < <(
+    kubectl get endpoints -n default kubernetes \
+      -o jsonpath='{range .subsets[*].addresses[*]}{.ip}{"\n"}{end}' 2>/dev/null || true
+  )
+
+  while IFS= read -r ip; do
+    [[ -n "${ip}" && "${ip}" != "None" ]] && raw_ips+=("${ip}")
+  done < <(
+    kubectl get svc -n default kubernetes \
+      -o jsonpath='{.spec.clusterIP}{"\n"}{range .spec.clusterIPs[*]}{.}{"\n"}{end}' 2>/dev/null || true
+  )
+
+  server_url="$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || true)"
+  if [[ -n "${server_url}" ]]; then
+    host="${server_url#*://}"
+    host="${host%%/*}"
+
+    if [[ "${host}" == \[* ]]; then
+      host_only="${host#\[}"
+      host_only="${host_only%%]*}"
+    else
+      host_only="${host%%:*}"
+    fi
+
+    if [[ -n "${host_only}" ]]; then
+      if is_ipv4_literal "${host_only}" || is_ipv6_literal "${host_only}"; then
+        raw_ips+=("${host_only}")
+      elif command -v getent >/dev/null 2>&1; then
+        while IFS= read -r ip; do
+          [[ -n "${ip}" ]] && raw_ips+=("${ip}")
+        done < <(getent ahosts "${host_only}" 2>/dev/null | awk '{print $1}' | awk 'NF' | sort -u)
+      fi
+    fi
+  fi
+
+  for ip in "${raw_ips[@]}"; do
+    if ! is_ipv4_literal "${ip}" && ! is_ipv6_literal "${ip}"; then
+      continue
+    fi
+    if is_loopback_ip "${ip}"; then
+      continue
+    fi
+    if [[ -n "${seen[${ip}]:-}" ]]; then
+      continue
+    fi
+    seen["${ip}"]=1
+    unique_ips+=("${ip}")
+  done
+
+  if (( ${#unique_ips[@]} == 0 )); then
+    warn "Could not discover API server IPs; KUBE_APISERVER_IPS set to []."
+    KUBE_APISERVER_IPS='[]'
+    export KUBE_APISERVER_IPS
+    return 0
+  fi
+
+  for ip in "${unique_ips[@]}"; do
+    ip_list+=("\"${ip}\"")
+  done
+
+  ip_payload="$(IFS=,; echo "${ip_list[*]}")"
+  KUBE_APISERVER_IPS="[${ip_payload}]"
+  export KUBE_APISERVER_IPS
+  log "Discovered API server IPs: ${KUBE_APISERVER_IPS}"
+}
+
 # =========================================
 # Certificates install
 # =========================================
@@ -299,10 +457,13 @@ helper_build_and_push(){
   if [[ -n "${PLATFORM}" ]]; then
     ensure_helper_builder
     retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "buildx+push ${tag}" \
-      run_with_docker_build_timeout docker exec "${DOCKER_HELPER_NAME}" docker buildx build --platform "${PLATFORM}" -t "${tag}" -f "${abs_df}" "${buildargs[@]}" "${abs_ctx}" --push
+      run_with_docker_build_timeout docker exec "${DOCKER_HELPER_NAME}" docker buildx build --platform "${PLATFORM}" -t "${tag}" -f "${abs_df}" --network "host" "${buildargs[@]}" "${abs_ctx}" --push
   else
-    retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker build ${tag}" \
-      run_with_docker_build_timeout docker exec "${DOCKER_HELPER_NAME}" docker build -t "${tag}" -f "${abs_df}" "${buildargs[@]}" "${abs_ctx}"
+    if ! retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker build ${tag}" \
+      run_with_docker_build_timeout docker exec "${DOCKER_HELPER_NAME}" docker build -t "${tag}" -f "${abs_df}" --network "host" "${buildargs[@]}" "${abs_ctx}"; then
+      err "docker build failed for ${tag}; skipping push."
+      return 1
+    fi
     retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker push ${tag}" \
       d push "${tag}"
   fi
@@ -438,17 +599,18 @@ helm_repos(){
 
 deploy_helm(){
   helm_repos
+  discover_kube_apiserver_ips
 
   # metallb
   helm upgrade --install metallb metallb/metallb \
     --namespace metallb-system --create-namespace \
-    --wait --timeout "${HELM_TIMEOUT}"
+    --wait --timeout "${HELM_TIMEOUT}" || return $?
 
   # csi-driver-smb
   if [ "${SAMBA_ENABLE:-true}" = "true" ]; then
     helm upgrade --install csi-driver-smb csi-driver-smb/csi-driver-smb \
       --namespace kube-system \
-      --wait --timeout "${HELM_TIMEOUT}"
+      --wait --timeout "${HELM_TIMEOUT}" || return $?
   fi
 
   # honeypot-additions
@@ -460,7 +622,7 @@ deploy_helm(){
   helm upgrade --install honeypot-additions helm-charts/additions \
     --wait --timeout "${HELM_TIMEOUT}" \
     -f helm-charts/additions/values.yaml \
-    -f "${additions_overrides}"
+    -f "${additions_overrides}" || return $?
 
   # honeypot-telemetry
   local TELEMETRY_VALUES telemetry_overrides
@@ -473,7 +635,7 @@ deploy_helm(){
     --namespace "${MEM_NAMESPACE}" --create-namespace \
     --wait --timeout "${HELM_TIMEOUT}" \
     -f "${TELEMETRY_VALUES}" \
-    -f "${telemetry_overrides}"
+    -f "${telemetry_overrides}" || return $?
 
   local astronomy_overrides
   astronomy_overrides="$(mktemp)"
@@ -510,7 +672,7 @@ deploy_helm(){
     --set "components.frontend.sidecarContainers[0].env[7].value=$(helm_bool FLAGD_FEATURES true)" \
     --set "components.payment.sidecarContainers[0].env[7].value=$(helm_bool FLAGD_FEATURES true)" \
     --set "components.flagd.sidecarContainers[0].envSwitchFrom[0].valueFrom=$(bool_text FLAGD_CONFIGMAP true configmap secret)" \
-    --set "components.flagd.sidecarContainers[0].envSwitchFrom[1].valueFrom=$(bool_text FLAGD_CONFIGMAP true configmap secret)"
+    --set "components.flagd.sidecarContainers[0].envSwitchFrom[1].valueFrom=$(bool_text FLAGD_CONFIGMAP true configmap secret)" || return $?
 }
 
 # =========================================

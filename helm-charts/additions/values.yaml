@@ -13,6 +13,9 @@ vulnerabilities:
 networkPolicies:
   enabled: false
   allowKubeAPIServer: true
+  kubeAPIServer:
+    ingressIPs: []
+    egressIPs: []
   defaultDeny: true
   allowSameNamespace: true
   podSelector: {}

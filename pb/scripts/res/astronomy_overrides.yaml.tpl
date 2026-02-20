@@ -149,21 +149,29 @@ components:
       - name: ATTACKERADDR
         value: "${ATTACKER:-}"
       - name: KC0101
-        value: "${KC0101:-}"
+        value: |-
+          ${KC0101:-}
       - name: KC0102
-        value: "${KC0102:-}"
+        value: |-
+          ${KC0102:-}
       - name: KC0103
-        value: "${KC0103:-}"
+        value: |-
+          ${KC0103:-}
       - name: KC0104
-        value: "${KC0104:-}"
+        value: |-
+          ${KC0104:-}
       - name: KC0105
-        value: "${KC0105:-}"
+        value: |-
+          ${KC0105:-}
       - name: KC0106
-        value: "${KC0106:-}"
+        value: |-
+          ${KC0106:-}
       - name: KC0107
-        value: "${KC0107:-}"
+        value: |-
+          ${KC0107:-}
       - name: KC0108
-        value: "${KC0108:-}"
+        value: |-
+          ${KC0108:-}
   traffic-controller:
     enabled: true
     namespace: "${MEM_NAMESPACE}"

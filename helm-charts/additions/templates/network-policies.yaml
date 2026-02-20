@@ -20,11 +20,75 @@
   {{- if $p }}{{- $egPeers = append $egPeers $p }}{{- end -}}
 {{- end -}}
 
-{{- $hasIngressCidrs := and (hasKey $root.Values.networkPolicies "internet") ($root.Values.networkPolicies.internet.ingressCidrs) -}}
-{{- $hasEgressCidrs  := and (hasKey $root.Values.networkPolicies "internet") ($root.Values.networkPolicies.internet.egressCidrs) -}}
+{{- $internetCfg := (default dict $root.Values.networkPolicies.internet) -}}
+{{- $internetIngressCidrs := (default (list) $internetCfg.ingressCidrs) -}}
+{{- $internetEgressCidrs := (default (list) $internetCfg.egressCidrs) -}}
+{{- $internetExceptCidrs := (default (list) $internetCfg.exceptCidrs) -}}
+{{- $hasIngressCidrs := gt (len $internetIngressCidrs) 0 -}}
+{{- $hasEgressCidrs  := gt (len $internetEgressCidrs) 0 -}}
+{{- $kubeApiCfg := (default dict $root.Values.networkPolicies.kubeAPIServer) -}}
+{{- $kubeIngressRaw := (default (list) $kubeApiCfg.ingressIPs) -}}
+{{- if and (eq (len $kubeIngressRaw) 0) (gt (len (default (list) $kubeApiCfg.ingressCidrs)) 0) -}}
+  {{- $kubeIngressRaw = (default (list) $kubeApiCfg.ingressCidrs) -}}
+{{- end -}}
+{{- if kindIs "string" $kubeIngressRaw -}}
+  {{- $kubeIngressRaw = splitList "," $kubeIngressRaw -}}
+{{- end -}}
+{{- $kubeIngressCidrs := list -}}
+{{- range $entry := $kubeIngressRaw -}}
+  {{- $raw := trim (toString $entry) -}}
+  {{- if $raw -}}
+    {{- if contains "/" $raw -}}
+      {{- if or (hasSuffix "/32" $raw) (hasSuffix "/128" $raw) -}}
+        {{- $kubeIngressCidrs = append $kubeIngressCidrs $raw -}}
+      {{- else -}}
+        {{- fail (printf "networkPolicies.kubeAPIServer.ingressIPs accepts only single-host entries (/32 or /128), got %q" $raw) -}}
+      {{- end -}}
+    {{- else -}}
+      {{- if contains ":" $raw -}}
+        {{- $kubeIngressCidrs = append $kubeIngressCidrs (printf "%s/128" $raw) -}}
+      {{- else -}}
+        {{- $kubeIngressCidrs = append $kubeIngressCidrs (printf "%s/32" $raw) -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
 
-{{- $emitIngress := or (gt (len $ingPeers) 0) $hasIngressCidrs $root.Values.networkPolicies.allowSameNamespace $allowWorldIngress -}}
-{{- $emitEgress  := or (gt (len $egPeers) 0) $hasEgressCidrs  $root.Values.networkPolicies.allowSameNamespace $allowWorldEgress  -}}
+{{- $kubeEgressRaw := (default (list) $kubeApiCfg.egressIPs) -}}
+{{- if and (eq (len $kubeEgressRaw) 0) (gt (len (default (list) $kubeApiCfg.egressCidrs)) 0) -}}
+  {{- $kubeEgressRaw = (default (list) $kubeApiCfg.egressCidrs) -}}
+{{- end -}}
+{{- if kindIs "string" $kubeEgressRaw -}}
+  {{- $kubeEgressRaw = splitList "," $kubeEgressRaw -}}
+{{- end -}}
+{{- $kubeEgressCidrs := list -}}
+{{- range $entry := $kubeEgressRaw -}}
+  {{- $raw := trim (toString $entry) -}}
+  {{- if $raw -}}
+    {{- if contains "/" $raw -}}
+      {{- if or (hasSuffix "/32" $raw) (hasSuffix "/128" $raw) -}}
+        {{- $kubeEgressCidrs = append $kubeEgressCidrs $raw -}}
+      {{- else -}}
+        {{- fail (printf "networkPolicies.kubeAPIServer.egressIPs accepts only single-host entries (/32 or /128), got %q" $raw) -}}
+      {{- end -}}
+    {{- else -}}
+      {{- if contains ":" $raw -}}
+        {{- $kubeEgressCidrs = append $kubeEgressCidrs (printf "%s/128" $raw) -}}
+      {{- else -}}
+        {{- $kubeEgressCidrs = append $kubeEgressCidrs (printf "%s/32" $raw) -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+
+{{- $hasKubeIngressCidrs := and $root.Values.networkPolicies.allowKubeAPIServer (gt (len $kubeIngressCidrs) 0) -}}
+{{- $hasKubeEgressCidrs  := and $root.Values.networkPolicies.allowKubeAPIServer (gt (len $kubeEgressCidrs) 0) -}}
+
+{{- $emitIngressBase := or (gt (len $ingPeers) 0) $hasIngressCidrs $root.Values.networkPolicies.allowSameNamespace $allowWorldIngress -}}
+{{- $emitEgressBase  := or (gt (len $egPeers) 0) $hasEgressCidrs  $root.Values.networkPolicies.allowSameNamespace $allowWorldEgress  -}}
+{{- $emitIngress := or $emitIngressBase $hasKubeIngressCidrs -}}
+{{- $emitEgress  := or $emitEgressBase  $hasKubeEgressCidrs  -}}
+{{- $policySelector := (default $root.Values.networkPolicies.podSelector $cfg.podSelector) -}}
 
 {{- if or $emitIngress $emitEgress }}
 ---
@@ -34,15 +98,16 @@ metadata:
   name: {{ printf "%s-allow" $ns | trunc 63 | trimSuffix "-" }}
   namespace: {{ $ns }}
 spec:
-  {{- if $root.Values.networkPolicies.podSelector }}
+  {{- if $policySelector }}
   podSelector:
-{{ toYaml $root.Values.networkPolicies.podSelector | indent 4 }}
+{{ toYaml $policySelector | indent 4 }}
   {{- else }}
   podSelector: {}
   {{- end }}
 
   {{- if $emitIngress }}
   ingress:
+    {{- if $emitIngressBase }}
     - from:
         {{- /* namespace peers for ingress */}}
         {{- range $ingPeers }}
@@ -63,52 +128,51 @@ spec:
         - ipBlock:
             cidr: "::/0"
           {{- else if eq $mode "cidr" }}
-            {{- with $root.Values.networkPolicies.internet }}
-              {{- with .ingressCidrs }}
-                {{- range . }}
+              {{- range $internetIngressCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
-                {{- end }}
               {{- end }}
-              {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
-              {{- if $except }}
+              {{- if and (gt (len $internetIngressCidrs) 0) (gt (len $internetExceptCidrs) 0) }}
         - ipBlock:
             cidr: "0.0.0.0/0"
             except:
-              {{- range $ex := $except }}
+              {{- range $ex := $internetExceptCidrs }}
               - {{ $ex | quote }}
               {{- end }}
               {{- end }}
-            {{- end }}
           {{- else }}
         # Unknown internet.mode -> no Internet ingress opened
           {{- end }}
         {{- end }}
 
         {{- /* global legacy Internet (if defined but not enabled per-namespace) */}}
-        {{- with $root.Values.networkPolicies.internet }}
-          {{- with .ingressCidrs }}
-            {{- if and (gt (len .) 0) (not $allowWorldIngress) }}
-              {{- range . }}
+          {{- if and (gt (len $internetIngressCidrs) 0) (not $allowWorldIngress) }}
+              {{- range $internetIngressCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
               {{- end }}
-            {{- end }}
           {{- end }}
-          {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
-          {{- if and $except (not $allowWorldIngress) }}
+          {{- if and (gt (len $internetIngressCidrs) 0) (gt (len $internetExceptCidrs) 0) (not $allowWorldIngress) }}
         - ipBlock:
             cidr: "0.0.0.0/0"
             except:
-              {{- range $ex := $except }}
+              {{- range $ex := $internetExceptCidrs }}
               - {{ $ex | quote }}
               {{- end }}
           {{- end }}
+    {{- end }}
+    {{- if $hasKubeIngressCidrs }}
+    - from:
+        {{- range $cidr := $kubeIngressCidrs }}
+        - ipBlock:
+            cidr: {{ $cidr | quote }}
         {{- end }}
+    {{- end }}
   {{- end }}
 
   {{- if $emitEgress }}
   egress:
+    {{- if $emitEgressBase }}
     - to:
         {{- /* namespace peers for egress */}}
         {{- range $egPeers }}
@@ -121,11 +185,6 @@ spec:
         - podSelector: {}
         {{- end }}
 
-        {{- if $root.Values.networkPolicies.allowKubeAPIServer }}
-        # NOTE: Kubernetes NetworkPolicy cannot express Cilium `toServices`.
-        # Add control-plane ipBlocks below or match APIServer pods if self-hosted.
-        {{- end }}
-
         {{- if $allowWorldEgress }}
           {{- $mode := (default "world" $root.Values.networkPolicies.internet.mode) -}}
           {{- if eq $mode "world" }}
@@ -134,47 +193,52 @@ spec:
         - ipBlock:
             cidr: "::/0"
           {{- else if eq $mode "cidr" }}
-            {{- with $root.Values.networkPolicies.internet }}
-              {{- with .egressCidrs }}
-                {{- range . }}
+              {{- if gt (len $internetEgressCidrs) 0 }}
+              {{- range $internetEgressCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
-                {{- end }}
               {{- end }}
-              {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
-              {{- if $except }}
+              {{- if and (gt (len $internetEgressCidrs) 0) (gt (len $internetExceptCidrs) 0) }}
         - ipBlock:
             cidr: "0.0.0.0/0"
             except:
-              {{- range $ex := $except }}
+              {{- range $ex := $internetExceptCidrs }}
               - {{ $ex | quote }}
               {{- end }}
               {{- end }}
-            {{- end }}
+              {{- else }}
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+        - ipBlock:
+            cidr: "::/0"
+              {{- end }}
           {{- else }}
         # Unknown internet.mode -> no Internet egress opened
           {{- end }}
         {{- end }}
 
-        {{- with $root.Values.networkPolicies.internet }}
-          {{- with .egressCidrs }}
-            {{- if and (gt (len .) 0) (not $allowWorldEgress) }}
-              {{- range . }}
+          {{- if and (gt (len $internetEgressCidrs) 0) (not $allowWorldEgress) }}
+              {{- range $internetEgressCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
               {{- end }}
-            {{- end }}
           {{- end }}
-          {{- $except := $root.Values.networkPolicies.internet.exceptCidrs -}}
-          {{- if and $except (not $allowWorldEgress) }}
+          {{- if and (gt (len $internetEgressCidrs) 0) (gt (len $internetExceptCidrs) 0) (not $allowWorldEgress) }}
         - ipBlock:
             cidr: "0.0.0.0/0"
             except:
-              {{- range $ex := $except }}
+              {{- range $ex := $internetExceptCidrs }}
               - {{ $ex | quote }}
               {{- end }}
           {{- end }}
+    {{- end }}
+    {{- if $hasKubeEgressCidrs }}
+    - to:
+        {{- range $cidr := $kubeEgressCidrs }}
+        - ipBlock:
+            cidr: {{ $cidr | quote }}
         {{- end }}
+    {{- end }}
   {{- end }}
 
   policyTypes:
@@ -194,7 +258,12 @@ metadata:
   name: {{ printf "%s-default-deny" $ns | trunc 63 | trimSuffix "-" }}
   namespace: {{ $ns }}
 spec:
+  {{- if $policySelector }}
+  podSelector:
+{{ toYaml $policySelector | indent 4 }}
+  {{- else }}
   podSelector: {}
+  {{- end }}
   policyTypes:
     - Ingress
     - Egress

@@ -205,7 +205,9 @@ install_cilium_cni() {
 
   req helm
   log "Installing Cilium CNI via Helm on context '${KUBE_CONTEXT}'..."
-  helm repo add cilium https://helm.cilium.io >/dev/null
+  if ! helm repo list | awk 'NR > 1 {print $1}' | grep -Fxq cilium; then
+    helm repo add cilium https://helm.cilium.io >/dev/null
+  fi
   helm repo update cilium >/dev/null
 
   if [[ -n "${CILIUM_VERSION}" ]]; then

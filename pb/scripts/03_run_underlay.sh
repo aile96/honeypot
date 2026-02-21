@@ -95,21 +95,13 @@ image_exists() {
 }
 
 run_with_docker_build_timeout() {
-  local rc=0
-
   if (( DOCKER_BUILD_TIMEOUT_SECONDS <= 0 )); then
-    if "$@"; then
-      return 0
-    fi
-    rc=$?
-    return "${rc}"
+    "$@"
+    return $?
   fi
 
-  if timeout "${DOCKER_BUILD_TIMEOUT_SECONDS}s" "$@"; then
-    return 0
-  fi
-  rc=$?
-  return "${rc}"
+  timeout "${DOCKER_BUILD_TIMEOUT_SECONDS}s" "$@"
+  return $?
 }
 
 ensure_local_image_or_die() {

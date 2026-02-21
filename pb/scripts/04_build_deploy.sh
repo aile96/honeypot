@@ -101,31 +101,41 @@ start_docker_helper() {
 
   log "Starting Docker helper '${DOCKER_HELPER_NAME}' with ${DOCKER_HELPER_IMAGE}"
   local dind_args=()
+  local helper_ready=false
   if is_true "${INSECURE_REGISTRY}"; then
     dind_args+=( "--insecure-registry=${REGISTRY_NAME}:${REGISTRY_PORT}" )
   fi
 
-  retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker run ${DOCKER_HELPER_NAME}" \
+  if ! retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker run ${DOCKER_HELPER_NAME}" \
     docker run -d --rm --name "${DOCKER_HELPER_NAME}" \
       --privileged \
       --network "${CP_NETWORK}" \
       -v "${WORKDIR}:${WORKDIR}:ro" \
       -v "${DOCKER_HELPER_NAME}-data:/var/lib/docker" \
       "${DOCKER_HELPER_IMAGE}" \
-      "${dind_args[@]}" >/dev/null
+      "${dind_args[@]}" >/dev/null; then
+    return 1
+  fi
 
   # Wait for helper's Docker daemon
   log "Waiting for helper's Docker daemon..."
   for i in {1..60}; do
     if docker exec "${DOCKER_HELPER_NAME}" docker info >/dev/null 2>&1; then
+      helper_ready=true
       break
     fi
     sleep 1
-    [[ $i -eq 60 ]] && die "Helper Docker daemon did not become ready in time"
   done
 
+  if ! is_true "${helper_ready}"; then
+    die "Helper Docker daemon did not become ready in time"
+    return 1
+  fi
+
   # Install registry CA so HTTPS pushes succeed
-  install_registry_ca
+  if ! install_registry_ca; then
+    return 1
+  fi
 
   # Optionally start an internal registry (HTTP by default)
   if is_true "${INTERNAL_REGISTRY}"; then
@@ -164,22 +174,29 @@ stop_docker_helper() {
 # Execute Docker CLI inside helper
 d() { docker exec "${DOCKER_HELPER_NAME}" docker "$@"; }
 
-run_with_docker_build_timeout() {
-  local rc=0
-
+run_helper_docker_build_with_timeout() {
   if (( DOCKER_BUILD_TIMEOUT_SECONDS <= 0 )); then
-    if "$@"; then
-      return 0
-    fi
-    rc=$?
-    return "${rc}"
+    docker exec "${DOCKER_HELPER_NAME}" docker "$@"
+    return $?
   fi
 
-  if timeout "${DOCKER_BUILD_TIMEOUT_SECONDS}s" "$@"; then
-    return 0
+  timeout "${DOCKER_BUILD_TIMEOUT_SECONDS}s" \
+    docker exec "${DOCKER_HELPER_NAME}" sh -lc '
+      timeout_s="$1"
+      shift
+      timeout -s TERM -k 10 "${timeout_s}" docker "$@"
+    ' _ "${DOCKER_BUILD_TIMEOUT_SECONDS}" "$@"
+  return $?
+}
+
+run_with_docker_build_timeout() {
+  if (( DOCKER_BUILD_TIMEOUT_SECONDS <= 0 )); then
+    "$@"
+    return $?
   fi
-  rc=$?
-  return "${rc}"
+
+  timeout "${DOCKER_BUILD_TIMEOUT_SECONDS}s" "$@"
+  return $?
 }
 
 # Normalized boolean helpers for env-driven Helm values.
@@ -457,10 +474,10 @@ helper_build_and_push(){
   if [[ -n "${PLATFORM}" ]]; then
     ensure_helper_builder
     retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "buildx+push ${tag}" \
-      run_with_docker_build_timeout docker exec "${DOCKER_HELPER_NAME}" docker buildx build --platform "${PLATFORM}" -t "${tag}" -f "${abs_df}" --network "host" "${buildargs[@]}" "${abs_ctx}" --push
+      run_helper_docker_build_with_timeout buildx build --platform "${PLATFORM}" -t "${tag}" -f "${abs_df}" --network "host" "${buildargs[@]}" "${abs_ctx}" --push
   else
     if ! retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker build ${tag}" \
-      run_with_docker_build_timeout docker exec "${DOCKER_HELPER_NAME}" docker build -t "${tag}" -f "${abs_df}" --network "host" "${buildargs[@]}" "${abs_ctx}"; then
+      run_helper_docker_build_with_timeout build -t "${tag}" -f "${abs_df}" --network "host" "${buildargs[@]}" "${abs_ctx}"; then
       err "docker build failed for ${tag}; skipping push."
       return 1
     fi
@@ -584,7 +601,8 @@ build_all_images(){
   done
 
   if (( ${#failed[@]} > 0 )); then
-    die "Image build/push failed for: ${failed[*]}"
+    err "Image build/push failed for: ${failed[*]}"
+    return 1
   fi
 }
 
@@ -678,15 +696,40 @@ deploy_helm(){
 # =========================================
 # Main
 # =========================================
-trap_add stop_docker_helper EXIT
+main() {
+  local rc=0
 
-start_docker_helper
+  trap_add stop_docker_helper EXIT
 
-log "== Docker images =="
-build_all_images
+  if ! start_docker_helper; then
+    return 1
+  fi
 
-log "== Helm Deploy =="
-deploy_helm
+  log "== Docker images =="
+  if ! build_all_images; then
+    rc=1
+    err "Docker build/push phase failed."
+  fi
 
-stop_docker_helper
-log "Done. Registry=${REGISTRY_NAME}:${REGISTRY_PORT} | Version=${IMAGE_VERSION} | BUILD_CONTAINERS_K8S=${BUILD_CONTAINERS_K8S} | INTERNAL_REGISTRY=${INTERNAL_REGISTRY} | INSECURE_REGISTRY=${INSECURE_REGISTRY}"
+  if (( rc == 0 )); then
+    log "== Helm Deploy =="
+    if ! deploy_helm; then
+      rc=1
+      err "Helm deploy phase failed."
+    fi
+  else
+    warn "Skipping Helm deploy because Docker build/push failed."
+  fi
+
+  stop_docker_helper || true
+
+  if (( rc != 0 )); then
+    return "${rc}"
+  fi
+
+  log "Done. Registry=${REGISTRY_NAME}:${REGISTRY_PORT} | Version=${IMAGE_VERSION} | BUILD_CONTAINERS_K8S=${BUILD_CONTAINERS_K8S} | INTERNAL_REGISTRY=${INTERNAL_REGISTRY} | INSECURE_REGISTRY=${INSECURE_REGISTRY}"
+  return 0
+}
+
+main
+return $? 2>/dev/null || exit $?

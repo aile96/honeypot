@@ -13,6 +13,7 @@ RESOURCES_ROOT="${SCRIPTS_ROOT}/res"
 ADDITIONS_OVERRIDES_TEMPLATE="${RESOURCES_ROOT}/additions_overrides.yaml.tpl"
 ASTRONOMY_OVERRIDES_TEMPLATE="${RESOURCES_ROOT}/astronomy_overrides.yaml.tpl"
 TELEMETRY_OVERRIDES_TEMPLATE="${RESOURCES_ROOT}/telemetry_overrides.yaml.tpl"
+DOCKERFILE_BASE_IMAGES_FILE="${DOCKERFILE_BASE_IMAGES_FILE:-${RESOURCES_ROOT}/dockerfile_base_images.list}"
 
 # =========================================
 # Parameters (env overridable)
@@ -64,6 +65,7 @@ DOCKER_HELPER_IMAGE="${DOCKER_HELPER_IMAGE:-docker:26.1-dind}"
 DOCKER_HELPER_NAME="${DOCKER_HELPER_NAME:-docker-cli-helper}"
 DOCKER_HELPER_DATA_DIR="${PROJECT_ROOT}/pb/docker/helper"
 ENABLE_HELPER_CACHE="${ENABLE_HELPER_CACHE:-true}"
+PREFETCH_DOCKERFILE_BASE_IMAGES="${PREFETCH_DOCKERFILE_BASE_IMAGES:-true}"
 WORKDIR="${PROJECT_ROOT}"
 
 # Network the helper container will join
@@ -77,6 +79,7 @@ normalize_bool_var INTERNAL_REGISTRY
 normalize_bool_var INSECURE_REGISTRY
 normalize_bool_var BUILD_CONTAINERS_K8S
 normalize_bool_var ENABLE_HELPER_CACHE
+normalize_bool_var PREFETCH_DOCKERFILE_BASE_IMAGES
 [[ "${DOCKER_BUILD_PARALLELISM}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_PARALLELISM must be an integer >= 1"
 (( DOCKER_BUILD_PARALLELISM >= 1 )) || die "DOCKER_BUILD_PARALLELISM must be >= 1"
 [[ "${DOCKER_BUILD_RETRY_ATTEMPTS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_ATTEMPTS must be an integer >= 1"
@@ -463,6 +466,51 @@ helper_abs_path() {
   fi
 }
 
+prefetch_dockerfile_base_images() {
+  local list_file="${DOCKERFILE_BASE_IMAGES_FILE}"
+  local line=""
+  local image=""
+  local pulled=0
+  local skipped=0
+  local failed=0
+
+  if ! is_true "${PREFETCH_DOCKERFILE_BASE_IMAGES}"; then
+    log "Skipping Dockerfile base image pre-pull (PREFETCH_DOCKERFILE_BASE_IMAGES=false)."
+    return 0
+  fi
+
+  if [[ ! -f "${list_file}" ]]; then
+    warn "Dockerfile base images list not found at '${list_file}' - skipping pre-pull."
+    return 0
+  fi
+
+  log "Pre-pulling Dockerfile base images from '${list_file}'"
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    image="$(sed -E 's/[[:space:]]*#.*$//;s/^[[:space:]]+//;s/[[:space:]]+$//' <<< "${line}")"
+    [[ -n "${image}" ]] || continue
+
+    if [[ "${image}" == "${REGISTRY_NAME}:${REGISTRY_PORT}/"* ]]; then
+      skipped=$((skipped + 1))
+      log "Skipping pre-pull for project image '${image}' (same registry target)."
+      continue
+    fi
+
+    if retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker pull ${image}" \
+      d pull "${image}"; then
+      pulled=$((pulled + 1))
+    else
+      failed=$((failed + 1))
+      warn "Could not pre-pull '${image}' in helper. The build may pull it on-demand."
+    fi
+  done < "${list_file}"
+
+  if (( failed > 0 )); then
+    warn "Dockerfile base image pre-pull finished with errors (pulled=${pulled}, failed=${failed}, skipped=${skipped})."
+  else
+    log "Dockerfile base image pre-pull completed (pulled=${pulled}, failed=0, skipped=${skipped})."
+  fi
+}
+
 ensure_helper_builder() {
   if [[ "${HELPER_BUILDER_READY:-false}" == "true" ]]; then
     return 0
@@ -715,6 +763,10 @@ main() {
   trap_add stop_docker_helper EXIT
 
   if ! start_docker_helper; then
+    return 1
+  fi
+
+  if ! prefetch_dockerfile_base_images; then
     return 1
   fi
 

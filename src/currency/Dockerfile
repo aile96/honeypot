@@ -22,7 +22,7 @@ RUN git clone --depth 1 --branch v${OPENTELEMETRY_CPP_VERSION} https://github.co
     && make -j$(nproc || sysctl -n hw.ncpu || echo 1) install && cd ../..
 
 # copy currency sources and proto
-COPY ./src/currency /currency
+COPY ./ /currency
 COPY ./pb/demo.proto /currency/proto/demo.proto
 
 # vendor header-only needed for HTTP server and JSON
@@ -61,7 +61,7 @@ ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/lib" \
     EXPOSE_HTTP_PORT=${EXPOSE_HTTP_PORT}
 
 # copy two files into /tmp
-COPY ./src/currency/data/log.txt ./src/currency/data/debug.txt /tmp/
+COPY ./data/log.txt ./data/debug.txt /tmp/
 
 # === default env for flagd and http mirror (overridable by Helm) ===
 ENV FLAGD_HOST=flagd.mem \

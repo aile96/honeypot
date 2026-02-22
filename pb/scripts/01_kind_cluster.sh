@@ -39,8 +39,8 @@ REQUIRED_AVAIL_MEM_MB="${REQUIRED_AVAIL_MEM_MB:-12288}" # 12 GB
 REQUIRED_CPUS="${REQUIRED_CPUS:-4}"
 SKIP_RESOURCE_CHECK="${SKIP_RESOURCE_CHECK:-false}"
 normalize_bool_var SKIP_RESOURCE_CHECK
-LOAD_IMAGES="${LOAD_IMAGES:-false}"
-normalize_bool_var LOAD_IMAGES
+LOAD_IMAGES_KIND="${LOAD_IMAGES_KIND:-false}"
+normalize_bool_var LOAD_IMAGES_KIND
 IMAGE_PARALLELISM="${IMAGE_PARALLELISM:-8}"
 [[ "${IMAGE_PARALLELISM}" =~ ^[0-9]+$ ]] || die "IMAGE_PARALLELISM must be an integer >= 1"
 (( IMAGE_PARALLELISM >= 1 )) || die "IMAGE_PARALLELISM must be >= 1"
@@ -339,11 +339,11 @@ case "$TARGET" in
     fi
     create_kind_cluster
     install_cilium_cni
-    if is_true "${LOAD_IMAGES}"; then
+    if is_true "${LOAD_IMAGES_KIND}"; then
       pull_images_if_needed
       load_images_into_kind
     else
-      warn "Skipping image pre-pull/load because LOAD_IMAGES=false."
+      warn "Skipping image pre-pull/load because LOAD_IMAGES_KIND=false."
     fi
     ;;
   minikube)
@@ -373,11 +373,11 @@ case "$TARGET" in
     fi
     create_minikube_cluster
     install_cilium_cni
-    if is_true "${LOAD_IMAGES}"; then
+    if is_true "${LOAD_IMAGES_KIND}"; then
       pull_images_if_needed
       load_images_into_minikube
     else
-      warn "Skipping image pre-pull/load because LOAD_IMAGES=false."
+      warn "Skipping image pre-pull/load because LOAD_IMAGES_KIND=false."
     fi
     ;;
 esac

@@ -22,8 +22,8 @@ EXPOSE ${QUOTE_PORT}
 FROM composer:2.7@sha256:cb3483dc851665462a66c59982577dfbbde0ae2059e8b5550c2f49f44b8c333e AS vendor
 
 WORKDIR /tmp/
-COPY ./src/quote/composer.json .
-COPY ./src/quote/composer.lock .
+COPY composer.json .
+COPY composer.lock .
 
 RUN composer install \
     --ignore-platform-reqs \
@@ -37,4 +37,4 @@ FROM base AS final
 ARG QUOTE_PORT=8080
 ENV QUOTE_PORT=${QUOTE_PORT}
 COPY --from=vendor /tmp/vendor/ ./vendor/
-COPY ./src/quote/ /var/www
+COPY . /var/www

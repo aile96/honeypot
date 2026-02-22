@@ -116,7 +116,7 @@ Most options live in **`configuration.conf`** (loaded by `./start.sh`); some adv
 - `K8S_VERSION=1.30.0` cluster version (**optional in `configuration.conf`**; default from `pb/scripts/01_kind_cluster.sh`).
 - `WORKERS=2` number of workers (must be ≥2, **optional in `configuration.conf`**; default from `pb/scripts/01_kind_cluster.sh`).  
   (Minikube creates `WORKERS+1` total nodes; KinD creates `WORKERS` workers + 1 control-plane.)
-- `LOAD_IMAGES=true|false` toggles base image pre-pull/load during **new** cluster creation (`false` by default).
+- `LOAD_IMAGES_KIND=true|false` toggles base image pre-pull/load during **new** cluster creation (`false` by default).
 
 ### Image registry
 - `REGISTRY_NAME=registry` – helper/hostname.
@@ -124,6 +124,7 @@ Most options live in **`configuration.conf`** (loaded by `./start.sh`); some adv
 - `REGISTRY_USER`, `REGISTRY_PASS` – credentials.
 - `CACHE_IMAGE_REGISTRY=true|false` – enables/disables host-persisted registry data.
 - `REGISTRY_DATA_DIR=<path>` – optional host path for registry data cache mount (default: `pb/docker/registry/data`).
+- `ENABLE_HELPER_CACHE=true|false` – enables/disables docker:dind helper cache mount on fixed host path `pb/docker/helper` (`true` = persistent helper images/build cache, `false` = ephemeral helper storage).
 
 ### Telemetry
 - `LOG_OPEN=true|false` – selects *noauth*/**auth** values for the `telemetry` chart.
@@ -334,9 +335,10 @@ docker rm -f ...        # all docker supporting network
 
 > The following variables are sourced from `configuration.conf` and/or from script defaults/runtime exports in `pb/scripts/*.sh`.
 
-- **Cluster**: `KIND_CLUSTER`, `TARGET`, `CLUSTER_PROFILE`, `KIND_CLUSTER_NAME`, `MINIKUBE_PROFILE`, `KUBE_CONTEXT`, `WORKERS`, `K8S_VERSION`, `LOAD_IMAGES`
+- **Cluster**: `KIND_CLUSTER`, `TARGET`, `CLUSTER_PROFILE`, `KIND_CLUSTER_NAME`, `MINIKUBE_PROFILE`, `KUBE_CONTEXT`, `WORKERS`, `K8S_VERSION`, `LOAD_IMAGES_KIND`
 - **Registry**: `REGISTRY_NAME`, `REGISTRY_PORT`, `REGISTRY_USER`, `REGISTRY_PASS`
 - **Image build policy**: `BUILD_CONTAINERS_DOCKER`, `BUILD_CONTAINERS_K8S`, `CACHE_IMAGE_REGISTRY`, `REGISTRY_DATA_DIR`
+- **Docker helper cache toggle**: `ENABLE_HELPER_CACHE` (fixed path: `pb/docker/helper`)
 - **Proxy/Service**: `PROXY`, `CALDERA_SERVER`, `CALDERA_CONTROLLER`, `ATTACKER`, `GENERIC_SVC_PORT`
 - **Telemetry**: `LOG_OPEN`, `LOG_TOKEN`
 - **Kill chains**: `ADV_LIST`, `ADV_NAME`, `ENABLEKC1..6`, `SCRIPT_PRE_KC*`, `SCRIPT_POST_KC*`

@@ -62,6 +62,8 @@ HELM_TIMEOUT="${HELM_TIMEOUT:-20m}"
 # Docker helper (dedicated daemon/socket via docker:dind)
 DOCKER_HELPER_IMAGE="${DOCKER_HELPER_IMAGE:-docker:26.1-dind}"
 DOCKER_HELPER_NAME="${DOCKER_HELPER_NAME:-docker-cli-helper}"
+DOCKER_HELPER_DATA_DIR="${PROJECT_ROOT}/pb/docker/helper"
+ENABLE_HELPER_CACHE="${ENABLE_HELPER_CACHE:-true}"
 WORKDIR="${PROJECT_ROOT}"
 
 # Network the helper container will join
@@ -74,6 +76,7 @@ KUBE_APISERVER_CIDRS="${KUBE_APISERVER_CIDRS:-}"
 normalize_bool_var INTERNAL_REGISTRY
 normalize_bool_var INSECURE_REGISTRY
 normalize_bool_var BUILD_CONTAINERS_K8S
+normalize_bool_var ENABLE_HELPER_CACHE
 [[ "${DOCKER_BUILD_PARALLELISM}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_PARALLELISM must be an integer >= 1"
 (( DOCKER_BUILD_PARALLELISM >= 1 )) || die "DOCKER_BUILD_PARALLELISM must be >= 1"
 [[ "${DOCKER_BUILD_RETRY_ATTEMPTS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_ATTEMPTS must be an integer >= 1"
@@ -100,8 +103,18 @@ start_docker_helper() {
   docker rm -f "${DOCKER_HELPER_NAME}" >/dev/null 2>&1 || true
 
   log "Starting Docker helper '${DOCKER_HELPER_NAME}' with ${DOCKER_HELPER_IMAGE}"
+  local -a helper_storage_mount=()
   local dind_args=()
   local helper_ready=false
+
+  if is_true "${ENABLE_HELPER_CACHE}"; then
+    mkdir -p "${DOCKER_HELPER_DATA_DIR}"
+    helper_storage_mount=( -v "${DOCKER_HELPER_DATA_DIR}:/var/lib/docker" )
+    log "Docker helper cache enabled at '${DOCKER_HELPER_DATA_DIR}'."
+  else
+    log "Docker helper cache disabled (ENABLE_HELPER_CACHE=false)."
+  fi
+
   if is_true "${INSECURE_REGISTRY}"; then
     dind_args+=( "--insecure-registry=${REGISTRY_NAME}:${REGISTRY_PORT}" )
   fi
@@ -111,7 +124,7 @@ start_docker_helper() {
       --privileged \
       --network "${CP_NETWORK}" \
       -v "${WORKDIR}:${WORKDIR}:ro" \
-      -v "${DOCKER_HELPER_NAME}-data:/var/lib/docker" \
+      "${helper_storage_mount[@]}" \
       "${DOCKER_HELPER_IMAGE}" \
       "${dind_args[@]}" >/dev/null; then
     return 1
@@ -491,14 +504,6 @@ ensure_image(){
   local -a buildargs=( "$@" )
   local tag; tag="$(tag_for "$name")"
 
-  # Present in helper's daemon?
-  if local_image_exists "$tag"; then
-    log "Pushing only (found locally in helper, missing remotely): $tag"
-    retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker push ${tag}" \
-      d push "$tag"
-    return
-  fi
-
   # Force rebuild/push
   if is_true "$BUILD_CONTAINERS_K8S"; then
     helper_build_and_push "$tag" "$ctx" "$df" "${buildargs[@]}"; return
@@ -507,6 +512,14 @@ ensure_image(){
   # Already in remote registry?
   if remote_image_exists "$tag"; then
     log "Skipping build ($name): already in registry -> $tag"; return
+  fi
+
+  # Present in helper's daemon?
+  if local_image_exists "$tag"; then
+    log "Pushing only (found locally in helper, missing remotely): $tag"
+    retry_cmd "${DOCKER_BUILD_RETRY_ATTEMPTS}" "${DOCKER_BUILD_RETRY_DELAY_SECONDS}" "docker push ${tag}" \
+      d push "$tag"
+    return
   fi
 
   # Otherwise, build and push directly from helper daemon.
@@ -546,8 +559,8 @@ build_all_images(){
     ensure_helper_builder
   fi
 
-  queue_image_build accounting accounting . src/accounting/Dockerfile
-  queue_image_build ad ad . src/ad/Dockerfile
+  queue_image_build accounting accounting src/accounting src/accounting/Dockerfile
+  queue_image_build ad ad src/ad src/ad/Dockerfile
 
   queue_image_build attacker attacker src/attacker src/attacker/Dockerfile \
     --build-arg GROUP="cluster" \
@@ -566,32 +579,32 @@ build_all_images(){
     --build-arg KC0108="${KC0108:-}"
 
   queue_image_build auth auth src/auth src/auth/Dockerfile
-  queue_image_build cart cart . src/cart/src/Dockerfile
-  queue_image_build checkout checkout . src/checkout/Dockerfile
+  queue_image_build cart cart src/cart src/cart/src/Dockerfile
+  queue_image_build checkout checkout src/checkout src/checkout/Dockerfile
   queue_image_build controller controller src/controller src/controller/Dockerfile
-  queue_image_build currency currency . src/currency/Dockerfile
-  queue_image_build email email . src/email/Dockerfile
-  queue_image_build flagd flagd . src/flagd/Dockerfile
-  queue_image_build flagd-ui flagd-ui . src/flagd-ui/Dockerfile
-  queue_image_build fraud-detection fraud-detection . src/fraud-detection/Dockerfile
-  queue_image_build frontend frontend . src/frontend/Dockerfile
-  queue_image_build frontend-proxy frontend-proxy . src/frontend-proxy/Dockerfile
-  queue_image_build image-provider image-provider . src/image-provider/Dockerfile
-  queue_image_build kafka kafka . src/kafka/Dockerfile
-  queue_image_build payment payment . src/payment/Dockerfile
+  queue_image_build currency currency src/currency src/currency/Dockerfile
+  queue_image_build email email src/email src/email/Dockerfile
+  queue_image_build flagd flagd src/flagd src/flagd/Dockerfile
+  queue_image_build flagd-ui flagd-ui src/flagd-ui src/flagd-ui/Dockerfile
+  queue_image_build fraud-detection fraud-detection src/fraud-detection src/fraud-detection/Dockerfile
+  queue_image_build frontend frontend src/frontend src/frontend/Dockerfile
+  queue_image_build frontend-proxy frontend-proxy src/frontend-proxy src/frontend-proxy/Dockerfile
+  queue_image_build image-provider image-provider src/image-provider src/image-provider/Dockerfile
+  queue_image_build kafka kafka src/kafka src/kafka/Dockerfile
+  queue_image_build payment payment src/payment src/payment/Dockerfile
 
   queue_image_build postgres postgres src/postgres src/postgres/Dockerfile --build-arg DB="curr"
   queue_image_build postgres-auth postgres-auth src/postgres src/postgres/Dockerfile --build-arg DB="auth"
   queue_image_build postgres-payment postgres-payment src/postgres src/postgres/Dockerfile --build-arg DB="pay"
 
-  queue_image_build product-catalog product-catalog . src/product-catalog/Dockerfile
-  queue_image_build quote quote . src/quote/Dockerfile
-  queue_image_build recommendation recommendation . src/recommendation/Dockerfile
-  queue_image_build shipping shipping . src/shipping/Dockerfile
+  queue_image_build product-catalog product-catalog src/product-catalog src/product-catalog/Dockerfile
+  queue_image_build quote quote src/quote src/quote/Dockerfile
+  queue_image_build recommendation recommendation src/recommendation src/recommendation/Dockerfile
+  queue_image_build shipping shipping src/shipping src/shipping/Dockerfile
   queue_image_build sidecar-enc sidecar-enc src/sidecar-enc src/sidecar-enc/Dockerfile
   queue_image_build sidecar-mal sidecar-mal src/sidecar-mal src/sidecar-mal/Dockerfile
   queue_image_build smtp smtp src/smtp src/smtp/Dockerfile
-  queue_image_build valkey-cart valkey-cart . src/valkey-cart/Dockerfile
+  queue_image_build valkey-cart valkey-cart src/valkey-cart src/valkey-cart/Dockerfile
   queue_image_build traffic-translator traffic-translator src/traffic-translator src/traffic-translator/Dockerfile
 
   for i in "${!pids[@]}"; do
@@ -720,8 +733,6 @@ main() {
   else
     warn "Skipping Helm deploy because Docker build/push failed."
   fi
-
-  stop_docker_helper || true
 
   if (( rc != 0 )); then
     return "${rc}"

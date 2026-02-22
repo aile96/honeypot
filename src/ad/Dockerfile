@@ -6,15 +6,14 @@ FROM --platform=${BUILDPLATFORM} eclipse-temurin:21-jdk@sha256:2dbb970461f444a32
 ARG _JAVA_OPTIONS
 WORKDIR /usr/src/app/
 
-COPY ./src/ad/gradlew* ./src/ad/settings.gradle* ./src/ad/build.gradle ./
-COPY ./src/ad/gradle ./gradle
+COPY ./gradlew* ./settings.gradle* ./build.gradle ./
+COPY ./gradle ./gradle
 
 RUN chmod +x ./gradlew
 RUN ./gradlew
 RUN ./gradlew downloadRepos
 
-COPY ./src/ad/ ./
-COPY ./pb/ ./proto
+COPY ./ ./
 RUN chmod +x ./gradlew
 RUN ./gradlew installDist -PprotoSourceDir=./proto
 

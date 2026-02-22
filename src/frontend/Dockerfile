@@ -8,10 +8,10 @@ USER node
 
 WORKDIR /app
 
-COPY ./src/frontend/package*.json ./
+COPY package*.json ./
 RUN npm clean-install --no-audit --no-progress
-COPY ./src/frontend/protos ./protos
-COPY ./src/frontend .
+COPY protos ./protos
+COPY . .
 
 RUN npm run build
 
@@ -21,7 +21,7 @@ USER node
 
 WORKDIR /app
 COPY --chown=node:node --from=builder /home/node/.npm/ /home/node/.npm/
-COPY ./src/frontend/package*.json ./
+COPY package*.json ./
 RUN NODE_ENV=production npm clean-install --prefer-offline --no-audit --no-progress
 
 
@@ -48,4 +48,3 @@ ENV PORT=8080
 EXPOSE ${PORT}
 
 ENTRYPOINT ["npm", "start"]
-

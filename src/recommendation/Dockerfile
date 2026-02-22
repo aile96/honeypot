@@ -7,7 +7,7 @@ FROM python:3.12-alpine3.21@sha256:d4f9227f21409479c7fe92288f2e40b1a56ae591c8ad3
 RUN apk update && \
     apk add gcc=14.2.0-r4 g++=14.2.0-r4 linux-headers=6.6-r1
 
-COPY ./src/recommendation/requirements.txt requirements.txt
+COPY requirements.txt requirements.txt
 
 RUN python -m venv venv && \
     venv/bin/pip install --no-cache-dir -r requirements.txt
@@ -21,11 +21,11 @@ COPY --from=build-venv /venv/ /venv/
 
 WORKDIR /app
 
-COPY ./src/recommendation/demo_pb2_grpc.py demo_pb2_grpc.py
-COPY ./src/recommendation/demo_pb2.py demo_pb2.py
-COPY ./src/recommendation/logger.py logger.py
-COPY ./src/recommendation/metrics.py metrics.py
-COPY ./src/recommendation/recommendation_server.py recommendation_server.py
+COPY demo_pb2_grpc.py demo_pb2_grpc.py
+COPY demo_pb2.py demo_pb2.py
+COPY logger.py logger.py
+COPY metrics.py metrics.py
+COPY recommendation_server.py recommendation_server.py
 
 ENV RECOMMENDATION_PORT=${RECOMMENDATION_PORT}
 

@@ -9,11 +9,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends git=1:2.39.5-0+deb12u3 \
  && rm -rf /var/lib/apt/lists/*
 
-COPY ./src/flagd-ui/package*.json ./
+COPY package*.json ./
 
 RUN npm ci
 
-COPY ./src/flagd-ui/. ./
+COPY . ./
 
 RUN npm run build
 
@@ -25,7 +25,7 @@ ARG FLAGD_UI_JWT_SECRET="abcdefghijk0123456789lmnopqrstuv"
 
 WORKDIR /app
 
-COPY ./src/flagd-ui/package*.json ./
+COPY package*.json ./
 
 RUN npm ci --omit=dev
 

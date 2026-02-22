@@ -15,13 +15,13 @@ RUN echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://n
 RUN apt-get update ; apt-get install nginx-module-otel=1.27.0+0.1.0-2~bookworm --no-install-recommends --no-install-suggests -y
 
 RUN mkdir /static
-COPY src/image-provider/static /static
+COPY static /static
 
 EXPOSE ${IMAGE_PROVIDER_PORT}
 
 STOPSIGNAL SIGQUIT
 
-COPY src/image-provider/nginx.conf.template /nginx.conf.template
+COPY nginx.conf.template /nginx.conf.template
 
 ENV OTEL_COLLECTOR_HOST=${OTEL_COLLECTOR_HOST} \
     IMAGE_PROVIDER_PORT=${IMAGE_PROVIDER_PORT} \

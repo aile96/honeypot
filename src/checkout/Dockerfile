@@ -6,15 +6,15 @@ FROM golang:1.24-bookworm@sha256:1a6d4452c65dea36aac2e2d606b01b4a029ec90cc1ae538
 
 WORKDIR /usr/src/app/
 
-COPY ./src/checkout/go.mod go.mod
-COPY ./src/checkout/go.sum go.sum
+COPY go.mod go.mod
+COPY go.sum go.sum
 
 RUN go mod download
 
-COPY ./src/checkout/genproto/oteldemo/ genproto/oteldemo/
-COPY ./src/checkout/kafka/ kafka/
-COPY ./src/checkout/money/ money/
-COPY ./src/checkout/main.go main.go
+COPY genproto/oteldemo/ genproto/oteldemo/
+COPY kafka/ kafka/
+COPY money/ money/
+COPY main.go main.go
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w" -o checkout main.go
 

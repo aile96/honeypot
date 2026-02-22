@@ -6,6 +6,6 @@ RUN apt-get update && apt-get install -y gettext-base=0.21-4ubuntu4 && apt-get c
 
 USER envoy
 WORKDIR /home/envoy
-COPY ./src/frontend-proxy/envoy.tmpl.yaml envoy.tmpl.yaml
+COPY envoy.tmpl.yaml envoy.tmpl.yaml
 
 ENTRYPOINT ["/bin/sh","-c","envsubst < envoy.tmpl.yaml > /tmp/envoy.yaml && envoy -c /tmp/envoy.yaml"]

@@ -474,6 +474,11 @@ prefetch_dockerfile_base_images() {
   local skipped=0
   local failed=0
 
+  if ! is_true "${ENABLE_HELPER_CACHE}"; then
+    log "Skipping Dockerfile base image pre-pull (ENABLE_HELPER_CACHE=false)."
+    return 0
+  fi
+
   if ! is_true "${PREFETCH_DOCKERFILE_BASE_IMAGES}"; then
     log "Skipping Dockerfile base image pre-pull (PREFETCH_DOCKERFILE_BASE_IMAGES=false)."
     return 0
@@ -492,6 +497,12 @@ prefetch_dockerfile_base_images() {
     if [[ "${image}" == "${REGISTRY_NAME}:${REGISTRY_PORT}/"* ]]; then
       skipped=$((skipped + 1))
       log "Skipping pre-pull for project image '${image}' (same registry target)."
+      continue
+    fi
+
+    if local_image_exists "${image}"; then
+      skipped=$((skipped + 1))
+      log "Skipping pre-pull for '${image}' (already available in helper local cache)."
       continue
     fi
 
@@ -766,8 +777,12 @@ main() {
     return 1
   fi
 
-  if ! prefetch_dockerfile_base_images; then
-    return 1
+  if is_true "${ENABLE_HELPER_CACHE}"; then
+    if ! prefetch_dockerfile_base_images; then
+      return 1
+    fi
+  else
+    log "Skipping Dockerfile base image pre-pull because helper cache is disabled (ENABLE_HELPER_CACHE=false)."
   fi
 
   log "== Docker images =="

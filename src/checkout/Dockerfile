@@ -11,12 +11,9 @@ COPY go.sum go.sum
 
 RUN go mod download
 
-COPY genproto/oteldemo/ genproto/oteldemo/
-COPY kafka/ kafka/
-COPY money/ money/
-COPY main.go main.go
+COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w" -o checkout main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w" -o checkout .
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:a9329520abc449e3b14d5bc3a6ffae065bdde0f02667fa10880c49b35c109fd1
 ARG CHECKOUT_PORT=8080

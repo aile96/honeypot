@@ -2,7 +2,7 @@
   name: MITM Attack
   description: Using the key of a certificate to impersonate the API server.
   tactic: credential-access
-  technique: { attack_id: T1557.004, name: "Adversary-in-the-Middle: Evil Twin" }
+  technique: { attack_id: T1557, name: "Adversary-in-the-Middle" }
   repeatable: false
   singleton: true
   platforms:

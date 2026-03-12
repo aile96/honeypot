@@ -54,6 +54,10 @@ return function (App $app) {
         $span->addEvent('Received get quote request, processing it');
 
         $jsonObject = $request->getParsedBody();
+        $logger->info('GetQuote request received', [
+            'step' => 'quote.request.received',
+            'has_number_of_items' => is_array($jsonObject) && array_key_exists('numberOfItems', $jsonObject),
+        ]);
 
         $data = calculateQuote($jsonObject);
 
@@ -65,7 +69,9 @@ return function (App $app) {
         ]);
         //exported as an opentelemetry log (see dependencies.php)
         $logger->info('Calculated quote', [
+            'step' => 'quote.request.completed',
             'total' => $data,
+            'number_of_items' => is_array($jsonObject) && array_key_exists('numberOfItems', $jsonObject) ? intval($jsonObject['numberOfItems']) : null,
         ]);
 
         return $response

@@ -2,7 +2,7 @@ import type { NextApiHandler } from 'next';
 
 const handler: NextApiHandler = async (req, res) => {
   const { AUTH_BASE_URL = '' } = process.env;
-  console.log(`Incoming request: ${AUTH_BASE_URL}`);
+  console.info('[auth.login] request received', { authBaseConfigured: Boolean(AUTH_BASE_URL) });
   if (req.method !== 'POST') return res.status(405).end();
   try {
     const r = await fetch(`${AUTH_BASE_URL}/login`, {
@@ -11,9 +11,11 @@ const handler: NextApiHandler = async (req, res) => {
       body: JSON.stringify(req.body || {}),
     });
     const text = await r.text();
+    console.info('[auth.login] upstream response', { status: r.status });
     res.status(r.status).send(text);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'proxy_error';
+    console.error('[auth.login] upstream error', { error: msg });
     res.status(500).json({ error: msg });
   }
 };

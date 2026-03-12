@@ -43,6 +43,21 @@ public class ValkeyCartStore : ICartStore
         });
     private readonly ConfigurationOptions _redisConnectionOptions;
 
+    private static string MaskUserId(string userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return "unknown";
+        }
+
+        if (userId.Length <= 4)
+        {
+            return "***";
+        }
+
+        return $"{userId[..2]}***{userId[^2..]}";
+    }
+
     public ValkeyCartStore(ILogger<ValkeyCartStore> logger, string valkeyAddress)
     {
         _logger = logger;
@@ -86,7 +101,9 @@ public class ValkeyCartStore : ICartStore
                 return;
             }
 
-            _logger.LogDebug("Connecting to Redis: {_connectionString}", _connectionString);
+            _logger.LogDebug(
+                "Connecting to Valkey/Redis endpoint={endpoint}",
+                _redisConnectionOptions.EndPoints.FirstOrDefault()?.ToString() ?? "unknown");
             _redis = ConnectionMultiplexer.Connect(_redisConnectionOptions);
 
             if (_redis == null || !_redis.IsConnected)
@@ -97,7 +114,7 @@ public class ValkeyCartStore : ICartStore
                 throw new ApplicationException("Wasn't able to connect to redis");
             }
 
-            _logger.LogInformation("Successfully connected to Redis");
+            _logger.LogInformation("Successfully connected to Valkey/Redis");
             var cache = _redis.GetDatabase();
 
             _logger.LogDebug("Performing small test");
@@ -105,7 +122,10 @@ public class ValkeyCartStore : ICartStore
             object res = cache.StringGet("cart");
             _logger.LogDebug("Small test result: {res}", res);
 
-            _redis.InternalError += (_, e) => { Console.WriteLine(e.Exception); };
+            _redis.InternalError += (_, e) =>
+            {
+                _logger.LogError(e.Exception, "Valkey/Redis internal error event");
+            };
             _redis.ConnectionRestored += (_, _) =>
             {
                 _isRedisConnectionOpened = true;
@@ -124,7 +144,12 @@ public class ValkeyCartStore : ICartStore
     public async Task AddItemAsync(string userId, string productId, int quantity)
     {
         var stopwatch = Stopwatch.StartNew();
-        _logger.LogInformation("AddItemAsync called with userId={userId}, productId={productId}, quantity={quantity}", userId, productId, quantity);
+        var maskedUserId = MaskUserId(userId);
+        _logger.LogInformation(
+            "AddItemAsync started user_id={userId} product_id={productId} quantity={quantity}",
+            maskedUserId,
+            productId,
+            quantity);
 
         try
         {
@@ -160,9 +185,14 @@ public class ValkeyCartStore : ICartStore
 
             await db.HashSetAsync(userId, new[]{ new HashEntry(CartFieldName, cart.ToByteArray()) });
             await db.KeyExpireAsync(userId, TimeSpan.FromMinutes(60));
+            _logger.LogInformation(
+                "AddItemAsync completed user_id={userId} cart_items={itemCount}",
+                maskedUserId,
+                cart.Items.Count);
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "AddItemAsync failed user_id={userId}", maskedUserId);
             throw new RpcException(new Status(StatusCode.FailedPrecondition, $"Can't access cart storage. {ex}"));
         }
         finally
@@ -173,7 +203,8 @@ public class ValkeyCartStore : ICartStore
 
     public async Task EmptyCartAsync(string userId)
     {
-        _logger.LogInformation("EmptyCartAsync called with userId={userId}", userId);
+        var maskedUserId = MaskUserId(userId);
+        _logger.LogInformation("EmptyCartAsync started user_id={userId}", maskedUserId);
 
         try
         {
@@ -183,9 +214,11 @@ public class ValkeyCartStore : ICartStore
             // Update the cache with empty cart for given user
             await db.HashSetAsync(userId, new[] { new HashEntry(CartFieldName, _emptyCartBytes) });
             await db.KeyExpireAsync(userId, TimeSpan.FromMinutes(60));
+            _logger.LogInformation("EmptyCartAsync completed user_id={userId}", maskedUserId);
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "EmptyCartAsync failed user_id={userId}", maskedUserId);
             throw new RpcException(new Status(StatusCode.FailedPrecondition, $"Can't access cart storage. {ex}"));
         }
     }
@@ -193,7 +226,8 @@ public class ValkeyCartStore : ICartStore
     public async Task<Oteldemo.Cart> GetCartAsync(string userId)
     {
         var stopwatch = Stopwatch.StartNew();
-        _logger.LogInformation("GetCartAsync called with userId={userId}", userId);
+        var maskedUserId = MaskUserId(userId);
+        _logger.LogInformation("GetCartAsync started user_id={userId}", maskedUserId);
 
         try
         {
@@ -206,14 +240,18 @@ public class ValkeyCartStore : ICartStore
 
             if (!value.IsNull)
             {
-                return Oteldemo.Cart.Parser.ParseFrom(value);
+                var cart = Oteldemo.Cart.Parser.ParseFrom(value);
+                _logger.LogInformation("GetCartAsync cache hit user_id={userId} cart_items={itemCount}", maskedUserId, cart.Items.Count);
+                return cart;
             }
 
             // We decided to return empty cart in cases when user wasn't in the cache before
+            _logger.LogInformation("GetCartAsync cache miss user_id={userId}", maskedUserId);
             return new Oteldemo.Cart();
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "GetCartAsync failed user_id={userId}", maskedUserId);
             throw new RpcException(new Status(StatusCode.FailedPrecondition, $"Can't access cart storage. {ex}"));
         }
         finally

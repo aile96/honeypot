@@ -41,10 +41,11 @@ fun main() {
     props[GROUP_ID_CONFIG] = groupID
     val bootstrapServers = System.getenv("KAFKA_ADDR")
     if (bootstrapServers == null) {
-        println("KAFKA_ADDR is not supplied")
+        logger.error("KAFKA_ADDR is not supplied, fraud-detection cannot start")
         exitProcess(1)
     }
     props[BOOTSTRAP_SERVERS_CONFIG] = bootstrapServers
+    logger.info("Fraud-detection startup complete, subscribing to topic '$topic' on '$bootstrapServers'")
     val consumer = KafkaConsumer<String, ByteArray>(props).apply {
         subscribe(listOf(topic))
     }
@@ -61,8 +62,13 @@ fun main() {
                         logger.info("FeatureFlag 'kafkaQueueProblems' is enabled, sleeping 1 second")
                         Thread.sleep(1000)
                     }
-                    val orders = OrderResult.parseFrom(record.value())
-                    logger.info("Consumed record with orderId: ${orders.orderId}, and updated total count to: $newCount")
+                    val orders = try {
+                        OrderResult.parseFrom(record.value())
+                    } catch (e: Exception) {
+                        logger.warn("Skipping malformed order record: ${e.message}")
+                        return@fold accumulator
+                    }
+                    logger.info("Consumed order record orderId=${orders.orderId} totalConsumed=$newCount")
                     newCount
                 }
         }

@@ -39,6 +39,10 @@ static_resources:
                       routes:
                         - match: { prefix: "/otlp-http/" }
                           route: { cluster: opentelemetry_collector_http, prefix_rewrite: "/" }
+                        - match: { path: "/opensearch" }
+                          route: { cluster: opensearch, prefix_rewrite: "/" }
+                        - match: { prefix: "/opensearch/" }
+                          route: { cluster: opensearch, prefix_rewrite: "/" }
                         - match: { prefix: "/jaeger" }
                           route: { cluster: jaeger }
                         - match: { prefix: "/grafana" }
@@ -218,6 +222,18 @@ static_resources:
                     socket_address:
                       address: ${JAEGER_HOST}
                       port_value: ${JAEGER_PORT}
+    - name: opensearch
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: opensearch
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: ${OPENSEARCH_HOST}
+                      port_value: ${OPENSEARCH_PORT}
 admin:
   address:
     socket_address:

@@ -4,6 +4,7 @@
 using Confluent.Kafka;
 using Microsoft.Extensions.Logging;
 using Oteldemo;
+using System.Linq;
 
 namespace Accounting;
 
@@ -11,8 +12,8 @@ internal class Consumer : IDisposable
 {
     private const string TopicName = "orders";
 
-    private ILogger _logger;
-    private IConsumer<string, byte[]> _consumer;
+    private readonly ILogger<Consumer> _logger;
+    private readonly IConsumer<string, byte[]> _consumer;
     private bool _isListening;
 
     public Consumer(ILogger<Consumer> logger)
@@ -25,12 +26,17 @@ internal class Consumer : IDisposable
         _consumer = BuildConsumer(servers);
         _consumer.Subscribe(TopicName);
 
-        _logger.LogInformation($"Connecting to Kafka: {servers}");
+        _logger.LogInformation(
+            "Kafka consumer initialized. topic={Topic} group_id={GroupId} bootstrap_servers={BootstrapServers}",
+            TopicName,
+            "accounting",
+            servers);
     }
 
     public void StartListening()
     {
         _isListening = true;
+        _logger.LogInformation("Starting Kafka consume loop for topic={Topic}", TopicName);
 
         try
         {
@@ -40,17 +46,27 @@ internal class Consumer : IDisposable
                 {
                     var consumeResult = _consumer.Consume();
 
+                    _logger.LogDebug(
+                        "Kafka message received. topic={Topic} partition={Partition} offset={Offset}",
+                        consumeResult.Topic,
+                        consumeResult.Partition.Value,
+                        consumeResult.Offset.Value);
+
                     ProcessMessage(consumeResult.Message);
                 }
                 catch (ConsumeException e)
                 {
-                    _logger.LogError(e, "Consume error: {0}", e.Error.Reason);
+                    _logger.LogError(
+                        e,
+                        "Kafka consume failed. topic={Topic} reason={Reason}",
+                        TopicName,
+                        e.Error.Reason);
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            _logger.LogInformation("Closing consumer");
+            _logger.LogInformation("Consume loop cancelled, closing Kafka consumer");
 
             _consumer.Close();
         }
@@ -61,12 +77,17 @@ internal class Consumer : IDisposable
         try
         {
             var order = OrderResult.Parser.ParseFrom(message.Value);
+            var itemCount = order.Items.Count;
+            var totalUnits = order.Items.Sum(x => x.Item?.Quantity ?? 0);
 
-            Log.OrderReceivedMessage(_logger, order);
+            Log.OrderReceivedMessage(_logger, order.OrderId, itemCount, totalUnits);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Order parsing failed:");
+            _logger.LogError(
+                ex,
+                "Order parsing failed. payload_size_bytes={PayloadSize}",
+                message.Value?.Length ?? 0);
         }
     }
 

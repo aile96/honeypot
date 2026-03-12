@@ -31,4 +31,7 @@ RUN chown 1000 "/var/log/opentelemetry/dotnet"
 RUN chown 1000 "/app/instrument.sh"
 USER 1000
 
+ENV OTEL_LOGS_EXPORTER=otlp \
+    OTEL_DOTNET_AUTO_LOGS_ENABLED=true
+
 ENTRYPOINT ["./instrument.sh", "dotnet", "Accounting.dll"]

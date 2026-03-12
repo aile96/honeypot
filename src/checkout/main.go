@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,6 +57,7 @@ var log *logrus.Logger
 var tracer trace.Tracer
 var resource *sdkresource.Resource
 var initResourcesOnce sync.Once
+var otlpLogHook *OTLPLogHook
 
 func init() {
 	log = logrus.New()
@@ -69,6 +71,14 @@ func init() {
 		TimestampFormat: time.RFC3339Nano,
 	}
 	log.Out = os.Stdout
+
+	hook, err := NewOTLPLogHook(context.Background(), os.Getenv("OTEL_SERVICE_NAME"), "checkout.logrus")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[checkout] OTLP log hook disabled: %v\n", err)
+		return
+	}
+	otlpLogHook = hook
+	log.AddHook(hook)
 }
 
 func initResource() *sdkresource.Resource {
@@ -139,6 +149,14 @@ type checkout struct {
 }
 
 func main() {
+	if otlpLogHook != nil {
+		defer func() {
+			if err := otlpLogHook.Close(context.Background()); err != nil {
+				fmt.Fprintf(os.Stderr, "[checkout] failed to close OTLP log hook: %v\n", err)
+			}
+		}()
+	}
+
 	var port string
 	mustMapEnv(&port, "CHECKOUT_PORT")
 
@@ -207,7 +225,15 @@ func main() {
 		}
 	}
 
-	log.Infof("service config: %+v", svc)
+	log.WithFields(logrus.Fields{
+		"shipping_addr":        svc.shippingSvcAddr,
+		"product_catalog_addr": svc.productCatalogSvcAddr,
+		"cart_addr":            svc.cartSvcAddr,
+		"currency_addr":        svc.currencySvcAddr,
+		"email_addr":           svc.emailSvcAddr,
+		"payment_addr":         svc.paymentSvcAddr,
+		"kafka_enabled":        svc.kafkaBrokerSvcAddr != "",
+	}).Info("Downstream clients initialized")
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
@@ -248,7 +274,12 @@ func (cs *checkout) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequest) (
 		attribute.String("app.user.id", req.UserId),
 		attribute.String("app.user.currency", req.UserCurrency),
 	)
-	log.Infof("[PlaceOrder] user_id=%q user_currency=%q", req.UserId, req.UserCurrency)
+	log.WithFields(logrus.Fields{
+		"step":          "place_order.start",
+		"user_currency": req.UserCurrency,
+		"email_hint":    maskEmail(req.Email),
+		"has_address":   req.Address != nil,
+	}).Info("PlaceOrder request received")
 
 	var err error
 	defer func() {
@@ -266,6 +297,11 @@ func (cs *checkout) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequest) (
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, err.Error())
 	}
+	log.WithFields(logrus.Fields{
+		"step":             "place_order.prepare_items",
+		"cart_items_count": len(prep.cartItems),
+		"order_items_count": len(prep.orderItems),
+	}).Info("Cart and quote preparation completed")
 	span.AddEvent("prepared")
 
 	total := &pb.Money{CurrencyCode: req.UserCurrency,
@@ -281,7 +317,10 @@ func (cs *checkout) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequest) (
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to charge card: %+v", err)
 	}
-	log.Infof("payment went through (transaction_id: %s)", txID)
+	log.WithFields(logrus.Fields{
+		"step":           "place_order.payment",
+		"transaction_id": txID,
+	}).Info("Payment completed")
 	span.AddEvent("charged",
 		trace.WithAttributes(attribute.String("app.payment.transaction.id", txID)))
 
@@ -289,6 +328,10 @@ func (cs *checkout) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequest) (
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "shipping error: %+v", err)
 	}
+	log.WithFields(logrus.Fields{
+		"step":        "place_order.shipping",
+		"tracking_id": shippingTrackingID,
+	}).Info("Shipping completed")
 	shippingTrackingAttribute := attribute.String("app.shipping.tracking.id", shippingTrackingID)
 	span.AddEvent("shipped", trace.WithAttributes(shippingTrackingAttribute))
 
@@ -314,18 +357,32 @@ func (cs *checkout) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequest) (
 	)
 
 	if err := cs.sendOrderConfirmation(ctx, req.Email, orderResult); err != nil {
-		log.Warnf("failed to send order confirmation to %q: %+v", req.Email, err)
+		log.WithFields(logrus.Fields{
+			"step":       "place_order.email",
+			"email_hint": maskEmail(req.Email),
+		}).WithError(err).Warn("Failed to send order confirmation email")
 	} else {
-		log.Infof("order confirmation email sent to %q", req.Email)
+		log.WithFields(logrus.Fields{
+			"step":       "place_order.email",
+			"email_hint": maskEmail(req.Email),
+		}).Info("Order confirmation email sent")
 	}
 
 	// send to kafka only if kafka broker address is set
 	if cs.kafkaBrokerSvcAddr != "" {
-		log.Infof("sending to postProcessor")
+		log.WithField("step", "place_order.kafka").Info("Publishing order event to post-processor")
 		cs.sendToPostProcessor(ctx, orderResult)
 	}
 
 	resp := &pb.PlaceOrderResponse{Order: orderResult}
+	log.WithFields(logrus.Fields{
+		"step":             "place_order.complete",
+		"order_id":         orderID.String(),
+		"items_count":      len(prep.orderItems),
+		"total_amount":     totalPriceFloat,
+		"shipping_amount":  shippingCostFloat,
+		"user_currency":    req.UserCurrency,
+	}).Info("PlaceOrder completed")
 	return resp, nil
 }
 
@@ -461,6 +518,12 @@ func (cs *checkout) chargeCard(ctx context.Context, amount *pb.Money, paymentInf
 }
 
 func (cs *checkout) sendOrderConfirmation(ctx context.Context, email string, order *pb.OrderResult) error {
+	log.WithFields(logrus.Fields{
+		"step":       "send_order_confirmation.start",
+		"order_id":   order.OrderId,
+		"email_hint": maskEmail(email),
+	}).Info("Sending order confirmation request")
+
 	emailPayload, err := json.Marshal(map[string]interface{}{
 		"email": email,
 		"order": order,
@@ -478,6 +541,13 @@ func (cs *checkout) sendOrderConfirmation(ctx context.Context, email string, ord
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed POST to email service: expected 200, got %d", resp.StatusCode)
 	}
+
+	log.WithFields(logrus.Fields{
+		"step":         "send_order_confirmation.complete",
+		"order_id":     order.OrderId,
+		"status_code":  resp.StatusCode,
+		"email_hint":   maskEmail(email),
+	}).Info("Order confirmation response received")
 
 	return err
 }
@@ -611,4 +681,17 @@ func (cs *checkout) getIntFeatureFlag(ctx context.Context, featureFlagName strin
 	)
 
 	return int(featureFlagValue)
+}
+
+func maskEmail(email string) string {
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "unknown"
+	}
+
+	local := parts[0]
+	if len(local) <= 2 {
+		return "***@" + parts[1]
+	}
+	return local[:2] + "***@" + parts[1]
 }

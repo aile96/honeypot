@@ -53,14 +53,46 @@ var (
 	catalog           []*pb.Product
 	resource          *sdkresource.Resource
 	initResourcesOnce sync.Once
+	otlpLogHook       *OTLPLogHook
 )
 
 const DEFAULT_RELOAD_INTERVAL = 10
 
 func init() {
-	log = logrus.New()
-
+	configureLogger()
 	loadProductCatalog()
+}
+
+func configureLogger() {
+	log = logrus.New()
+	log.Out = os.Stdout
+	log.SetFormatter(&logrus.JSONFormatter{
+		FieldMap: logrus.FieldMap{
+			logrus.FieldKeyTime:  "timestamp",
+			logrus.FieldKeyLevel: "severity",
+			logrus.FieldKeyMsg:   "message",
+		},
+		TimestampFormat: time.RFC3339Nano,
+	})
+
+	level := strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL")))
+	if level == "" {
+		level = "info"
+	}
+	parsed, err := logrus.ParseLevel(level)
+	if err != nil {
+		log.WithField("log_level", level).Warn("invalid LOG_LEVEL, falling back to info")
+		parsed = logrus.InfoLevel
+	}
+	log.SetLevel(parsed)
+
+	hook, err := NewOTLPLogHook(context.Background(), os.Getenv("OTEL_SERVICE_NAME"), "product-catalog.logrus")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[product-catalog] OTLP log hook disabled: %v\n", err)
+		return
+	}
+	otlpLogHook = hook
+	log.AddHook(hook)
 }
 
 func initResource() *sdkresource.Resource {
@@ -113,6 +145,14 @@ func initMeterProvider() *sdkmetric.MeterProvider {
 }
 
 func main() {
+	if otlpLogHook != nil {
+		defer func() {
+			if err := otlpLogHook.Close(context.Background()); err != nil {
+				fmt.Fprintf(os.Stderr, "[product-catalog] failed to close OTLP log hook: %v\n", err)
+			}
+		}()
+	}
+
 	tp := initTracerProvider()
 	defer func() {
 		if err := tp.Shutdown(context.Background()); err != nil {
@@ -181,13 +221,19 @@ type productCatalog struct {
 }
 
 func loadProductCatalog() {
-	log.Info("Loading Product Catalog...")
+	start := time.Now()
+	log.WithField("step", "catalog_load").Info("Loading product catalog")
 	var err error
 	catalog, err = readProductFiles()
 	if err != nil {
-		log.Fatalf("Error reading product files: %v\n", err)
+		log.WithError(err).Fatal("Failed to read product files during startup")
 		os.Exit(1)
 	}
+	log.WithFields(logrus.Fields{
+		"step":        "catalog_load",
+		"products":    len(catalog),
+		"elapsed_ms":  time.Since(start).Milliseconds(),
+	}).Info("Product catalog loaded")
 
 	// Default reload interval is 10 seconds
 	interval := DEFAULT_RELOAD_INTERVAL
@@ -198,7 +244,10 @@ func loadProductCatalog() {
 			interval = DEFAULT_RELOAD_INTERVAL
 		}
 	}
-	log.Infof("Product Catalog reload interval: %d", interval)
+	log.WithFields(logrus.Fields{
+		"step":             "catalog_reload_config",
+		"reload_interval_s": interval,
+	}).Info("Catalog reload configured")
 
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 
@@ -206,15 +255,21 @@ func loadProductCatalog() {
 		for {
 			select {
 			case <-ticker.C:
-				log.Info("Reloading Product Catalog...")
-				catalog, err = readProductFiles()
-				if err != nil {
-					log.Errorf("Error reading product files: %v", err)
-					continue
+					reloadStart := time.Now()
+					log.WithField("step", "catalog_reload").Info("Reloading product catalog from disk")
+					catalog, err = readProductFiles()
+					if err != nil {
+						log.WithError(err).WithField("step", "catalog_reload").Error("Catalog reload failed")
+						continue
+					}
+					log.WithFields(logrus.Fields{
+						"step":       "catalog_reload",
+						"products":   len(catalog),
+						"elapsed_ms": time.Since(reloadStart).Milliseconds(),
+					}).Info("Catalog reload completed")
 				}
 			}
-		}
-	}()
+		}()
 }
 
 func readProductFiles() ([]*pb.Product, error) {
@@ -253,7 +308,10 @@ func readProductFiles() ([]*pb.Product, error) {
 		products = append(products, res.Products...)
 	}
 
-	log.Infof("Loaded %d products", len(products))
+	log.WithFields(logrus.Fields{
+		"step":     "catalog_read_files",
+		"products": len(products),
+	}).Info("Product files parsed")
 
 	return products, nil
 }
@@ -280,11 +338,19 @@ func (p *productCatalog) ListProducts(ctx context.Context, req *pb.Empty) (*pb.L
 	span.SetAttributes(
 		attribute.Int("app.products.count", len(catalog)),
 	)
+	log.WithFields(logrus.Fields{
+		"step":           "list_products",
+		"products_count": len(catalog),
+	}).Info("ListProducts request served")
 	return &pb.ListProductsResponse{Products: catalog}, nil
 }
 
 func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error) {
 	span := trace.SpanFromContext(ctx)
+	log.WithFields(logrus.Fields{
+		"step":       "get_product",
+		"product_id": req.Id,
+	}).Info("GetProduct request received")
 	span.SetAttributes(
 		attribute.String("app.product.id", req.Id),
 	)
@@ -294,6 +360,10 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 		msg := fmt.Sprintf("Error: Product Catalog Fail Feature Flag Enabled")
 		span.SetStatus(otelcodes.Error, msg)
 		span.AddEvent(msg)
+		log.WithFields(logrus.Fields{
+			"step":       "get_product",
+			"product_id": req.Id,
+		}).Warn("GetProduct failed due to feature-flagged fault")
 		return nil, status.Errorf(codes.Internal, msg)
 	}
 
@@ -309,6 +379,10 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 		msg := fmt.Sprintf("Product Not Found: %s", req.Id)
 		span.SetStatus(otelcodes.Error, msg)
 		span.AddEvent(msg)
+		log.WithFields(logrus.Fields{
+			"step":       "get_product",
+			"product_id": req.Id,
+		}).Warn("GetProduct returned not found")
 		return nil, status.Errorf(codes.NotFound, msg)
 	}
 
@@ -317,6 +391,11 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 		attribute.String("app.product.id", req.Id),
 		attribute.String("app.product.name", found.Name),
 	)
+	log.WithFields(logrus.Fields{
+		"step":         "get_product",
+		"product_id":   req.Id,
+		"product_name": found.Name,
+	}).Info("GetProduct completed")
 	return found, nil
 }
 
@@ -333,6 +412,11 @@ func (p *productCatalog) SearchProducts(ctx context.Context, req *pb.SearchProdu
 	span.SetAttributes(
 		attribute.Int("app.products_search.count", len(result)),
 	)
+	log.WithFields(logrus.Fields{
+		"step":         "search_products",
+		"query":        req.Query,
+		"result_count": len(result),
+	}).Info("SearchProducts completed")
 	return &pb.SearchProductsResponse{Results: result}, nil
 }
 

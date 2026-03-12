@@ -25,6 +25,12 @@ module.exports.charge = async request => {
   const span = tracer.startSpan('charge');
 
   try {
+    const requestCurrency = request?.amount?.currencyCode;
+    logger.info({
+      step: 'charge.start',
+      amount_currency: requestCurrency
+    }, 'Starting payment charge flow')
+
     await OpenFeature.setProviderAndWait(flagProvider);
 
     const numberVariant =  await OpenFeature.getClient().getNumberValue("paymentFailure", 0);
@@ -79,11 +85,22 @@ module.exports.charge = async request => {
     }
 
     const { units, nanos, currencyCode } = request.amount;
-    logger.info({ transactionId, cardType, lastFourDigits, amount: { units, nanos, currencyCode }, loyalty_level }, 'Transaction complete.');
+    logger.info({
+      step: 'charge.success',
+      transactionId,
+      cardType,
+      lastFourDigits,
+      amount: { units, nanos, currencyCode },
+      loyalty_level
+    }, 'Transaction complete')
     transactionsCounter.add(1, { 'app.payment.currency': currencyCode });
 
     return { transactionId };
   } catch (err) {
+    logger.warn({
+      step: 'charge.failed',
+      error: err?.message
+    }, 'Transaction failed')
     span.recordException(err);
     span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
     throw err;

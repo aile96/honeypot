@@ -76,6 +76,10 @@ components:
         value: "grafana.${MEM_NAMESPACE}"
       - name: JAEGER_HOST
         value: "jaeger-query.${MEM_NAMESPACE}"
+      - name: OPENSEARCH_HOST
+        value: "opensearch.${MEM_NAMESPACE}"
+      - name: OPENSEARCH_PORT
+        value: "9200"
   image-provider:
     enabled: true
     namespace: "${DMZ_NAMESPACE}"

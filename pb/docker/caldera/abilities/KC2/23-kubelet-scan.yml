@@ -2,7 +2,7 @@
   name: Node read only port inspection
   description: Ask each node of the cluster in the open ports every data from the read only port.
   tactic: discovery
-  technique: { attack_id: T1580, name: Cloud Infrastructure Discovery }
+  technique: { attack_id: T1613, name: Container and Resource Discovery }
   repeatable: false
   singleton: true
   platforms:

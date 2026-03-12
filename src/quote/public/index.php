@@ -15,6 +15,7 @@ use OpenTelemetry\SDK\Logs\LoggerProviderInterface;
 use OpenTelemetry\SDK\Metrics\MeterProviderInterface;
 use OpenTelemetry\SDK\Trace\TracerProviderInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Log\LoggerInterface;
 use React\EventLoop\Loop;
 use React\Http\HttpServer;
 use React\Socket\SocketServer;
@@ -35,6 +36,7 @@ $dependencies($containerBuilder);
 
 // Build PHP-DI Container instance
 $container = $containerBuilder->build();
+$appLogger = $container->get(LoggerInterface::class);
 
 // Instantiate the app
 AppFactory::setContainer($container);
@@ -73,17 +75,18 @@ if (($meterProvider = Globals::meterProvider()) instanceof MeterProviderInterfac
     });
 }
 
-$server = new HttpServer(function (ServerRequestInterface $request) use ($app) {
+$server = new HttpServer(function (ServerRequestInterface $request) use ($app, $appLogger) {
     $response = $app->handle($request);
-    echo sprintf('[%s] "%s %s HTTP/%s" %d %d %s',
-        date('Y-m-d H:i:sP'),
-        $request->getMethod(),
-        $request->getUri()->getPath(),
-        $request->getProtocolVersion(),
-        $response->getStatusCode(),
-        $response->getBody()->getSize(),
-        PHP_EOL,
-    );
+    $appLogger->info('HTTP request completed', [
+        'step' => 'quote.http.request.complete',
+        'http.method' => $request->getMethod(),
+        'http.target' => (string) $request->getUri()->getPath(),
+        'http.scheme' => (string) $request->getUri()->getScheme(),
+        'http.host' => (string) $request->getUri()->getHost(),
+        'http.flavor' => $request->getProtocolVersion(),
+        'http.status_code' => $response->getStatusCode(),
+        'http.response.body.size' => $response->getBody()->getSize() ?? 0,
+    ]);
 
     return $response;
 });
@@ -91,4 +94,7 @@ $address = '0.0.0.0:' . getenv('QUOTE_PORT');
 $socket = new SocketServer($address);
 $server->listen($socket);
 
-echo "Listening on: {$address}" . PHP_EOL;
+$appLogger->info('Quote service listening', [
+    'step' => 'quote.http.server.started',
+    'listen_address' => $address,
+]);

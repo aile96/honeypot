@@ -1,8 +1,8 @@
 - id: 50000000-0000-0000-0000-000000000006
   name: PVC attack
   description: Claiming a persistent volume to delete the content.
-  tactic: credential-access
-  technique: { attack_id: T1552, name: "Unsecured Credentials" }
+  tactic: impact
+  technique: { attack_id: T1485, name: "Data Destruction" }
   repeatable: false
   singleton: true
   platforms:

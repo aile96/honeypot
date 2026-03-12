@@ -22,7 +22,7 @@ return function (ContainerBuilder $containerBuilder) {
                 'logger' => [
                     'name' => 'slim-app',
                     'path' => 'php://stdout',
-                    'level' => LogLevel::DEBUG,
+                    'level' => LogLevel::INFO,
                 ],
             ]);
         }

@@ -17,13 +17,24 @@ async function chargeServiceHandler(call, callback) {
     span?.setAttributes({
       'app.payment.amount': parseFloat(`${amount.units}.${amount.nanos}`).toFixed(2)
     })
-    logger.info({ request: call.request }, "Charge request received.")
+    logger.info({
+      step: 'charge.request_received',
+      amount: {
+        currencyCode: amount?.currencyCode,
+        units: amount?.units,
+        nanos: amount?.nanos
+      }
+    }, 'Charge request received')
 
     const response = await charge.charge(call.request)
+    logger.info({
+      step: 'charge.response_ready',
+      transactionId: response?.transactionId
+    }, 'Charge request completed')
     callback(null, response)
 
   } catch (err) {
-    logger.warn({ err })
+    logger.warn({ err, step: 'charge.failed' }, 'Charge request failed')
 
     span?.recordException(err)
     span?.setStatus({ code: opentelemetry.SpanStatusCode.ERROR })
@@ -34,7 +45,12 @@ async function chargeServiceHandler(call, callback) {
 async function addPaymentHandler(call, callback) {
   try {
     const p = call.request?.payment
+    logger.info({
+      step: 'payment_method.save.request_received',
+      userId: p?.userId
+    }, 'AddPayment request received')
     if (!p || !p.userId || !p.cardHolderName || !p.cardNumber || !p.expMonth || !p.expYear || !p.cvv) {
+      logger.warn({ step: 'payment_method.save.validation_failed', userId: p?.userId }, 'Missing AddPayment parameters')
       return callback(null, { ok: false, message: 'Missing parameters' })
     }
     const saved = await upsertPaymentMethod({
@@ -53,7 +69,7 @@ async function addPaymentHandler(call, callback) {
       last4: String(saved.card_number).slice(-4)
     })
   } catch (err) {
-    logger.warn({ err }, 'AddPayment error')
+    logger.warn({ err, step: 'payment_method.save.failed' }, 'AddPayment error')
     return callback({ code: grpc.status.INTERNAL, message: 'Internal error' })
   }
 }
@@ -61,9 +77,15 @@ async function addPaymentHandler(call, callback) {
 async function receivePaymentHandler(call, callback) {
   try {
     const userId = call.request?.user_id || call.request?.userId // both ok
+    logger.info({ step: 'payment_method.retrieve.request_received', userId }, 'ReceivePayment request received')
     if (!userId) return callback(null, { found: false, error: 'userId mancante' })
     const pm = await getPaymentMethod(userId)
     if (!pm) return callback(null, { found: false, error: 'No payment for userId' })
+    logger.info({
+      step: 'payment_method.retrieve.found',
+      userId: pm.user_id,
+      last4: String(pm.card_number).slice(-4)
+    }, 'Payment method found')
     return callback(null, {
       found: true,
       payment: {
@@ -76,7 +98,7 @@ async function receivePaymentHandler(call, callback) {
       }
     })
   } catch (err) {
-    logger.warn({ err }, 'ReceivePayment error')
+    logger.warn({ err, step: 'payment_method.retrieve.failed' }, 'ReceivePayment error')
     return callback({ code: grpc.status.INTERNAL, message: 'Internal error' })
   }
 }
@@ -101,10 +123,10 @@ server.addService(otelDemoPackage.oteldemo.PaymentService.service, {
 
 server.bindAsync(`0.0.0.0:${process.env['PAYMENT_PORT']}`, grpc.ServerCredentials.createInsecure(), (err, port) => {
   if (err) {
-    return logger.error({ err })
+    return logger.error({ err, step: 'grpc_server.bind_failed' }, 'payment gRPC bind failed')
   }
 
-  logger.info(`payment gRPC server started on port ${port}`)
+  logger.info({ step: 'grpc_server.started', port }, 'payment gRPC server started')
 })
 
 process.once('SIGINT', closeGracefully)

@@ -43,11 +43,6 @@ def configure_telemetry():
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-    if not any(isinstance(handler, logging.StreamHandler) for handler in root_logger.handlers):
-        stream_handler = logging.StreamHandler()
-        stream_handler.setLevel(logging.INFO)
-        stream_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-        root_logger.addHandler(stream_handler)
     if not any(isinstance(handler, LoggingHandler) for handler in root_logger.handlers):
         root_logger.addHandler(LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider))
 

@@ -2,7 +2,7 @@
   name: Network policies modification
   description: Modification on the network policies of the cluster to gain access to DBs.
   tactic: defense-evasion
-  technique: { attack_id: T1578.005, name: "Modify Cloud Compute Infrastructure: Modify Cloud Compute Configurations" }
+  technique: { attack_id: T1562.004, name: "Impair Defenses: Disable or Modify System Firewall" }
   repeatable: false
   singleton: true
   platforms:

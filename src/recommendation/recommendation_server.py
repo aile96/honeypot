@@ -7,6 +7,7 @@
 # Python
 import os
 import random
+import time
 from concurrent import futures
 
 # Pip
@@ -35,16 +36,27 @@ from grpc_health.v1 import health_pb2_grpc
 from metrics import (
     init_metrics
 )
+from logger import getJSONLogger
 
 cached_ids = []
 first_run = True
+logger = logging.getLogger("recommendation")
 
 class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
     def ListRecommendations(self, request, context):
+        started_at = time.monotonic()
         prod_list = get_product_list(request.product_ids)
         span = trace.get_current_span()
         span.set_attribute("app.products_recommended.count", len(prod_list))
-        logger.info(f"Receive ListRecommendations for product ids:{prod_list}")
+        logger.info(
+            "ListRecommendations completed",
+            extra={
+                "step": "recommendation.list.complete",
+                "requested_ids_count": len(request.product_ids),
+                "recommended_ids_count": len(prod_list),
+                "elapsed_ms": int((time.monotonic() - started_at) * 1000),
+            },
+        )
 
         # build and return response
         response = demo_pb2.ListRecommendationsResponse()
@@ -80,7 +92,7 @@ def get_product_list(request_product_ids):
             if random.random() < 0.5 or first_run:
                 first_run = False
                 span.set_attribute("app.cache_hit", False)
-                logger.info("get_product_list: cache miss")
+                logger.info("Cache miss on recommendation list", extra={"step": "recommendation.cache_miss"})
                 cat_response = product_catalog_stub.ListProducts(demo_pb2.Empty())
                 response_ids = [x.id for x in cat_response.products]
                 cached_ids = cached_ids + response_ids
@@ -88,7 +100,7 @@ def get_product_list(request_product_ids):
                 product_ids = cached_ids
             else:
                 span.set_attribute("app.cache_hit", True)
-                logger.info("get_product_list: cache hit")
+                logger.info("Cache hit on recommendation list", extra={"step": "recommendation.cache_hit"})
                 product_ids = cached_ids
         else:
             span.set_attribute("app.recommendation.cache_enabled", False)
@@ -123,7 +135,12 @@ def must_map_env(key: str):
 def check_feature_flag(flag_name: str):
     # Initialize OpenFeature
     client = api.get_client()
-    return client.get_boolean_value("recommendationCacheFailure", False)
+    enabled = client.get_boolean_value(flag_name, False)
+    logger.info(
+        "Feature flag evaluated",
+        extra={"step": "recommendation.feature_flag", "flag_name": flag_name, "enabled": enabled},
+    )
+    return enabled
 
 
 if __name__ == "__main__":
@@ -150,10 +167,16 @@ if __name__ == "__main__":
     handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
 
     # Attach OTLP handler to logger
-    logger = logging.getLogger('main')
+    logger = getJSONLogger('recommendation')
     logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.info("Recommendation logger initialized", extra={"step": "recommendation.logger.init"})
 
     catalog_addr = must_map_env('PRODUCT_CATALOG_ADDR')
+    logger.info(
+        "Connecting to product catalog",
+        extra={"step": "recommendation.catalog.connect", "catalog_addr": catalog_addr},
+    )
     pc_channel = grpc.insecure_channel(catalog_addr)
     product_catalog_stub = demo_pb2_grpc.ProductCatalogServiceStub(pc_channel)
 
@@ -169,5 +192,8 @@ if __name__ == "__main__":
     port = must_map_env('RECOMMENDATION_PORT')
     server.add_insecure_port(f'[::]:{port}')
     server.start()
-    logger.info(f'Recommendation service started, listening on port {port}')
+    logger.info(
+        "Recommendation service started",
+        extra={"step": "recommendation.server.started", "port": port},
+    )
     server.wait_for_termination()

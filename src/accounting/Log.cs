@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using Microsoft.Extensions.Logging;
-using Oteldemo;
 
 namespace Accounting
 {
@@ -10,7 +9,7 @@ namespace Accounting
     {
         [LoggerMessage(
             Level = LogLevel.Information,
-            Message = "Order details: {@OrderResult}.")]
-        public static partial void OrderReceivedMessage(ILogger logger, OrderResult orderResult);
+            Message = "Order processed from Kafka. order_id={OrderId} items={ItemCount} total_units={TotalUnits}.")]
+        public static partial void OrderReceivedMessage(ILogger logger, string orderId, int itemCount, int totalUnits);
     }
 }

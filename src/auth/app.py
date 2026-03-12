@@ -111,6 +111,8 @@ def configure_telemetry():
 
 
 configure_telemetry()
+LOGGER = logging.getLogger("auth")
+LOGGER.setLevel(logging.INFO)
 
 class RegisterReq(BaseModel):
     username: str = Field(min_length=1)
@@ -133,18 +135,23 @@ class VerifyReq(BaseModel):
 @app.get("/health")
 def health():
     # simple liveness probe + quick DB check
+    LOGGER.info("Health check requested")
     try:
         with Session(engine) as s:
             s.execute(select(User.id)).first()
+        LOGGER.info("Health check completed successfully")
         return {"ok": True}
     except Exception as e:
+        LOGGER.exception("Health check failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/register", status_code=201)
 def register(req: RegisterReq):
+    LOGGER.info("Register request received for username=%s", req.username)
     with Session(engine) as s:
         exists = s.scalar(select(User).where(User.username == req.username))
         if exists:
+            LOGGER.warning("Register rejected: username already exists username=%s", req.username)
             raise HTTPException(status_code=409, detail="Username already exists")
         user = User(
             username=req.username,
@@ -164,17 +171,23 @@ def register(req: RegisterReq):
             s.rollback()
             err_msg = str(exc.orig) if getattr(exc, "orig", None) else str(exc)
             if "idx_users_email" in err_msg or "(email)" in err_msg:
+                LOGGER.warning("Register rejected: email already exists username=%s", req.username)
                 raise HTTPException(status_code=409, detail="Email already exists") from exc
             if "idx_users_username" in err_msg or "(username)" in err_msg:
+                LOGGER.warning("Register rejected: username conflict username=%s", req.username)
                 raise HTTPException(status_code=409, detail="Username already exists") from exc
+            LOGGER.warning("Register rejected: generic conflict username=%s", req.username)
             raise HTTPException(status_code=409, detail="User already exists") from exc
+        LOGGER.info("Register completed username=%s user_id=%s", req.username, user.id)
         return {"status": "created", "id": user.id}
 
 @app.post("/login")
 def login(req: LoginReq):
+    LOGGER.info("Login request received for username=%s", req.username)
     with Session(engine) as s:
         user = s.scalar(select(User).where(User.username == req.username))
         if not user or user.password != req.password:
+            LOGGER.warning("Login failed for username=%s", req.username)
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
     now = datetime.now(timezone.utc)
@@ -184,14 +197,19 @@ def login(req: LoginReq):
         "exp": int((now + timedelta(minutes=JWT_EXP_MINUTES)).timestamp()),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+    LOGGER.info("Login successful for username=%s", req.username)
     return {"token": token}
 
 @app.post("/verify")
 def verify(req: VerifyReq):
+    LOGGER.info("Verify token request received")
     try:
         payload = jwt.decode(req.token, JWT_SECRET, algorithms=[JWT_ALG])
+        LOGGER.info("Verify token succeeded for username=%s", payload.get("sub"))
         return {"valid": True, "payload": payload}
     except jwt.ExpiredSignatureError:
+        LOGGER.warning("Verify token failed: expired token")
         return {"valid": False, "error": "expired"}
     except jwt.InvalidTokenError as e:
+        LOGGER.warning("Verify token failed: invalid token (%s)", str(e))
         return {"valid": False, "error": str(e)}

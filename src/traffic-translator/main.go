@@ -75,6 +75,25 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	log.SetFlags(0)
+	otlpLogWriter, writerErr := NewOTLPLogWriter(
+		ctx,
+		getenvDefault("OTEL_SERVICE_NAME", serviceName),
+		"traffic-translator.stdlog",
+	)
+	if writerErr != nil {
+		fmt.Fprintf(os.Stderr, "[traffic-translator] OTLP log writer disabled: %v\n", writerErr)
+	} else {
+		log.SetOutput(otlpLogWriter)
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otlpLogWriter.Close(shutdownCtx); err != nil {
+				fmt.Fprintf(os.Stderr, "[traffic-translator] failed to close OTLP log writer: %v\n", err)
+			}
+		}()
+	}
+
 	shutdownTelemetry, err := initTelemetry(ctx)
 	if err != nil {
 		log.Printf("telemetry init failed, continuing without OTLP export: %v", err)
@@ -171,6 +190,7 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 		statusCode = code
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		log.Printf("[translate] step=failed status=%d error=%v", code, err)
 		writeErr(w, code, err)
 	}
 
@@ -229,6 +249,16 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 		attribute.Int("grpc.headers.count", len(req.Headers)),
 		attribute.Int("grpc.proto_files.count", len(req.ProtoFilesMap)),
 		attribute.Bool("grpc.protoset.provided", req.ProtosetB64 != ""),
+	)
+	log.Printf(
+		"[translate] step=request_received target=%s method=%s plaintext=%t timeout_s=%d headers=%d proto_files=%d protoset=%t",
+		req.Target,
+		req.Method,
+		*req.Plaintext,
+		timeout,
+		len(req.Headers),
+		len(req.ProtoFilesMap),
+		req.ProtosetB64 != "",
 	)
 
 	// If proto files or protoset are provided -> create tempdir and write them there
@@ -400,6 +430,16 @@ func translateHandler(w http.ResponseWriter, r *http.Request) {
 		code = http.StatusBadGateway
 	}
 	statusCode = code
+	log.Printf(
+		"[translate] step=grpcurl_completed target=%s method=%s ok=%t status=%d exit_code=%d elapsed_ms=%d stderr_len=%d",
+		req.Target,
+		req.Method,
+		resp.OK,
+		code,
+		resp.ExitCode,
+		resp.ElapsedMs,
+		len(resp.Stderr),
+	)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

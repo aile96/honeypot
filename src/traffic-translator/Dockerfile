@@ -13,12 +13,12 @@ RUN apk add --no-cache ca-certificates=20250911-r0 curl=8.14.1-r2 jq=1.7.1-r0 li
 WORKDIR /app
 COPY go.mod /app/
 COPY go.sum /app/
-COPY main.go /app/
+COPY . /app/
 
 # Compiling Go standard via apk
 RUN apk add --no-cache go=1.22.10-r0 build-base=0.5-r3 && \
     go mod download && \
-    CGO_ENABLED=0 go build -o /usr/local/bin/http2grpc /app/main.go && \
+    CGO_ENABLED=0 go build -o /usr/local/bin/http2grpc /app && \
     apk del go build-base
 
 USER 10001:10001

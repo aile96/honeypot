@@ -2,7 +2,7 @@
   name: API resources enumeration
   description: Querying the API server looking for informations.
   tactic: discovery
-  technique: { attack_id: T1619, name: Cloud Storage Object Discovery }
+  technique: { attack_id: T1613, name: Container and Resource Discovery }
   repeatable: false
   singleton: true
   platforms:

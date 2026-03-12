@@ -61,11 +61,20 @@ impl ShippingService for ShippingServer {
             global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
 
         let request_message = request.into_inner();
+        let zip_code = request_message
+            .address
+            .as_ref()
+            .map(|a| a.zip_code.clone())
+            .unwrap_or_default();
 
         let itemct: u32 = request_message
             .items
             .into_iter()
             .fold(0, |accum, cart_item| accum + (cart_item.quantity as u32));
+        info!(
+            "GetQuote step=request_received items_count={} zip_code={}",
+            itemct, zip_code
+        );
 
         // We may want to ask another service for product pricing / info
         // (although now everything is assumed to be the same price)
@@ -80,10 +89,7 @@ impl ShippingService for ShippingServer {
         span.set_attribute(KeyValue::new(semconv::trace::RPC_METHOD, "GetQuote"));
 
         span.add_event("Processing get quote request".to_string(), vec![]);
-        span.set_attribute(KeyValue::new(
-            "app.shipping.zip_code",
-            request_message.address.unwrap().zip_code,
-        ));
+        span.set_attribute(KeyValue::new("app.shipping.zip_code", zip_code.clone()));
 
         let cx = Context::current_with_span(span);
         let q = match create_quote_from_count(itemct)
@@ -135,6 +141,13 @@ impl ShippingService for ShippingServer {
         span.set_attribute(KeyValue::new(semconv::trace::RPC_METHOD, "ShipOrder"));
 
         span.add_event("Processing shipping order request".to_string(), vec![]);
+
+        let request_message = request.into_inner();
+        let item_count = request_message.items.len();
+        info!(
+            "ShipOrder step=request_received items_count={}",
+            item_count
+        );
 
         let tid = create_tracking_id();
         span.set_attribute(KeyValue::new("app.shipping.tracking.id", tid.clone()));

@@ -16,6 +16,7 @@ http {
 
     include /etc/nginx/mime.types;
     sendfile on;
+    log_format otlp_json escape=json '{"ts":"$time_iso8601","remote_addr":"$remote_addr","method":"$request_method","uri":"$request_uri","status":$status,"bytes_sent":$bytes_sent,"request_time":"$request_time","upstream_addr":"$upstream_addr","user_agent":"$http_user_agent"}';
     server {
         listen ${IMAGE_PROVIDER_PORT};
         listen [::]:${IMAGE_PROVIDER_PORT};
@@ -28,5 +29,7 @@ http {
 
         root /static;
         gzip_static on;
+        access_log /tmp/nginx-access.log otlp_json;
+        error_log /tmp/nginx-error.log warn;
     }
 }

@@ -30,9 +30,21 @@ Supported ENVs:
   SCRIPT_PRE_KC1,  SCRIPT_PRE_KC2,  ... (str)  script/command to run *before* KC<N>
   SCRIPT_POST_KC1, SCRIPT_POST_KC2, ... (str)  script/command to run *after*  KC<N>
   # NOTE: if empty or unset -> not executed. Executed from cwd=/scripts with shell.
+
+  TELEMETRY_EXPORT_ENABLED     (bool) export snapshots periodically (default: true)
+  TELEMETRY_EXPORT_INTERVAL_SEC(int)  interval in seconds (default: 60)
+  TELEMETRY_OUTPUT_ROOT        (str)  base output dir (default: /results/telemetry)
+  TELEMETRY_BASE_URL           (str)  frontend-proxy base URL (default: http://router:8080)
+  TELEMETRY_LOGS_LIMIT         (int)  max logs per snapshot (default: 0 = unlimited)
+  TELEMETRY_LOGS_BATCH_SIZE    (int)  logs fetched per OpenSearch page (default: 5000, max: 10000)
+  TELEMETRY_LOGS_SCROLL_TTL    (str)  OpenSearch scroll keepalive (default: 1m)
+  TELEMETRY_TRACE_LIMIT        (int)  max traces per service (default: 5000)
+  TELEMETRY_METRICS_QUERY      (str)  PromQL query for range export (default: {__name__!=""})
+  TELEMETRY_METRICS_STEP       (str)  Prometheus range step (default: 15s)
+  TELEMETRY_OPENSEARCH_USER/PASS (str) optional Basic auth for OpenSearch API
 """
 
-import json, os, signal, sys, time, urllib.request, subprocess, shlex, stat
+import base64, json, os, signal, sys, threading, time, urllib.parse, urllib.request, subprocess, shlex, stat
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE = os.getenv("CALDERA_URL", "http://localhost:8888").rstrip("/")
@@ -53,6 +65,37 @@ DELAY_BETWEEN = float(os.getenv("DELAY_BETWEEN", "2") or "2")
 STOP_ON_FAIL = os.getenv("STOP_ON_FAIL", "true").lower() == "true"
 RECENT_WINDOW_MIN = int(os.getenv("RECENT_WINDOW_MIN", "5") or "5")
 REQUIRE_AGENT = os.getenv("REQUIRE_AGENT", "true").lower() == "true"
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in ("0", "false", "no", "off")
+
+def _env_int(name: str, default: int, min_value: int = 1) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        parsed = int(raw)
+    except Exception:
+        return default
+    return max(min_value, parsed)
+
+TELEMETRY_EXPORT_ENABLED = _env_bool("TELEMETRY_EXPORT_ENABLED", True)
+TELEMETRY_EXPORT_INTERVAL_SEC = _env_int("TELEMETRY_EXPORT_INTERVAL_SEC", 60, 1)
+TELEMETRY_OUTPUT_ROOT = os.getenv("TELEMETRY_OUTPUT_ROOT", "/results/telemetry")
+TELEMETRY_BASE_URL = os.getenv("TELEMETRY_BASE_URL", "http://router:8080").rstrip("/")
+OPENSEARCH_MAX_RESULT_WINDOW = 10000
+TELEMETRY_LOGS_LIMIT = _env_int("TELEMETRY_LOGS_LIMIT", 0, 0)
+TELEMETRY_LOGS_BATCH_SIZE = _env_int("TELEMETRY_LOGS_BATCH_SIZE", 5000, 1)
+TELEMETRY_LOGS_SCROLL_TTL = os.getenv("TELEMETRY_LOGS_SCROLL_TTL", "1m").strip() or "1m"
+TELEMETRY_TRACE_LIMIT = _env_int("TELEMETRY_TRACE_LIMIT", 5000, 1)
+TELEMETRY_METRICS_QUERY = os.getenv("TELEMETRY_METRICS_QUERY", '{__name__!=""}')
+TELEMETRY_METRICS_STEP = os.getenv("TELEMETRY_METRICS_STEP", "15s").strip() or "15s"
+TELEMETRY_OPENSEARCH_USER = os.getenv("TELEMETRY_OPENSEARCH_USER", "").strip()
+TELEMETRY_OPENSEARCH_PASS = os.getenv("TELEMETRY_OPENSEARCH_PASS", "").strip()
+TELEMETRY_EXPORT_START_TS = time.time()
+TELEMETRY_EXPORT_START_ISO = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(TELEMETRY_EXPORT_START_TS))
+TELEMETRY_EXPORT_START_US = int(TELEMETRY_EXPORT_START_TS * 1_000_000)
 
 def log(*a, **k):
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -85,6 +128,247 @@ def rest(payload: Dict[str, Any], method: str = "POST", retries: int = 60, sleep
 def wait_caldera() -> None:
     log("auto-starter: waiting Caldera on", BASE)
     while not http_ok(BASE): time.sleep(2)
+
+def _telemetry_dirs(root: str) -> Dict[str, str]:
+    dirs = {
+        "logs": os.path.join(root, "logs"),
+        "traces": os.path.join(root, "traces"),
+        "metrics": os.path.join(root, "metrics"),
+    }
+    for d in dirs.values():
+        os.makedirs(d, exist_ok=True)
+    return dirs
+
+def _atomic_write_json(path: str, payload: Dict[str, Any]) -> None:
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    os.replace(tmp_path, path)
+
+def _write_json_if_ok(path: str, payload: Dict[str, Any], ok: bool, kind: str, error_payload: Any) -> None:
+    if ok:
+        _atomic_write_json(path, payload)
+        return
+    log(f"auto-starter: {kind} export failed, keeping previous file; error={error_payload!r}")
+
+def _http_json(url: str, method: str = "GET", payload: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None) -> Tuple[bool, Any]:
+    req_headers = {"Accept": "application/json"}
+    data = None
+    if payload is not None:
+        req_headers["Content-Type"] = "application/json"
+        data = json.dumps(payload).encode("utf-8")
+    if headers:
+        req_headers.update(headers)
+    try:
+        req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
+        with urllib.request.urlopen(req, timeout=20) as r:
+            body = r.read()
+            if not body:
+                return True, {}
+            return True, json.loads(body.decode("utf-8"))
+    except Exception as e:
+        return False, repr(e)
+
+def _opensearch_headers() -> Dict[str, str]:
+    if not TELEMETRY_OPENSEARCH_USER:
+        return {}
+    token = f"{TELEMETRY_OPENSEARCH_USER}:{TELEMETRY_OPENSEARCH_PASS}".encode("utf-8")
+    return {"Authorization": "Basic " + base64.b64encode(token).decode("ascii")}
+
+def _export_logs(dirs: Dict[str, str]) -> None:
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    out_path = os.path.join(dirs["logs"], "logs.json")
+    logs_limit = TELEMETRY_LOGS_LIMIT
+    logs_batch_size = min(TELEMETRY_LOGS_BATCH_SIZE, OPENSEARCH_MAX_RESULT_WINDOW)
+    query = {
+        "size": logs_batch_size,
+        "sort": [{"observedTimestamp": {"order": "desc"}}],
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "range": {
+                            "observedTimestamp": {
+                                "gte": TELEMETRY_EXPORT_START_ISO,
+                                "lte": "now",
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+    }
+
+    headers = _opensearch_headers()
+    search_url = f"{TELEMETRY_BASE_URL}/opensearch/otel/_search?scroll={urllib.parse.quote(TELEMETRY_LOGS_SCROLL_TTL, safe='')}"
+    scroll_url = f"{TELEMETRY_BASE_URL}/opensearch/_search/scroll"
+
+    ok, first_page = _http_json(search_url, method="POST", payload=query, headers=headers)
+    data: Any = first_page
+
+    # Fetch all pages with OpenSearch scroll so we can go beyond max_result_window.
+    if ok and isinstance(first_page, dict):
+        all_hits: List[Any] = []
+        pages_fetched = 0
+        scroll_id = first_page.get("_scroll_id")
+        page: Dict[str, Any] = first_page
+        while True:
+            pages_fetched += 1
+            hits = page.get("hits", {}).get("hits", [])
+            if not isinstance(hits, list):
+                hits = []
+
+            if hits:
+                if logs_limit > 0:
+                    remaining = logs_limit - len(all_hits)
+                    if remaining <= 0:
+                        break
+                    if len(hits) > remaining:
+                        hits = hits[:remaining]
+                all_hits.extend(hits)
+
+            if not scroll_id or not hits or (logs_limit > 0 and len(all_hits) >= logs_limit):
+                break
+
+            ok_scroll, next_page = _http_json(
+                scroll_url,
+                method="POST",
+                payload={"scroll": TELEMETRY_LOGS_SCROLL_TTL, "scroll_id": scroll_id},
+                headers=headers,
+            )
+            if not ok_scroll or not isinstance(next_page, dict):
+                ok = False
+                data = next_page
+                break
+            page = next_page
+            scroll_id = next_page.get("_scroll_id")
+
+        # Best-effort clear of server-side scroll context.
+        if scroll_id:
+            _http_json(
+                scroll_url,
+                method="DELETE",
+                payload={"scroll_id": scroll_id},
+                headers=headers,
+            )
+
+        if ok:
+            hits_obj = first_page.get("hits", {})
+            if not isinstance(hits_obj, dict):
+                hits_obj = {}
+            result_obj = dict(first_page)
+            result_obj["hits"] = dict(hits_obj)
+            result_obj["hits"]["hits"] = all_hits
+            result_obj["pages_fetched"] = pages_fetched
+            result_obj["returned_hits"] = len(all_hits)
+            result_obj.pop("_scroll_id", None)
+            data = result_obj
+
+    payload = {
+        "ok": ok,
+        "exported_at": now_iso,
+        "cumulative_from": TELEMETRY_EXPORT_START_ISO,
+        "source": search_url,
+        "requested_limit": TELEMETRY_LOGS_LIMIT,
+        "effective_limit": (None if logs_limit == 0 else logs_limit),
+        "batch_size": logs_batch_size,
+        "scroll_ttl": TELEMETRY_LOGS_SCROLL_TTL,
+        "result": data,
+    }
+    _write_json_if_ok(out_path, payload, ok, "logs", data)
+
+def _export_traces(dirs: Dict[str, str]) -> None:
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    out_path = os.path.join(dirs["traces"], "traces.json")
+    services_url = f"{TELEMETRY_BASE_URL}/jaeger/ui/api/services"
+    ok_services, services_resp = _http_json(services_url)
+    traces_by_service: Dict[str, Any] = {}
+    all_ok = ok_services
+
+    end_us = int(time.time() * 1_000_000)
+    services = services_resp.get("data", []) if ok_services and isinstance(services_resp, dict) else []
+    if not isinstance(services, list):
+        all_ok = False
+        services = []
+
+    for svc in services:
+        if not isinstance(svc, str) or not svc:
+            continue
+        params = urllib.parse.urlencode({
+            "service": svc,
+            "limit": TELEMETRY_TRACE_LIMIT,
+            "start": TELEMETRY_EXPORT_START_US,
+            "end": end_us,
+        })
+        traces_url = f"{TELEMETRY_BASE_URL}/jaeger/ui/api/traces?{params}"
+        ok, traces_resp = _http_json(traces_url)
+        if not ok:
+            all_ok = False
+        traces_by_service[svc] = {
+            "ok": ok,
+            "source": traces_url,
+            "result": traces_resp,
+        }
+
+    payload = {
+        "ok": ok_services,
+        "exported_at": now_iso,
+        "cumulative_from": TELEMETRY_EXPORT_START_ISO,
+        "services_source": services_url,
+        "services_result": services_resp,
+        "traces_by_service": traces_by_service,
+    }
+    _write_json_if_ok(out_path, payload, all_ok, "traces", services_resp)
+
+def _export_metrics(dirs: Dict[str, str]) -> None:
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    out_path = os.path.join(dirs["metrics"], "metrics.json")
+    query = urllib.parse.urlencode({
+        "query": TELEMETRY_METRICS_QUERY,
+        "start": str(int(TELEMETRY_EXPORT_START_TS)),
+        "end": str(int(time.time())),
+        "step": TELEMETRY_METRICS_STEP,
+    })
+    url = f"{TELEMETRY_BASE_URL}/grafana/api/datasources/proxy/uid/webstore-metrics/api/v1/query_range?{query}"
+    ok, data = _http_json(url)
+    payload = {
+        "ok": ok,
+        "exported_at": now_iso,
+        "cumulative_from": TELEMETRY_EXPORT_START_ISO,
+        "source": url,
+        "result": data,
+    }
+    _write_json_if_ok(out_path, payload, ok, "metrics", data)
+
+def _telemetry_export_once() -> None:
+    dirs = _telemetry_dirs(TELEMETRY_OUTPUT_ROOT)
+    _export_logs(dirs)
+    _export_traces(dirs)
+    _export_metrics(dirs)
+
+def _telemetry_export_loop() -> None:
+    log(
+        "auto-starter: telemetry exporter enabled",
+        f"base={TELEMETRY_BASE_URL}",
+        f"interval={TELEMETRY_EXPORT_INTERVAL_SEC}s",
+        f"output={TELEMETRY_OUTPUT_ROOT}",
+    )
+    while True:
+        started = time.time()
+        try:
+            _telemetry_export_once()
+        except Exception as e:
+            log(f"auto-starter: telemetry export iteration failed: {e!r}")
+        elapsed = time.time() - started
+        time.sleep(max(1.0, TELEMETRY_EXPORT_INTERVAL_SEC - elapsed))
+
+def _start_telemetry_exporter() -> None:
+    if not TELEMETRY_EXPORT_ENABLED:
+        log("auto-starter: telemetry exporter disabled by TELEMETRY_EXPORT_ENABLED")
+        return
+    th = threading.Thread(target=_telemetry_export_loop, name="telemetry-exporter", daemon=True)
+    th.start()
 
 def get_adversary_id_by_name(name: str) -> Optional[str]:
     advs = rest({"index":"adversaries"})
@@ -347,6 +631,7 @@ def _handle_signals():
 
 def main():
     _handle_signals()
+    _start_telemetry_exporter()
 
     adv_with_groups = parse_adv_list(ADV_LIST_RAW, GROUP_DEFAULT)
     if not adv_with_groups:

@@ -40,10 +40,12 @@ TST_NAMESPACE=${TST_NAMESPACE:-tst}
 FRONTEND_PROXY_IP=${FRONTEND_PROXY_IP:-127.0.0.1}
 GENERIC_SVC_PORT=${GENERIC_SVC_PORT:-8085}
 GENERIC_SVC_ADDR=${GENERIC_SVC_ADDR:-127.0.0.1}
+PROXY_BIND_ALL=${PROXY_BIND_ALL:-false}
 ADV_LIST=${ADV_LIST:-"KC1 – Image@cluster, KC2 – WiFi@outside, KC3 – FlagATT@outside, KC4 – CRSocket@outside, KC5 – Certificate@outside, KC6 – Etcd@outside"}
 
 normalize_bool_var BUILD_CONTAINERS_DOCKER
 normalize_bool_var CACHE_IMAGE_REGISTRY
+normalize_bool_var PROXY_BIND_ALL
 [[ "${DOCKER_BUILD_PARALLELISM}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_PARALLELISM must be an integer >= 1"
 (( DOCKER_BUILD_PARALLELISM >= 1 )) || die "DOCKER_BUILD_PARALLELISM must be >= 1"
 [[ "${DOCKER_BUILD_RETRY_ATTEMPTS}" =~ ^[0-9]+$ ]] || die "DOCKER_BUILD_RETRY_ATTEMPTS must be an integer >= 1"
@@ -375,7 +377,7 @@ if is_enabled "$svc"; then
     -e "SAMBA_GID=10001" \
     -e "SHARE_NAME=pvroot" \
     -e "SHARE_PATH=/share" \
-    -e "HOSTS_ALLOW=127. 172.18.0. 172.19.0. 192.168." \
+    -e "HOSTS_ALLOW=127. 172. 192.168." \
     -e "ENCRYPTION=required" \
     -e "LOG_LEVEL=1" \
     --cap-add NET_BIND_SERVICE --cap-add CHOWN \
@@ -390,15 +392,19 @@ if is_enabled "$svc"; then
   IMG_NAME="nginx:1.27-alpine"
   CONTAINER_NAME="${PROXY}"
   HOSTNAME="${PROXY}"
+  PROXY_BIND_ADDR="127.0.0.1"
+  if is_true "${PROXY_BIND_ALL}"; then
+    PROXY_BIND_ADDR="0.0.0.0"
+  fi
   validate_image_or_die "$IMG_NAME"
   run_container "${CONTAINER_NAME}" \
     --name "${CONTAINER_NAME}" \
     --hostname "${HOSTNAME}" \
     --restart unless-stopped \
     --network "${CP_NETWORK}" \
-    -p "0.0.0.0:8888:8888" \
-    -p "0.0.0.0:8080:8080" \
-    -p "0.0.0.0:${GENERIC_SVC_PORT}:${GENERIC_SVC_PORT}" \
+    -p "${PROXY_BIND_ADDR}:8888:8888" \
+    -p "${PROXY_BIND_ADDR}:8080:8080" \
+    -p "${PROXY_BIND_ADDR}:${GENERIC_SVC_PORT}:${GENERIC_SVC_PORT}" \
     -e "CALDERA_SERVER=${CALDERA_SERVER}" \
     -e "FRONTEND_PROXY=${FRONTEND_PROXY_IP}" \
     -e "GENERIC_SVC_PORT=${GENERIC_SVC_PORT}" \
@@ -446,6 +452,9 @@ if is_enabled "$svc"; then
     -e "DOCKER_HOST=unix:///var/run/docker.sock" \
     -e "ATT_OUT=${ATTACKER}" \
     -e "ATT_NS=${TST_NAMESPACE}" \
+    -e "HOSTREGISTRY=${REGISTRY_NAME}:${REGISTRY_PORT}" \
+    -e "REGISTRY_USER=${REGISTRY_USER}" \
+    -e "REGISTRY_PASS=${REGISTRY_PASS}" \
     -v "/var/run/docker.sock:/var/run/docker.sock" \
     "${KC_ENABLE_ENVS[@]}" \
     "${KC_SCRIPT_PRE_ENVS[@]}" \

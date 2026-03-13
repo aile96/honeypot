@@ -1432,11 +1432,11 @@ components:
           requests: { cpu: 50m, memory: 64Mi }
           limits:   { cpu: 200m, memory: 256Mi }
         readinessProbe:
-          httpGet: { path: /healthz, port: http }
+          httpGet: { path: /healthz, port: 8080 }
           initialDelaySeconds: 2
           periodSeconds: 5
         livenessProbe:
-          httpGet: { path: /healthz, port: http }
+          httpGet: { path: /healthz, port: 8080 }
           initialDelaySeconds: 5
           periodSeconds: 10
 

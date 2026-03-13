@@ -181,9 +181,10 @@ EOF
 create_minikube_cluster() {
   log "Creating Minikube profile '${MINIKUBE_PROFILE}' with ${MINIKUBE_NODES} node(s) (${MINIKUBE_CPUS} CPUs, ${MINIKUBE_MEM_MB} MB)..."
   minikube start \
+    --driver docker \
     --profile="${MINIKUBE_PROFILE}" \
     --kubernetes-version="v${K8S_VERSION}" \
-    --listen-address=0.0.0.0 \
+    --listen-address=127.0.0.1 \
     --cni=false \
     --nodes="${MINIKUBE_NODES}" \
     --cpus="${MINIKUBE_CPUS}" \

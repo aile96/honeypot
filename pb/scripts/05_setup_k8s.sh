@@ -89,13 +89,15 @@ DOCKER_NET=""
 
 # 3a) Known cases (kind/k3d/minikube)
 if [[ "${CURRENT_CONTEXT}" == kind-* ]]; then
-  if docker ps --format '{{.Names}}' | grep -q '^kind-control-plane$'; then
+  KNAME="${CURRENT_CONTEXT#kind-}"
+  KIND_CP_CONTAINER="${KNAME}-control-plane"
+  if docker ps --format '{{.Names}}' | grep -qx "${KIND_CP_CONTAINER}"; then
+    SERVER_HOST="${KIND_CP_CONTAINER}"
+  elif [[ "${KNAME}" == "kind" ]] && docker ps --format '{{.Names}}' | grep -qx 'kind-control-plane'; then
+    # Kind's default cluster name is "kind", whose control-plane container is "kind-control-plane".
     SERVER_HOST="kind-control-plane"
   else
-    KNAME="${CURRENT_CONTEXT#kind-}"
-    if docker ps --format '{{.Names}}' | grep -q "^${KNAME}-control-plane$"; then
-      SERVER_HOST="${KNAME}-control-plane"
-    fi
+    warn "Could not find expected Kind control-plane container '${KIND_CP_CONTAINER}'. Trying IP-based discovery."
   fi
   DOCKER_NET="kind"
 elif [[ "${CURRENT_CONTEXT}" == k3d-* ]]; then
@@ -184,7 +186,8 @@ users:
 EOF
 
 if docker ps -a --format '{{.Names}}' | grep -qx "${CALDERA_CONTROLLER}"; then
-  docker cp ./pb/docker/controller/kube "${CALDERA_CONTROLLER}:/kube" || die "Failed to copy kubeconfig into '${CALDERA_CONTROLLER}'."
+  docker exec "${CALDERA_CONTROLLER}" mkdir -p /kube || die "Failed to create /kube in '${CALDERA_CONTROLLER}'."
+  docker cp "${OUT_FILE}" "${CALDERA_CONTROLLER}:/kube/kubeconfig" || die "Failed to copy kubeconfig into '${CALDERA_CONTROLLER}'."
 else
   warn "Container '${CALDERA_CONTROLLER}' not found. Skipping kubeconfig copy."
 fi

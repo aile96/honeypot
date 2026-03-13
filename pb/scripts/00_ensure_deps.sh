@@ -64,6 +64,19 @@ else
   fail "Missing required network CLI: need either 'ss' (preferred) or 'netstat' in PATH."
 fi
 
+# 4b) timeout: required only when Docker build timeouts are enabled
+DOCKER_BUILD_TIMEOUT_SECONDS="${DOCKER_BUILD_TIMEOUT_SECONDS:-0}"
+[[ "${DOCKER_BUILD_TIMEOUT_SECONDS}" =~ ^[0-9]+$ ]] || \
+  fail "DOCKER_BUILD_TIMEOUT_SECONDS must be an integer >= 0 (got '${DOCKER_BUILD_TIMEOUT_SECONDS}')."
+
+if (( DOCKER_BUILD_TIMEOUT_SECONDS > 0 )); then
+  command -v timeout >/dev/null 2>&1 || \
+    fail "Missing required command: 'timeout' in PATH because DOCKER_BUILD_TIMEOUT_SECONDS=${DOCKER_BUILD_TIMEOUT_SECONDS}."
+  info "timeout command available (DOCKER_BUILD_TIMEOUT_SECONDS=${DOCKER_BUILD_TIMEOUT_SECONDS})."
+else
+  info "timeout command not required (DOCKER_BUILD_TIMEOUT_SECONDS=${DOCKER_BUILD_TIMEOUT_SECONDS})."
+fi
+
 # 5) Cluster manager command present for selected TARGET
 TARGET="${TARGET:-$([ "${KIND_CLUSTER:-0}" = "0" ] && echo "minikube" || echo "kind")}"
 case "$TARGET" in

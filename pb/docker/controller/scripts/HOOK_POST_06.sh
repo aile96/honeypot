@@ -12,6 +12,28 @@ warn() {
   printf '[HOOK_POST_06][WARN] %s\n' "$*" >&2
 }
 
+resolve_caldera_container() {
+  local caldera_container="${CALDERA_SERVER:-}"
+
+  if [[ -n "${caldera_container}" ]]; then
+    printf '%s\n' "${caldera_container}"
+    return 0
+  fi
+
+  if [[ -n "${CALDERA_URL:-}" ]]; then
+    caldera_container="${CALDERA_URL#*://}"
+    caldera_container="${caldera_container%%/*}"
+    caldera_container="${caldera_container%%:*}"
+  fi
+
+  if [[ -n "${caldera_container}" ]]; then
+    printf '%s\n' "${caldera_container}"
+    return 0
+  fi
+
+  return 1
+}
+
 copy_kc6_results() {
   local data_path
 
@@ -19,6 +41,33 @@ copy_kc6_results() {
   data_path="$(docker exec "${ATT_OUT}" printenv DATA_PATH)"
   mkdir -p /results
   docker cp "${ATT_OUT}:${data_path}/KC6" /results/
+}
+
+copy_caldera_event_logs() {
+  local caldera_container
+
+  caldera_container="$(resolve_caldera_container || true)"
+  if [[ -z "${caldera_container}" ]]; then
+    warn "Unable to resolve Caldera container name from CALDERA_SERVER/CALDERA_URL."
+    return 0
+  fi
+
+  if ! docker ps -a --format '{{.Names}}' | grep -qx "${caldera_container}"; then
+    warn "Caldera container '${caldera_container}' not found: skipping event log export."
+    return 0
+  fi
+
+  if ! docker exec "${caldera_container}" sh -lc 'test -d /tmp/event_logs'; then
+    warn "Caldera event log directory '/tmp/event_logs' not found in '${caldera_container}'."
+    return 0
+  fi
+
+  mkdir -p /results/caldera
+  if docker cp "${caldera_container}:/tmp/event_logs/." /results/caldera/ >/dev/null 2>&1; then
+    log "Copied Caldera event logs from '${caldera_container}:/tmp/event_logs' to '/results/caldera'."
+  else
+    warn "Failed copying Caldera event logs from '${caldera_container}:/tmp/event_logs'."
+  fi
 }
 
 resolve_manifest() {
@@ -71,6 +120,7 @@ main() {
   : "${HOSTREGISTRY:?HOSTREGISTRY must be set}"
 
   copy_kc6_results
+  copy_caldera_event_logs
 
   registry_host="${HOSTREGISTRY#https://}"
   registry_host="${registry_host#http://}"

@@ -316,10 +316,12 @@ To remove **everything** (helper containers, cluster):
 
 Alternatively:
 ```bash
-kind delete cluster     # if using Kind
-minikube delete         # if using Minikube
-docker rm -f ...        # all docker supporting network
+kind delete cluster --name <kind-cluster-name>  # default: honeypotlab
+minikube delete -p <minikube-profile>           # default: honeypotlab
+docker rm -f <underlay-containers>              # registry/proxy/caldera/attacker/...
 ```
+
+If you changed `KIND_CLUSTER_NAME`, `MINIKUBE_PROFILE`, or `CLUSTER_PROFILE` in `configuration.conf`, use those configured values instead of the defaults above.
 
 ---
 

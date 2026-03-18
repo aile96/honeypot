@@ -70,6 +70,34 @@ copy_caldera_event_logs() {
   fi
 }
 
+collect_k8s_events() {
+  local kube_events_dir="${KUBE_EVENTS_DIR:-/results/kube_events}"
+  local raw_file="${kube_events_dir}/kubernetes_events_raw.json"
+  local kube_ctx="${KUBE_CONTEXT:-}"
+
+  if ! command -v kubectl >/dev/null 2>&1; then
+    warn "kubectl not found: skipping Kubernetes events export."
+    return 0
+  fi
+
+  mkdir -p "${kube_events_dir}"
+
+  if [[ -n "${kube_ctx}" ]]; then
+    if kubectl --context "${kube_ctx}" get events -A -o json >"${raw_file}"; then
+      log "Copied Kubernetes events with context '${kube_ctx}' to '${raw_file}'."
+    else
+      warn "kubectl events query failed with context '${kube_ctx}'."
+    fi
+    return 0
+  fi
+
+  if kubectl get events -A -o json >"${raw_file}"; then
+    log "Copied Kubernetes events to '${raw_file}'."
+  else
+    warn "kubectl events query failed."
+  fi
+}
+
 resolve_manifest() {
   local image_name="$1"
   local image_tag="$2"
@@ -121,6 +149,7 @@ main() {
 
   copy_kc6_results
   copy_caldera_event_logs
+  collect_k8s_events
 
   registry_host="${HOSTREGISTRY#https://}"
   registry_host="${registry_host#http://}"

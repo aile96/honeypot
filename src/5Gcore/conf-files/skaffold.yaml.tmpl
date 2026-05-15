@@ -1,0 +1,165 @@
+apiVersion: skaffold/v4beta13
+kind: Config
+
+metadata:
+  name: free5gc-ueransim-kind
+
+build:
+  tagPolicy:
+    envTemplate:
+      template: "{{.IMAGE_VERSION}}"
+  local:
+    push: true
+    useDockerCLI: true
+  artifacts:
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/amf
+      context: containers/amf
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ausf
+      context: containers/ausf
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/chf
+      context: containers/chf
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/dbpython
+      context: containers/dbpython
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/n3iwf
+      context: containers/n3iwf
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nef
+      context: containers/nef
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nrf
+      context: containers/nrf
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nssf
+      context: containers/nssf
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/pcf
+      context: containers/pcf
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/smf
+      context: containers/smf
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/udm
+      context: containers/udm
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/udr
+      context: containers/udr
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/upf
+      context: containers/upf
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/webui
+      context: containers/webui
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ueransim
+      context: containers/ueransim
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/mongodb
+      context: containers/mongodb
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/curl
+      context: containers/curl
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/busybox
+      context: containers/busybox
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sctp-test
+      context: containers/sctp-test
+
+deploy:
+  statusCheck: true
+  statusCheckDeadlineSeconds: 600
+  helm:
+    flags:
+      upgrade:
+        - --timeout
+        - ${HELM_TIMEOUT:-20m}
+    releases:
+      - name: free5gc-helm
+        chartPath: helm-charts/free5gc
+        namespace: free5gc
+        createNamespace: true
+        wait: true
+        skipBuildDependencies: true
+        setValues:
+          global.imageRegistry: ""
+          global.userPlaneArchitecture: single
+          free5gc-amf.amf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/amf
+          free5gc-amf.amf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-amf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+          free5gc-amf.initcontainers.curl.image: curl
+          free5gc-amf.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-ausf.ausf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ausf
+          free5gc-ausf.ausf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-ausf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+          free5gc-ausf.initcontainers.curl.image: curl
+          free5gc-ausf.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-chf.chf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/chf
+          free5gc-chf.chf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-chf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+          free5gc-chf.initcontainers.curl.image: curl
+          free5gc-chf.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-n3iwf.n3iwf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/n3iwf
+          free5gc-n3iwf.n3iwf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-nef.nef.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nef
+          free5gc-nef.nef.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-nef.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+          free5gc-nef.initcontainers.curl.image: curl
+          free5gc-nef.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-nrf.nrf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nrf
+          free5gc-nrf.nrf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-nssf.nssf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nssf
+          free5gc-nssf.nssf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-nssf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+          free5gc-nssf.initcontainers.curl.image: curl
+          free5gc-nssf.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-pcf.pcf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/pcf
+          free5gc-pcf.pcf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-pcf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+          free5gc-pcf.initcontainers.curl.image: curl
+          free5gc-pcf.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-smf.smf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/smf
+          free5gc-smf.smf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-smf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+          free5gc-smf.initcontainers.curl.image: curl
+          free5gc-smf.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-udm.udm.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/udm
+          free5gc-udm.udm.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-udm.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+          free5gc-udm.initcontainers.curl.image: curl
+          free5gc-udm.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-udr.udr.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/udr
+          free5gc-udr.udr.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-udr.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+          free5gc-udr.initcontainers.curl.image: curl
+          free5gc-udr.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-webui.webui.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/webui
+          free5gc-webui.webui.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-dbpython.dbpython.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/dbpython
+          free5gc-dbpython.dbpython.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-nrf.initcontainers.busybox.image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/busybox
+          free5gc-nrf.initcontainers.busybox.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-webui.initcontainers.busybox.image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/busybox
+          free5gc-webui.initcontainers.busybox.tag: "${IMAGE_VERSION:-2.0.2}"
+          mongodb.image.registry: ""
+          mongodb.image.repository: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/mongodb
+          mongodb.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-upf.upf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/upf
+          free5gc-upf.upf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-upf.iupf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/upf
+          free5gc-upf.iupf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-upf.psaupf1.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/upf
+          free5gc-upf.psaupf1.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-upf.psaupf2.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/upf
+          free5gc-upf.psaupf2.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-upf.upf.readinessProbe.enabled: false
+          free5gc-upf.upf.livenessProbe.enabled: false
+          free5gc-upf.upf.configmap.wrapperAdditionalCommands: |-
+            if [ ! -d /sys/module/gtp5g ] && [ ! -d /sys/module/gtp ]; then
+              echo "[wrapper] gtp5g kernel module unavailable; keeping UPF pod alive for Kind startup"
+              sleep infinity
+            fi
+
+      - name: ueransim
+        chartPath: helm-charts/ueransim-gnb
+        namespace: free5gc
+        createNamespace: true
+        wait: true
+        skipBuildDependencies: true
+        dependsOn:
+          - free5gc-helm
+        setValues:
+          global.free5gcReleaseName: free5gc-helm
+          gnb.enabled: true
+          gnb.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ueransim
+          gnb.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          initcontainers.sctp_test.image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sctp-test
+          initcontainers.sctp_test.tag: "${IMAGE_VERSION:-2.0.2}"
+          ue.enabled: true
+          ue.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ueransim
+          ue.image.tag: "${IMAGE_VERSION:-2.0.2}"

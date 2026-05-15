@@ -1,0 +1,455 @@
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: honeypotlab
+
+build:
+  insecureRegistries:
+    - ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+  tagPolicy:
+    envTemplate:
+      template: "{{.IMAGE_VERSION}}"
+  local:
+    push: true
+    useDockerCLI: true
+  artifacts:
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/accounting
+      context: containers/accounting
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ad
+      context: containers/ad
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/attacker
+      context: ../common/attacker
+      docker:
+        buildArgs:
+          GROUP: cluster
+          LOG_NS: "${MEM_NAMESPACE:-mem}"
+          ATTACKED_NS: "${DMZ_NAMESPACE:-dmz}"
+          AUTH_NS: "${APP_NAMESPACE:-app}"
+          ATTACKERADDR: "${ATTACKER:-}"
+          CALDERA_URL: "${CALDERA_URL:-http://caldera:8888}"
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/auth
+      context: containers/auth
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/cart
+      context: containers/cart
+      docker:
+        dockerfile: src/Dockerfile
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/checkout
+      context: containers/checkout
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/controller
+      context: containers/controller
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/currency
+      context: containers/currency
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/email
+      context: containers/email
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/flagd
+      context: containers/flagd
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/flagd-ui
+      context: containers/flagd-ui
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/fraud-detection
+      context: containers/fraud-detection
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/frontend
+      context: containers/frontend
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/frontend-proxy
+      context: containers/frontend-proxy
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/image-provider
+      context: containers/image-provider
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/kafka
+      context: containers/kafka
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/payment
+      context: containers/payment
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/postgres
+      context: containers/postgres
+      docker:
+        buildArgs:
+          DB: curr
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/postgres-auth
+      context: containers/postgres
+      docker:
+        buildArgs:
+          DB: auth
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/postgres-payment
+      context: containers/postgres
+      docker:
+        buildArgs:
+          DB: pay
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/product-catalog
+      context: containers/product-catalog
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/quote
+      context: containers/quote
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/recommendation
+      context: containers/recommendation
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/shipping
+      context: containers/shipping
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sidecar-enc
+      context: containers/sidecar-enc
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sidecar-mal
+      context: containers/sidecar-mal
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/smtp
+      context: containers/smtp
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/traffic-translator
+      context: containers/traffic-translator
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/valkey-cart
+      context: containers/valkey-cart
+
+deploy:
+  statusCheck: true
+  statusCheckDeadlineSeconds: 600
+  helm:
+    flags:
+      upgrade:
+        - --timeout
+        - ${HELM_TIMEOUT:-20m}
+    releases:
+      - name: metallb
+        remoteChart: metallb
+        repo: https://metallb.github.io/metallb
+        namespace: metallb-system
+        createNamespace: true
+        wait: true
+
+      - name: csi-driver-smb
+        remoteChart: csi-driver-smb
+        repo: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
+        namespace: kube-system
+        wait: true
+
+      - name: honeypot-additions
+        chartPath: helm-charts/additions
+        namespace: default
+        createNamespace: true
+        wait: true
+        valuesFiles:
+          - helm-charts/additions/values.yaml
+        setValues:
+          "config.enabled": true
+          "config.objects.dbauth.namespace": "${DAT_NAMESPACE:-dat}"
+          "config.objects.dbcurrency-creds.namespace": "${APP_NAMESPACE:-app}"
+          "config.objects.dbcurrency.namespace": "${DAT_NAMESPACE:-dat}"
+          "config.objects.dbpayment.namespace": "${DAT_NAMESPACE:-dat}"
+          "config.objects.flagd-config.namespace": "${MEM_NAMESPACE:-mem}"
+          "config.objects.flagd-credentials-ui.namespace": "${MEM_NAMESPACE:-mem}"
+          "config.objects.flagd-credentials-ui.type": "${FLAGD_CREDENTIALS_TYPE:-configmap}"
+          "config.objects.product-catalog-products.namespace": "${APP_NAMESPACE:-app}"
+          "config.objects.proto.namespace": "${APP_NAMESPACE:-app}"
+          "config.objects.smb-creds.namespace": "${MEM_NAMESPACE:-mem}"
+          "defaultValues.image.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}"
+          "defaultValues.image.version": "${IMAGE_VERSION:-2.0.2}"
+          "namespaces.enabled": true
+          "namespaces.list": "${APP_NAMESPACE:-app}\\, ${DMZ_NAMESPACE:-dmz}\\, ${DAT_NAMESPACE:-dat}\\, ${PAY_NAMESPACE:-pay}\\, ${MEM_NAMESPACE:-mem}\\, ${TST_NAMESPACE:-tst}"
+          "networkPolicies.allowKubeAPIServer": true
+          "networkPolicies.enabled": true
+          "networkPolicies.internet.egressCidrs": ""
+          "networkPolicies.internet.exceptCidrs": ""
+          "networkPolicies.internet.ingressCidrs": ""
+          "networkPolicies.internet.mode": "world"
+          "networkPolicies.kubeAPIServer.egressIPs": "${KUBE_APISERVER_IPS:-}"
+          "networkPolicies.kubeAPIServer.ingressIPs": "${KUBE_APISERVER_IPS:-}"
+          "networkPolicies.rules.app.allowInternetEgress": false
+          "networkPolicies.rules.app.allowInternetIngress": false
+          "networkPolicies.rules.app.egress": "${DAT_NAMESPACE:-dat}\\, ${MEM_NAMESPACE:-mem}\\, ${DMZ_NAMESPACE:-dmz}\\, ${PAY_NAMESPACE:-pay}\\, kube-system"
+          "networkPolicies.rules.app.ingress": "${DAT_NAMESPACE:-dat}\\, ${MEM_NAMESPACE:-mem}\\, ${DMZ_NAMESPACE:-dmz}\\, ${PAY_NAMESPACE:-pay}\\, kube-system"
+          "networkPolicies.rules.app.name": "${APP_NAMESPACE:-app}"
+          "networkPolicies.rules.app.podSelector.matchExpressions[0].key": "app.kubernetes.io/name"
+          "networkPolicies.rules.app.podSelector.matchExpressions[0].operator": "NotIn"
+          "networkPolicies.rules.app.podSelector.matchExpressions[0].values[0]": "currency"
+          "networkPolicies.rules.dat.allowInternetEgress": false
+          "networkPolicies.rules.dat.allowInternetIngress": false
+          "networkPolicies.rules.dat.egress": "${APP_NAMESPACE:-app}\\, ${MEM_NAMESPACE:-mem}\\, ${PAY_NAMESPACE:-pay}\\, kube-system"
+          "networkPolicies.rules.dat.ingress": "${APP_NAMESPACE:-app}\\, ${MEM_NAMESPACE:-mem}\\, ${PAY_NAMESPACE:-pay}\\, kube-system"
+          "networkPolicies.rules.dat.name": "${DAT_NAMESPACE:-dat}"
+          "networkPolicies.rules.dmz.allowInternetEgress": true
+          "networkPolicies.rules.dmz.allowInternetIngress": true
+          "networkPolicies.rules.dmz.egress": "${APP_NAMESPACE:-app}\\, ${MEM_NAMESPACE:-mem}\\, ${TST_NAMESPACE:-tst}\\, kube-system"
+          "networkPolicies.rules.dmz.ingress": "${APP_NAMESPACE:-app}\\, ${MEM_NAMESPACE:-mem}\\, ${TST_NAMESPACE:-tst}\\, kube-system"
+          "networkPolicies.rules.dmz.name": "${DMZ_NAMESPACE:-dmz}"
+          "networkPolicies.rules.mem.allowInternetEgress": true
+          "networkPolicies.rules.mem.allowInternetIngress": true
+          "networkPolicies.rules.mem.egress": "${DAT_NAMESPACE:-dat}\\, ${APP_NAMESPACE:-app}\\, ${DMZ_NAMESPACE:-dmz}\\, ${PAY_NAMESPACE:-pay}\\, ${TST_NAMESPACE:-tst}\\, kube-system"
+          "networkPolicies.rules.mem.ingress": "${DAT_NAMESPACE:-dat}\\, ${APP_NAMESPACE:-app}\\, ${DMZ_NAMESPACE:-dmz}\\, ${PAY_NAMESPACE:-pay}\\, ${TST_NAMESPACE:-tst}\\, kube-system"
+          "networkPolicies.rules.mem.name": "${MEM_NAMESPACE:-mem}"
+          "networkPolicies.rules.mem.podSelector.matchExpressions[0].key": "app.kubernetes.io/name"
+          "networkPolicies.rules.mem.podSelector.matchExpressions[0].operator": "NotIn"
+          "networkPolicies.rules.mem.podSelector.matchExpressions[0].values[0]": "flagd"
+          "networkPolicies.rules.mem.podSelector.matchExpressions[0].values[1]": "traffic-controller"
+          "networkPolicies.rules.pay.allowInternetEgress": false
+          "networkPolicies.rules.pay.allowInternetIngress": false
+          "networkPolicies.rules.pay.egress": "${APP_NAMESPACE:-app}\\, ${MEM_NAMESPACE:-mem}\\, ${DAT_NAMESPACE:-dat}\\, kube-system"
+          "networkPolicies.rules.pay.ingress": "${APP_NAMESPACE:-app}\\, ${MEM_NAMESPACE:-mem}\\, ${DAT_NAMESPACE:-dat}\\, kube-system"
+          "networkPolicies.rules.pay.name": "${PAY_NAMESPACE:-pay}"
+          "networkPolicies.rules.tst.allowInternetEgress": true
+          "networkPolicies.rules.tst.allowInternetIngress": true
+          "networkPolicies.rules.tst.egress": "${MEM_NAMESPACE:-mem}\\, ${DMZ_NAMESPACE:-dmz}\\, kube-system"
+          "networkPolicies.rules.tst.ingress": "${MEM_NAMESPACE:-mem}\\, ${DMZ_NAMESPACE:-dmz}\\, kube-system"
+          "networkPolicies.rules.tst.name": "${TST_NAMESPACE:-tst}"
+          "networkPolicies.rules.tst.podSelector.matchExpressions[0].key": "app.kubernetes.io/name"
+          "networkPolicies.rules.tst.podSelector.matchExpressions[0].operator": "NotIn"
+          "networkPolicies.rules.tst.podSelector.matchExpressions[0].values[0]": "test-image"
+          "pool.enabled": true
+          "pool.ips": "${FRONTEND_PROXY_IP:-172.18.0.200}-${GENERIC_SVC_ADDR:-172.18.0.201}"
+          "postgres.enabled": true
+          "postgres.namespace": "${DAT_NAMESPACE:-dat}"
+          "RBAC.enabled": true
+          "registryAuth.enabled": true
+          "registryAuth.password": "${REGISTRY_PASS:-}"
+          "registryAuth.username": "${REGISTRY_USER:-}"
+          "volumes.enabled": "${SAMBA_ENABLE_VALUE:-true}"
+          "vulnerabilities.anonymousGrant": "${ANONYMOUS_GRANT_EFFECTIVE:-false}"
+          "vulnerabilities.currencyGrant": "${CURRENCY_GRANT_VALUE:-true}"
+          "vulnerabilities.deployGrant": "${DEPLOY_GRANT_VALUE:-true}"
+          "vulnerabilities.dnsGrant": "${DNS_GRANT_VALUE:-true}"
+
+      - name: honeypot-telemetry
+        chartPath: helm-charts/telemetry
+        namespace: ${MEM_NAMESPACE:-mem}
+        createNamespace: true
+        wait: true
+        valuesFiles:
+          - helm-charts/telemetry/values-${TELEMETRY_VALUES_MODE:-noauth}.yaml
+        setValues:
+          "grafana.enabled": true
+          "grafana.image.registry": "docker.io"
+          "grafana.image.repository": "grafana/grafana"
+          "grafana.image.tag": "11.5.2"
+          "jaeger.allInOne.args[0]": "--memory.max-traces=2000"
+          "jaeger.allInOne.args[1]": "--query.base-path=/jaeger/ui"
+          "jaeger.allInOne.args[2]": "--prometheus.server-url=http://prometheus:9090"
+          "jaeger.allInOne.args[3]": "--prometheus.query.normalize-calls=true"
+          "jaeger.allInOne.args[4]": "--prometheus.query.normalize-duration=true"
+          "jaeger.allInOne.image.registry": "docker.io"
+          "jaeger.allInOne.image.repository": "jaegertracing/all-in-one"
+          "jaeger.allInOne.image.tag": "1.53.0"
+          "jaeger.allInOne.resources.limits.cpu": "1000m"
+          "jaeger.allInOne.resources.limits.memory": "768Mi"
+          "jaeger.allInOne.resources.requests.cpu": "100m"
+          "jaeger.allInOne.resources.requests.memory": "256Mi"
+          "jaeger.enabled": true
+          "opensearch.enabled": true
+          "opensearch.global.dockerRegistry": "docker.io"
+          "opensearch.image.repository": "opensearchproject/opensearch"
+          "opensearch.image.tag": "2.19.0"
+          "opentelemetry-collector.config.exporters.otlp.endpoint": "jaeger-collector.${MEM_NAMESPACE:-mem}.svc.cluster.local:4317"
+          "opentelemetry-collector.config.exporters.otlp.retry_on_failure.enabled": true
+          "opentelemetry-collector.config.exporters.otlp.retry_on_failure.initial_interval": "1s"
+          "opentelemetry-collector.config.exporters.otlp.retry_on_failure.max_elapsed_time": "30s"
+          "opentelemetry-collector.config.exporters.otlp.retry_on_failure.max_interval": "10s"
+          "opentelemetry-collector.config.exporters.otlp.sending_queue.enabled": true
+          "opentelemetry-collector.config.exporters.otlp.sending_queue.num_consumers": "4"
+          "opentelemetry-collector.config.exporters.otlp.sending_queue.queue_size": "512"
+          "opentelemetry-collector.config.processors.memory_limiter.check_interval": "2s"
+          "opentelemetry-collector.config.processors.memory_limiter.limit_percentage": "85"
+          "opentelemetry-collector.config.processors.memory_limiter.spike_limit_percentage": "20"
+          "opentelemetry-collector.config.receivers.httpcheck/frontend-proxy.targets[0].endpoint": "http://frontend-proxy.${DMZ_NAMESPACE:-dmz}:8080"
+          "opentelemetry-collector.config.receivers.redis.endpoint": "valkey-cart.${DAT_NAMESPACE:-dat}:6379"
+          "opentelemetry-collector.config.service.pipelines.logs.exporters[0]": "opensearch"
+          "opentelemetry-collector.config.service.pipelines.metrics.exporters[0]": "otlphttp/prometheus"
+          "opentelemetry-collector.config.service.pipelines.traces.exporters[0]": "otlp"
+          "opentelemetry-collector.config.service.pipelines.traces.exporters[1]": "spanmetrics"
+          "opentelemetry-collector.config.service.telemetry.metrics.readers[0].periodic.exporter.otlp.endpoint": "otel-collector.${MEM_NAMESPACE:-mem}:4317"
+          "opentelemetry-collector.config.service.telemetry.metrics.readers[0].periodic.exporter.otlp.protocol": "grpc"
+          "opentelemetry-collector.config.service.telemetry.metrics.readers[0].periodic.interval": 10000
+          "opentelemetry-collector.config.service.telemetry.metrics.readers[0].periodic.timeout": 5000
+          "opentelemetry-collector.enabled": true
+          "opentelemetry-collector.image.repository": "otel/opentelemetry-collector-contrib"
+          "opentelemetry-collector.image.tag": "0.120.0"
+          "opentelemetry-collector.resources.limits.cpu": "1000m"
+          "opentelemetry-collector.resources.limits.memory": "512Mi"
+          "opentelemetry-collector.resources.requests.cpu": "200m"
+          "opentelemetry-collector.resources.requests.memory": "256Mi"
+          "prometheus.enabled": true
+          "prometheus.server.image.repository": "quay.io/prometheus/prometheus"
+          "prometheus.server.image.tag": "v3.1.0"
+
+      - name: honeypot-astronomy-shop
+        chartPath: helm-charts/astronomy-shop
+        namespace: default
+        createNamespace: true
+        wait: true
+        valuesFiles:
+          - helm-charts/astronomy-shop/values.yaml
+        setValues:
+          "components.accounting.enabled": true
+          "components.accounting.namespace": "${APP_NAMESPACE:-app}"
+          "components.ad.enabled": true
+          "components.ad.envOverrides[0].name": "FLAGD_HOST"
+          "components.ad.envOverrides[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.ad.namespace": "${APP_NAMESPACE:-app}"
+          "components.auth.enabled": true
+          "components.auth.envOverrides[0].name": "DB_HOST"
+          "components.auth.envOverrides[0].value": "postgres-auth.${DAT_NAMESPACE:-dat}"
+          "components.auth.initContainers[0].env[0].value": "postgres-auth.${DAT_NAMESPACE:-dat}"
+          "components.auth.namespace": "${APP_NAMESPACE:-app}"
+          "components.cart.enabled": true
+          "components.cart.envOverrides[0].name": "VALKEY_ADDR"
+          "components.cart.envOverrides[0].value": "valkey-cart.${DAT_NAMESPACE:-dat}:6379"
+          "components.cart.envOverrides[1].name": "FLAGD_HOST"
+          "components.cart.envOverrides[1].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.cart.initContainers[0].env[0].value": "valkey-cart.${DAT_NAMESPACE:-dat}"
+          "components.cart.namespace": "${APP_NAMESPACE:-app}"
+          "components.checkout.enabled": true
+          "components.checkout.envOverrides[0].name": "FLAGD_HOST"
+          "components.checkout.envOverrides[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.checkout.initContainers[1].env[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.checkout.namespace": "${APP_NAMESPACE:-app}"
+          "components.checkout.sidecarContainers[0].env[3].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.checkout.sidecarContainers[0].env[7].value": "${FLAGD_FEATURES_VALUE:-true}"
+          "components.checkout.sidecarContainers[0].imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sidecar-enc"
+          "components.checkout.sidecarContainers[1].env[2].value": "payment.${PAY_NAMESPACE:-pay}:8080"
+          "components.checkout.sidecarContainers[1].env[3].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.checkout.sidecarContainers[1].env[7].value": "${FLAGD_FEATURES_VALUE:-true}"
+          "components.checkout.sidecarContainers[1].imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sidecar-enc"
+          "components.currency.enabled": true
+          "components.currency.envOverrides[0].name": "DB_HOST"
+          "components.currency.envOverrides[0].value": "postgres.${DAT_NAMESPACE:-dat}"
+          "components.currency.envOverrides[1].name": "EXPOSE_USE_FLAGD"
+          "components.currency.envOverrides[1].value": "${FLAGD_FEATURES_VALUE:-true}"
+          "components.currency.envOverrides[2].name": "FLAGD_HOST"
+          "components.currency.envOverrides[2].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.currency.initContainers[0].env[0].value": "postgres.${DAT_NAMESPACE:-dat}"
+          "components.currency.namespace": "${APP_NAMESPACE:-app}"
+          "components.email.enabled": true
+          "components.email.namespace": "${APP_NAMESPACE:-app}"
+          "components.flagd.enabled": true
+          "components.flagd.namespace": "${MEM_NAMESPACE:-mem}"
+          "components.flagd.sidecarContainers[0].envSwitchFrom[0].valueFrom": "${FLAGD_CREDENTIALS_TYPE:-configmap}"
+          "components.flagd.sidecarContainers[0].envSwitchFrom[1].valueFrom": "${FLAGD_CREDENTIALS_TYPE:-configmap}"
+          "components.fraud-detection.enabled": true
+          "components.fraud-detection.envOverrides[0].name": "FLAGD_HOST"
+          "components.fraud-detection.envOverrides[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.fraud-detection.namespace": "${APP_NAMESPACE:-app}"
+          "components.frontend-proxy.enabled": true
+          "components.frontend-proxy.envOverrides[0].name": "FLAGD_HOST"
+          "components.frontend-proxy.envOverrides[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.frontend-proxy.envOverrides[1].name": "FLAGD_UI_HOST"
+          "components.frontend-proxy.envOverrides[1].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.frontend-proxy.envOverrides[2].name": "FRONTEND_HOST"
+          "components.frontend-proxy.envOverrides[2].value": "frontend.${APP_NAMESPACE:-app}"
+          "components.frontend-proxy.envOverrides[3].name": "GRAFANA_HOST"
+          "components.frontend-proxy.envOverrides[3].value": "grafana.${MEM_NAMESPACE:-mem}"
+          "components.frontend-proxy.envOverrides[4].name": "JAEGER_HOST"
+          "components.frontend-proxy.envOverrides[4].value": "jaeger-query.${MEM_NAMESPACE:-mem}"
+          "components.frontend-proxy.envOverrides[5].name": "OPENSEARCH_HOST"
+          "components.frontend-proxy.envOverrides[5].value": "opensearch.${MEM_NAMESPACE:-mem}"
+          "components.frontend-proxy.envOverrides[6].name": "OPENSEARCH_PORT"
+          "components.frontend-proxy.envOverrides[6].value": "9200"
+          "components.frontend-proxy.namespace": "${DMZ_NAMESPACE:-dmz}"
+          "components.frontend-proxy.service.loadBalancerIP": "${FRONTEND_PROXY_IP:-172.18.0.200}"
+          "components.frontend.enabled": true
+          "components.frontend.envOverrides[0].name": "FLAGD_HOST"
+          "components.frontend.envOverrides[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.frontend.initContainers[0].env[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.frontend.namespace": "${APP_NAMESPACE:-app}"
+          "components.frontend.sidecarContainers[0].env[3].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.frontend.sidecarContainers[0].env[7].value": "${FLAGD_FEATURES_VALUE:-true}"
+          "components.frontend.sidecarContainers[0].imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sidecar-enc"
+          "components.image-provider.enabled": true
+          "components.image-provider.namespace": "${DMZ_NAMESPACE:-dmz}"
+          "components.image-updater.enabled": "${AUTO_DEPLOY_VALUE:-true}"
+          "components.image-updater.envOverrides[0].name": "REGISTRY"
+          "components.image-updater.envOverrides[0].value": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}"
+          "components.image-updater.envOverrides[1].name": "REGISTRY_USERNAME"
+          "components.image-updater.envOverrides[1].value": "${REGISTRY_USER:-}"
+          "components.image-updater.envOverrides[2].name": "REGISTRY_PASSWORD"
+          "components.image-updater.envOverrides[2].value": "${REGISTRY_PASS:-}"
+          "components.image-updater.imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/controller"
+          "components.image-updater.namespace": "${MEM_NAMESPACE:-mem}"
+          "components.kafka.enabled": true
+          "components.kafka.namespace": "${APP_NAMESPACE:-app}"
+          "components.payment.enabled": true
+          "components.payment.envOverrides[0].name": "FLAGD_HOST"
+          "components.payment.envOverrides[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.payment.envOverrides[1].name": "PGHOST"
+          "components.payment.envOverrides[1].value": "postgres-payment.${DAT_NAMESPACE:-dat}"
+          "components.payment.initContainers[0].env[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.payment.initContainers[1].env[0].value": "postgres-payment.${DAT_NAMESPACE:-dat}"
+          "components.payment.namespace": "${PAY_NAMESPACE:-pay}"
+          "components.payment.sidecarContainers[0].env[3].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.payment.sidecarContainers[0].env[7].value": "${FLAGD_FEATURES_VALUE:-true}"
+          "components.payment.sidecarContainers[0].imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sidecar-enc"
+          "components.product-catalog.enabled": true
+          "components.product-catalog.envOverrides[0].name": "FLAGD_HOST"
+          "components.product-catalog.envOverrides[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.product-catalog.namespace": "${APP_NAMESPACE:-app}"
+          "components.quote.enabled": true
+          "components.quote.namespace": "${APP_NAMESPACE:-app}"
+          "components.recommendation.enabled": true
+          "components.recommendation.envOverrides[0].name": "FLAGD_HOST"
+          "components.recommendation.envOverrides[0].value": "flagd.${MEM_NAMESPACE:-mem}"
+          "components.recommendation.namespace": "${APP_NAMESPACE:-app}"
+          "components.shipping.enabled": true
+          "components.shipping.namespace": "${APP_NAMESPACE:-app}"
+          "components.smtp.additionalVolumes[0].hostPath.path": "${SMTP_SOCKET_PATH:-/run/containerd/containerd.sock}"
+          "components.smtp.additionalVolumes[0].hostPath.type": "${SMTP_SOCKET_TYPE:-Socket}"
+          "components.smtp.enabled": true
+          "components.smtp.envOverrides[0].name": "RCE_ENABLED"
+          "components.smtp.envOverrides[0].value": "${RCE_VULN_VALUE:-true}"
+          "components.smtp.hostNetwork": "${HOST_NETWORK_VALUE:-true}"
+          "components.smtp.namespace": "${DMZ_NAMESPACE:-dmz}"
+          "components.smtp.volumeMounts[0].mountPath": "/host/run/containerd/containerd.sock"
+          "components.test-image.enabled": true
+          "components.test-image.envOverrides[0].name": "CALDERA_URL"
+          "components.test-image.envOverrides[0].value": "${CALDERA_URL:-http://caldera:8888}"
+          "components.test-image.envOverrides[1].name": "LOG_NS"
+          "components.test-image.envOverrides[1].value": "${MEM_NAMESPACE:-mem}"
+          "components.test-image.envOverrides[2].name": "ATTACKED_NS"
+          "components.test-image.envOverrides[2].value": "${DMZ_NAMESPACE:-dmz}"
+          "components.test-image.envOverrides[3].name": "AUTH_NS"
+          "components.test-image.envOverrides[3].value": "${APP_NAMESPACE:-app}"
+          "components.test-image.envOverrides[4].name": "NSPAYMT"
+          "components.test-image.envOverrides[4].value": "${PAY_NAMESPACE:-pay}"
+          "components.test-image.envOverrides[5].name": "ATTACKERADDR"
+          "components.test-image.envOverrides[5].value": "${ATTACKER:-}"
+          "components.test-image.envOverrides[6].name": "REGISTRY_NAME"
+          "components.test-image.envOverrides[6].value": "${REGISTRY_NAME:-registry}"
+          "components.test-image.envOverrides[7].name": "REGISTRY_PORT"
+          "components.test-image.envOverrides[7].value": "${REGISTRY_PORT:-5000}"
+          "components.test-image.envOverrides[8].name": "REGISTRY_USER"
+          "components.test-image.envOverrides[8].value": "${REGISTRY_USER:-}"
+          "components.test-image.envOverrides[9].name": "REGISTRY_PASS"
+          "components.test-image.envOverrides[9].value": "${REGISTRY_PASS:-}"
+          "components.test-image.envOverrides[10].name": "IMAGE_VERSION"
+          "components.test-image.envOverrides[10].value": "${IMAGE_VERSION:-2.0.2}"
+          "components.test-image.envOverrides[11].name": "CONTROL_PLANE_NODE"
+          "components.test-image.envOverrides[11].value": "${CONTROL_PLANE_NODE:-kind-control-plane}"
+          "components.test-image.envOverrides[12].name": "CONTROL_PLANE_PORT"
+          "components.test-image.envOverrides[12].value": "${CONTROL_PLANE_PORT:-6443}"
+          "components.test-image.envOverrides[13].name": "FRONTEND_PROXY_IP"
+          "components.test-image.envOverrides[13].value": "${FRONTEND_PROXY_IP:-172.18.0.200}"
+          "components.test-image.envOverrides[14].name": "GENERIC_SVC_ADDR"
+          "components.test-image.envOverrides[14].value": "${GENERIC_SVC_ADDR:-172.18.0.201}"
+          "components.test-image.imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/attacker"
+          "components.test-image.namespace": "${TST_NAMESPACE:-tst}"
+          "components.traffic-controller.enabled": true
+          "components.traffic-controller.envOverrides[0].name": "SCRIPT_NAME"
+          "components.traffic-controller.envOverrides[0].value": "${LOG_TOKEN_SCRIPT:-synthetic-log.sh}"
+          "components.traffic-controller.imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/controller"
+          "components.traffic-controller.namespace": "${MEM_NAMESPACE:-mem}"
+          "components.traffic-controller.sidecarContainers[0].imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/traffic-translator"
+          "components.valkey-cart.enabled": true
+          "components.valkey-cart.namespace": "${DAT_NAMESPACE:-dat}"
+          "default.envOverrides[0].name": "OTEL_COLLECTOR_NAME"
+          "default.envOverrides[0].value": "otel-collector.${MEM_NAMESPACE:-mem}"
+          "default.image.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}"
+          "default.image.tag": "${IMAGE_VERSION:-2.0.2}"
+
+profiles:
+  - name: without-samba
+    activation:
+      - env: SAMBA_ENABLE=false
+    patches:
+      - op: remove
+        path: /deploy/helm/releases/1
+
+  - name: with-cilium
+    activation:
+      - env: CILIUM_ENABLED=true
+    patches:
+      - op: add
+        path: /deploy/helm/releases/0
+        value:
+          name: cilium
+          remoteChart: cilium
+          repo: https://helm.cilium.io/
+          namespace: kube-system
+          wait: true
+          setValues:
+            "operator.replicas": 1

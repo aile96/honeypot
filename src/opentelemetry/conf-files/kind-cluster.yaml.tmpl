@@ -1,0 +1,13 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  podSubnet: ${KIND_POD_SUBNET}
+  serviceSubnet: ${KIND_SERVICE_SUBNET}
+  apiServerAddress: ${KIND_API_SERVER_ADDRESS}
+${KIND_API_SERVER_PORT_BLOCK}${KIND_DISABLE_DEFAULT_CNI_BLOCK}containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry]
+    config_path = "/etc/containerd/certs.d"
+${KIND_ETCD_UNAUTHENTICATED_KUBEADM_CONFIG_PATCHES_BLOCK}nodes:
+- role: control-plane
+${KIND_CONTROL_PLANE_EXTRA_MOUNTS_BLOCK}${KIND_ETCD_UNAUTHENTICATED_PORT_MAPPING_BLOCK}${KIND_WORKER_NODES_BLOCK}

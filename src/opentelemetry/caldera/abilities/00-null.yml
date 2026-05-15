@@ -1,0 +1,9 @@
+- id: 00000000-0000-0000-0000-000000000000
+  name: Null Operation
+  description: Null operation
+  tactic: initial-access
+  technique: { attack_id: T1595, name: Active Scanning (simulated) }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux: { sh: { command: "echo \"Null operation done\"", timeout: 30 } }

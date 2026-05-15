@@ -1,0 +1,19 @@
+{{- if .Values.pool.enabled -}}
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  namespace: metallb-system
+  name: default-pool
+spec:
+  addresses:
+  - {{ default "172.18.0.200-172.18.0.201" $.Values.pool.ips }}
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  namespace: metallb-system
+  name: adv
+spec:
+  ipAddressPools:
+  - default-pool
+{{- end }}

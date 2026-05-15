@@ -1,0 +1,15 @@
+- id: 10000000-0000-0000-0000-000000000006
+  name: Data exfiltration from UDM
+  description: Exfiltrate data from the UDM.
+  tactic: exfiltration
+  technique: { attack_id: T1020.001, name: "Traffic Duplication" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: |-
+          /opt/caldera/KC1/udm-exfiltration.sh
+        timeout: 1800
+        parsers: []
+        cleanup: ""

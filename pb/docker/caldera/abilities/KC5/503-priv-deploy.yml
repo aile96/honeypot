@@ -1,9 +1,0 @@
-- id: 50000000-0000-0000-0000-000000000003
-  name: Privileged deployment creation
-  description: Creation of pods that has full control of the host untill every node is reached.
-  tactic: privilege-escalation
-  technique: { attack_id: T1611, name: "Escape to Host" }
-  repeatable: false
-  singleton: true
-  platforms:
-    linux: { sh: { command: "eval $KC0503", timeout: 1800, parsers: [], cleanup: "" } }

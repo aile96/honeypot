@@ -1,9 +1,0 @@
-- id: 20000000-0000-0000-0000-000000000003
-  name: Node read only port inspection
-  description: Ask each node of the cluster in the open ports every data from the read only port.
-  tactic: discovery
-  technique: { attack_id: T1613, name: Container and Resource Discovery }
-  repeatable: false
-  singleton: true
-  platforms:
-    linux: { sh: { command: "eval $KC0203", timeout: 900, parsers: [], cleanup: "" } }

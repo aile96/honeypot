@@ -1,16 +1,15 @@
 .gradle/
-pb/docker/controller/kube/
-pb/docker/proxy/conf.d-empty/
-pb/docker/attacker/
-pb/docker/registry/
-pb/docker/helper/
+res/
 
 # Generated build artifacts
-src/ad/bin/
-src/ad/build/
-src/currency/build/
-src/fraud-detection/build/
+src/opentelemetry/containers/ad/bin/
+src/opentelemetry/containers/ad/build/
+src/opentelemetry/containers/currency/build/
+src/opentelemetry/containers/fraud-detection/build/
 
 # Python bytecode/cache
 __pycache__/
 *.pyc
+
+# Ignore all cache, results, and generated files in the res directory
+/res/*

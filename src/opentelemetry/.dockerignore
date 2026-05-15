@@ -1,0 +1,10 @@
+# Keep helper and local registry storage out of build contexts.
+pb/docker/helper
+pb/docker/helper/**
+pb/docker/registry/data
+pb/docker/registry/data/**
+res/cache
+res/cache/**
+
+# VCS metadata is not required during image builds.
+.git

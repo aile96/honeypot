@@ -1,0 +1,18 @@
+dependencies:
+- name: opentelemetry-collector
+  repository: file://charts/opentelemetry-collector
+  version: 0.117.1
+- name: jaeger
+  repository: file://charts/jaeger
+  version: 3.4.0
+- name: prometheus
+  repository: file://charts/prometheus
+  version: 27.4.0
+- name: grafana
+  repository: file://charts/grafana
+  version: 8.10.1
+- name: opensearch
+  repository: file://charts/opensearch
+  version: 2.31.0
+digest: sha256:c0c348345b0d52a4ae926ba46cba6edb1dd629029e5d9b554f4890a488546ef1
+generated: "2026-04-23T18:00:22.909491419+02:00"

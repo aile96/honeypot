@@ -1,9 +1,0 @@
-- id: 20000000-0000-0000-0000-000000000005
-  name: Modify container Checkoutservice
-  description: Image modification of Checkoutservice with internally an invisible proxy (MITM) that send sensitive info by DNS.
-  tactic: privilege-escalation
-  technique: { attack_id: T1543.005, name: Container Service }
-  repeatable: false
-  singleton: true
-  platforms:
-    linux: { sh: { command: "eval $KC0205", timeout: 900 } }

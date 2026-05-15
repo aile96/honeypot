@@ -1,9 +1,0 @@
-- id: 50000000-0000-0000-0000-000000000004
-  name: Container admin collection
-  description: Collection with container admin command of every service in every node.
-  tactic: collection
-  technique: { attack_id: T1005, name: "Data from Local System" }
-  repeatable: false
-  singleton: true
-  platforms:
-    linux: { sh: { command: "eval $KC0504", timeout: 1800, parsers: [], cleanup: "" } }

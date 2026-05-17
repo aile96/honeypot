@@ -104,6 +104,14 @@ from .hosts import (
     ensure_hosts_mapping,
 )
 
+from .kind_template import (
+    optional_config_bool,
+    prepare_control_plane_patch_template_variables,
+    prepare_kind_template_defaults,
+    registry_extra_mounts_block,
+    worker_nodes_block,
+)
+
 from .kubernetes import (
     get_current_kube_context,
     kind_cmd,
@@ -275,6 +283,11 @@ __all__ = [
     "cleanup_docker_compose_stack",
     "cleanup_underlay_containers",
     "ensure_hosts_mapping",
+    "optional_config_bool",
+    "prepare_control_plane_patch_template_variables",
+    "prepare_kind_template_defaults",
+    "registry_extra_mounts_block",
+    "worker_nodes_block",
     "get_current_kube_context",
     "kind_cmd",
     "kind_cluster_name",

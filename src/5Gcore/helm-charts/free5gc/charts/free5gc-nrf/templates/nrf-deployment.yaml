@@ -58,6 +58,20 @@ spec:
           value: {{ .name }}:{{ .port }}
           {{- end }}
         command: ["sh", "-c", "host=${DEPENDENCIES%:*}; port=${DEPENDENCIES##*:}; until nc -z -w 2 \"$host\" \"$port\"; do echo waiting for the MongoDB; sleep 2; done;"]
+      {{- if $.Values.global.oauth.samba.enabled }}
+      - name: copy-oauth-certs
+        {{- with $.Values.initcontainers.busybox }}
+        image: {{ .image }}:{{ .tag }}
+        {{- end }}
+        command: ["sh", "-c", "cp /oauth/nrf.pem /cert/nrf.pem && cp /oauth/nrf.key /cert/nrf.key && chmod 0644 /cert/nrf.pem /cert/nrf.key"]
+        volumeMounts:
+        - mountPath: /oauth
+          name: free5gc-oauth-smb-volume
+          subPath: {{ $.Values.global.oauth.samba.sharePath }}
+          readOnly: true
+        - mountPath: /cert
+          name: {{ include "free5gc-nrf.fullname" $ }}-cert-volume
+      {{- end }}
       containers:
       - name: {{ .name }}
         image: {{ .image.name }}:{{ .image.tag | default $.Chart.AppVersion }}
@@ -74,13 +88,26 @@ spec:
         command:
           - "/sbin/tini"
           - "--"
+          - "/bin/sh"
+          - "./config/mongodb-uri-wrapper.sh"
+          - "./config/nrfcfg.yaml"
+          - "/tmp/free5gc-config/nrfcfg.yaml"
           - "./nrf"
         args:
           - "-c"
-          - "./config/nrfcfg.yaml"
+          - "/tmp/free5gc-config/nrfcfg.yaml"
         env:
+          # MongoDB credentials are read from Secret and never stored in ConfigMaps.
+          - name: MONGODB_URL
+            valueFrom:
+              secretKeyRef:
+                name: {{ dig "mongodb" "auth" "appSecretName" "free5gc-mongodb-app" $.Values.global }}
+                key: url
           - name: DB_URI
-            value: mongodb://{{ $.Values.mongodb.service.name }}/free5gc
+            valueFrom:
+              secretKeyRef:
+                name: {{ dig "mongodb" "auth" "appSecretName" "free5gc-mongodb-app" $.Values.global }}
+                key: uri
           - name: GIN_MODE
             value: release
         volumeMounts:
@@ -130,6 +157,9 @@ spec:
       - name: {{ include "free5gc-nrf.fullname" $ }}-empty-volume
         emptyDir: {}
       - name: {{ include "free5gc-nrf.fullname" $ }}-cert-volume
+        {{- if $.Values.global.oauth.samba.enabled }}
+        emptyDir: {}
+        {{- else }}
         projected:
           defaultMode: 0400
           sources:
@@ -140,4 +170,11 @@ spec:
                   path: nrf.pem
                 - key: nrf.key
                   path: nrf.key
+        {{- end }}
+      {{- if $.Values.global.oauth.samba.enabled }}
+      - name: free5gc-oauth-smb-volume
+        persistentVolumeClaim:
+          claimName: {{ $.Values.global.oauth.samba.pvcName }}
+          readOnly: true
+      {{- end }}
 {{- end }}

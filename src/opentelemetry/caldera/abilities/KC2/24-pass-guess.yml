@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC2/pass-enum.sh
+          /opt/caldera/KC2/pass-enum.py
         timeout: 1200
         parsers: []
         cleanup: ""

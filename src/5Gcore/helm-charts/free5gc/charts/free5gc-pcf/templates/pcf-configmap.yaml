@@ -49,14 +49,35 @@ data:
 
       mongodb:       # the mongodb connected by this PCF
         name: free5gc                  # name of the mongodb
-        url: mongodb://{{ $.Values.mongodb.service.name }}:{{ $.Values.mongodb.service.port }} # a valid URL of the mongodb
+        url: MONGODB_URL_PLACEHOLDER # a valid URL of the mongodb; populated at runtime from Secret
 
       nrfUri: {{ $.Values.global.sbi.scheme }}://{{ $.Values.global.nrf.service.name }}:{{ $.Values.global.nrf.service.port }}
-      nrfCertPem: cert/nrf.pem
+      nrfCertPem: {{ ternary "oauth/nrf.pem" "cert/nrf.pem" $.Values.global.oauth.samba.enabled }}
 
       {{- .configuration.configuration | nindent 6 }}
 
     logger:
       {{- toYaml .configuration.logger | nindent 6 }}
+
+
+  mongodb-uri-wrapper.sh: |
+    #!/bin/sh
+    set -eu
+
+    # Build the authenticated MongoDB URI at runtime from a Kubernetes Secret.
+    # free5GC requires the MongoDB URL inside its YAML config, so this wrapper
+    # writes a temporary config file and keeps Secret data out of ConfigMaps.
+    config_src="$1"
+    config_dst="$2"
+    shift 2
+
+    : "${MONGODB_URL:?MONGODB_URL must be set from the MongoDB app Secret}"
+    mkdir -p "$(dirname "$config_dst")"
+    cp "$config_src" "$config_dst"
+
+    escaped_uri=$(printf '%s' "$MONGODB_URL" | sed 's/[\/&]/\\&/g')
+    sed -i "s/MONGODB_URL_PLACEHOLDER/${escaped_uri}/g" "$config_dst"
+
+    exec "$@"
 
 {{- end }}

@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC1/deploy-containers.sh
+          /opt/caldera/KC1/deploy-containers.py
         timeout: 900
         parsers: []
         cleanup: ""

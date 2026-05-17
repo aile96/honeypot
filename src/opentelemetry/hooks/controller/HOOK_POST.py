@@ -27,6 +27,48 @@ def run_capture(cmd: list[str], *, timeout: int = 60) -> tuple[int, str, str]:
         return 1, "", repr(exc)
 
 
+def copy_docker_tree(container: str, source: str, destination: str, *, timeout: int = 120) -> tuple[int, str, str]:
+    source_clean = source.rstrip("/")
+    parent = os.path.dirname(source_clean) or "/"
+    leaf = os.path.basename(source_clean)
+    os.makedirs(destination, exist_ok=True)
+
+    producer = subprocess.Popen(
+        ["docker", "exec", container, "tar", "-C", parent, "-cf", "-", leaf],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if producer.stdout is None:
+        producer.kill()
+        return 1, "", "docker tar stdout unavailable"
+
+    consumer = subprocess.Popen(
+        ["tar", "-C", destination, "-xf", "-"],
+        stdin=producer.stdout,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    producer.stdout.close()
+
+    try:
+        out_bytes, err_bytes = consumer.communicate(timeout=timeout)
+        producer_rc = producer.wait(timeout=5)
+        producer_err = producer.stderr.read()
+    except subprocess.TimeoutExpired:
+        producer.kill()
+        consumer.kill()
+        return 1, "", f"copy timeout after {timeout}s"
+
+    output = out_bytes.decode("utf-8", "replace") if out_bytes else ""
+    error = (producer_err + err_bytes).decode("utf-8", "replace") if producer_err or err_bytes else ""
+    rc = producer_rc if producer_rc != 0 else consumer.returncode
+    if rc != 0 and "file changed as we read it" in error:
+        copied_leaf = os.path.join(destination, leaf)
+        if os.path.exists(copied_leaf):
+            return 0, output, error
+    return rc, output, error
+
+
 def docker_container_exists(name: str) -> bool:
     rc, out, _ = run_capture(["docker", "ps", "-a", "--format", "{{.Names}}"])
     return rc == 0 and name in {line.strip() for line in out.splitlines()}
@@ -53,7 +95,7 @@ def copy_docker_kc_results(kc_key: str) -> None:
         return
 
     os.makedirs("/results", exist_ok=True)
-    rc, out, err = run_capture(["docker", "cp", f"{attacker}:{data_path}/{kc_key}", "/results/"], timeout=120)
+    rc, out, err = copy_docker_tree(attacker, f"{data_path}/{kc_key}", "/results", timeout=120)
     if rc == 0:
         log(f"copied {kc_key} results from {attacker}:{data_path}/{kc_key}")
     else:

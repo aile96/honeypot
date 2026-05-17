@@ -1,0 +1,79 @@
+nameOverride: ""
+fullnameOverride: ""
+
+global:
+  projectName: free5gc
+  nrf:
+    service:
+      name: nrf-nnrf
+      type: ClusterIP
+      port: "8000"
+      nodePort: "30800"
+  sbi:
+    scheme: https
+  nwdaf:
+    service:
+      name: nwdaf-nnwdaf
+      type: ClusterIP
+      port: 8080
+
+nwdaf:
+  name: nwdaf
+  replicaCount: 1
+  image:
+    name: free5gc/nwdaf-test
+    tag: latest
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  podAnnotations: {}
+  podSecurityContext:
+    runAsUser: 0
+    runAsGroup: 0
+    runAsNonRoot: false
+    fsGroup: 0
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  service:
+    scheme: http
+  registration:
+    # The pod registers itself as a dedicated NWDAF NF profile at runtime.
+    enabled: true
+    nfType: NWDAF
+    serviceName: nnwdaf-analyticsinfo
+    retrySeconds: 3
+    timeoutSeconds: 180
+    verifyTls: false
+    heartbeatTimer: 60
+  registrationTest:
+    # Run with: helm test free5gc-helm -n free5gc --filter name=registration-sequence
+    enabled: true
+    sequence: SMF,AMF,UDM,PCF
+    delaySeconds: 5
+    activeDeadlineSeconds: 180
+    ttlSecondsAfterFinished: 300
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 24
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

@@ -1,4 +1,4 @@
-- id: 40000000-0000-0000-0000-000000000004
+- id: 30000000-0000-0000-0000-000000000004
   name: Container admin collection
   description: Collection with container admin command of every service in every node.
   tactic: collection
@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/node-collection.sh
+          /opt/caldera/KC5/flagatt-5gcore.py node-collection
         timeout: 1800
         parsers: []
         cleanup: ""

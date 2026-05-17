@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC4/rce-attack.sh
+          KC_DATA_SUBDIR=KC2 KC_RCE_PORT="${PCF_TEST_SERVICE_PORT:-2525}" /opt/caldera/KC4/rce-attack.py
         timeout: 900
         parsers: []
         cleanup: ""

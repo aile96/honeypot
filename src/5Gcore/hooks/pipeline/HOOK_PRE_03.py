@@ -61,6 +61,7 @@ def prepare_skaffold_build_env() -> None:
 def clear_helm_locks() -> None:
     """Clear stale 5Gcore Helm releases left by interrupted deploys."""
     context = kube_context_name(CONFIG)
+    clear_pending_helm_release(context, "csi-driver-smb", "kube-system", config=CONFIG)
     clear_pending_helm_release(context, "free5gc-helm", "free5gc", config=CONFIG)
     clear_pending_helm_release(context, "ueransim", "free5gc", config=CONFIG)
     set_state_value(STATE, "fivegcore_pre_deploy_cleanup", True)

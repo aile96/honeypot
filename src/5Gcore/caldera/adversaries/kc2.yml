@@ -1,6 +1,6 @@
-id: KC200000-0000-0000-0000-000000000000
-name: KC2 – WiFi
-description: Kill chain on attacker exploiting exploiting underlay of k8s.
+id: KC200000-0000-0000-0000-000000000002
+name: KC2 – CRSocket
+description: Kill chain on attacker exploiting container runtime socket exposure through PCF.
 atomic_ordering:
   - 20000000-0000-0000-0000-000000000001
   - 20000000-0000-0000-0000-000000000002

@@ -8,6 +8,11 @@ ${KIND_API_SERVER_PORT_BLOCK}${KIND_DISABLE_DEFAULT_CNI_BLOCK}containerdConfigPa
 - |-
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."${KIND_REGISTRY_MIRROR_ENDPOINT}"]
     endpoint = ["${KIND_REGISTRY_MIRROR_URL}"]
+  [plugins."io.containerd.grpc.v1.cri".registry.configs."${KIND_REGISTRY_ENDPOINT}".tls]
+    ca_file = "/etc/containerd/certs.d/${KIND_REGISTRY_ENDPOINT}/ca.crt"
+  [plugins."io.containerd.grpc.v1.cri".registry.configs."${KIND_REGISTRY_ENDPOINT}".auth]
+    username = "${REGISTRY_USER}"
+    password = "${REGISTRY_PASS}"
 kubeadmConfigPatches:
 ${KIND_ETCD_UNAUTHENTICATED_KUBEADM_CONFIG_PATCH_BLOCK}- |-
   kind: KubeletConfiguration

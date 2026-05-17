@@ -1,4 +1,4 @@
-id: KC300000-0000-0000-0000-000000000000
+id: KC300000-0000-0000-0000-000000000002
 name: KC3 – FlagATT
 description: Kill chain on attacker exploiting misconfiguration of API server and distributed env var.
 atomic_ordering:

@@ -133,6 +133,7 @@ GROUP_DEFAULT = os.getenv("GROUP", "cluster")
 PLANNER = os.getenv("PLANNER", "atomic")
 AUTONOMOUS = 1 if env_bool("AUTONOMOUS", True) else 0
 AUTO_CLOSE = 1 if env_bool("AUTO_CLOSE", True) else 0
+KILLCHAIN_AUTORUN = env_bool("KILLCHAIN_AUTORUN", True)
 OP_NAME_PREFIX = os.getenv("OP_NAME_PREFIX", "kc-auto-op")
 OP_TIMEOUT = env_int("OP_TIMEOUT", 3600, 1)
 POLL_INTERVAL = env_float("POLL_INTERVAL", 3.0, 0.1)
@@ -692,6 +693,24 @@ def main() -> int:
     adversaries = discover_adversaries()
     if not adversaries:
         log("controller: no adversaries found; exiting.")
+        run_hooks("FINISH", fail_on_error=False, extra={"EXIT_CODE": 0})
+        return 0
+
+    if not KILLCHAIN_AUTORUN:
+        log("controller: KILLCHAIN_AUTORUN=false; Caldera is ready, but kill chains will not be launched automatically.")
+        results = [
+            {
+                "adversary": item.name,
+                "group": item.group,
+                "key": item.key,
+                "id": item.source_id,
+                "attacker_selector": item.attacker_selector,
+                "ok": True,
+                "state": "autorun disabled",
+            }
+            for item in adversaries
+        ]
+        write_summary(results)
         run_hooks("FINISH", fail_on_error=False, extra={"EXIT_CODE": 0})
         return 0
 

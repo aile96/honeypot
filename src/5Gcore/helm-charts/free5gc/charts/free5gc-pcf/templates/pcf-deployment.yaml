@@ -43,6 +43,10 @@ spec:
         project: {{ $.Values.global.projectName }}
         nf: {{ .name }}
     spec:
+      {{- if .hostNetwork }}
+      hostNetwork: true
+      {{- end }}
+      dnsPolicy: {{ .dnsPolicy | default (ternary "ClusterFirstWithHostNet" "ClusterFirst" .hostNetwork) }}
       imagePullSecrets:
         {{- toYaml .imagePullSecrets | nindent 8 }}
       securityContext:
@@ -71,16 +75,39 @@ spec:
         - name: metrics
           containerPort: {{ $.Values.pcf.configuration.metrics.port }}
         {{- end }}
+        {{- with .extraPorts }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
         command:
           - "/sbin/tini"
           - "--"
+          - "/bin/sh"
+          - "./config/mongodb-uri-wrapper.sh"
+          - "./config/pcfcfg.yaml"
+          - "/tmp/free5gc-config/pcfcfg.yaml"
           - "/usr/local/bin/pcf-wrapper"
         args:
           - "-c"
-          - "./config/pcfcfg.yaml"
+          - "/tmp/free5gc-config/pcfcfg.yaml"
         env:
+          # MongoDB credentials are read from Secret and injected into a runtime config copy.
+          - name: MONGODB_URL
+            valueFrom:
+              secretKeyRef:
+                name: {{ dig "mongodb" "auth" "appSecretName" "free5gc-mongodb-app" $.Values.global }}
+                key: url
           - name: GIN_MODE
             value: release
+          {{- range .extraEnv }}
+          - name: {{ .name | quote }}
+            {{- if hasKey . "value" }}
+            value: {{ .value | toString | quote }}
+            {{- end }}
+            {{- if hasKey . "valueFrom" }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
         {{- if .readinessProbe.enabled }}
         readinessProbe:
           {{- if .readinessProbe.httpGet }}
@@ -120,9 +147,23 @@ spec:
           name: {{ include "free5gc-pcf.fullname" $ }}-empty-volume
         - mountPath: {{ .volume.certmount }}
           name: {{ include "free5gc-pcf.fullname" $ }}-cert-volume
+        {{- if $.Values.global.oauth.samba.enabled }}
+        - mountPath: /free5gc/oauth
+          name: free5gc-oauth-dir
+        - mountPath: /free5gc/oauth/nrf.pem
+          name: free5gc-oauth-smb-volume
+          subPath: {{ $.Values.global.oauth.samba.sharePath }}/nrf.pem
+          readOnly: true
+        - mountPath: /free5gc/oauth/nrf.key
+          name: free5gc-oauth-smb-volume
+          subPath: {{ $.Values.global.oauth.samba.sharePath }}/nrf.key
+          readOnly: true
+        {{- end }}
+        {{- with .extraVolumeMounts }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
         resources:
             {{- toYaml .resources | nindent 12 }}
-      dnsPolicy: ClusterFirst
       restartPolicy: Always
       nodeSelector:
         {{- toYaml .nodeSelector | nindent 8 }}
@@ -155,4 +196,15 @@ spec:
               items:
                 - key: nrf.pem
                   path: nrf.pem
+      {{- if $.Values.global.oauth.samba.enabled }}
+      - name: free5gc-oauth-dir
+        emptyDir: {}
+      - name: free5gc-oauth-smb-volume
+        persistentVolumeClaim:
+          claimName: {{ $.Values.global.oauth.samba.pvcName }}
+          readOnly: true
+      {{- end }}
+      {{- with .extraVolumes }}
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
 {{- end }}

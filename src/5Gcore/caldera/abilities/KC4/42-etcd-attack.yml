@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC6/etcd-attack.sh
+          /opt/caldera/KC6/etcd-attack.py
         timeout: 900
         parsers: []
         cleanup: ""

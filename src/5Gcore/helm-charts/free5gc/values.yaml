@@ -24,8 +24,48 @@ global:
       type: ClusterIP
       port: "8000"
       nodePort: "30800"
+  nwdaf:
+    service:
+      name: nwdaf-nnwdaf
+      type: ClusterIP
+      port: 8080
   sbi:
-    scheme: http
+    scheme: https
+  oauth:
+    enabled: true
+    samba:
+      enabled: true
+      serviceName: samba-pv
+      source: "//samba-pv/pvroot"
+      pvcName: free5gc-oauth-smb-pvc
+      pvName: free5gc-oauth-smb-pv
+      secretName: free5gc-smb-creds
+      sharePath: oauth
+      username: k8s
+      password: password
+      uid: "10001"
+      gid: "10001"
+
+  mongodb:
+    service:
+      name: mongodb
+      port: "27017"
+    auth:
+      enabled: true
+      # Kubernetes Secrets hold MongoDB credentials. Passwords are generated
+      # on first install/upgrade when the Secret does not already exist.
+      rootSecretName: free5gc-mongodb-root
+      appSecretName: free5gc-mongodb-app
+      existingSecret: free5gc-mongodb-auth
+      rootUser: root
+      username: free5gc
+      database: free5gc
+      authSource: free5gc
+    migration:
+      # The pre-upgrade hook creates MongoDB users before auth is enabled, so
+      # existing PVC data is preserved instead of reinitializing the database.
+      enabled: true
+      activeDeadlineSeconds: 300
   
   # AMF Multus CNI Configuration
   amf:
@@ -139,6 +179,24 @@ global:
         gatewayIP: 10.100.50.230
         excludeIP: 10.100.50.230
 
+imageUpdater:
+  enabled: false
+  name: image-updater
+  namespace: ""
+  serviceAccountName: updater-sa
+  image:
+    repository: registry:5000/controller
+    tag: "2.0.2"
+    pullPolicy: IfNotPresent
+  registry: registry:5000
+  registryUsername: imageuser
+  registryPassword: SuperPassW1!
+  scriptName: update-images.sh
+  runEvery: 1m
+  resources:
+    limits:
+      memory: 200Mi
+
 
 # These parameters can be used to enable/disable deployment of subcharts
 deployMongoDb: true
@@ -149,6 +207,7 @@ deployN3iwf: false
 deployNef: true
 deployNrf: true
 deployNssf: true
+deployNwdaf: true
 deployPcf: true
 deploySmf: true
 deployUdm: true
@@ -167,7 +226,13 @@ mongodb:
   fullnameOverride: "mongodb"
   useStatefulSet: true
   auth:
-    enabled: false
+    enabled: true
+    rootUser: root
+    existingSecret: free5gc-mongodb-auth
+    usernames:
+      - free5gc
+    databases:
+      - free5gc
   persistence:
     size: 6Gi
     mountPath: /bitnami/mongodb/data/db/

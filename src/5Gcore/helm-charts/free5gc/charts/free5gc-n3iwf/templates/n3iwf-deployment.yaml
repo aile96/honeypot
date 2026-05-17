@@ -69,7 +69,7 @@ spec:
         {{- toYaml .podSecurityContext | nindent 8 }}
       initContainers:
       - name: wait-amf
-        image: busybox:1.36
+        image: {{ .Values.global.registry }}/busybox:{{ .Values.global.tag | default .Chart.AppVersion }}
         imagePullPolicy: IfNotPresent
         command: 
           - "sh"
@@ -113,6 +113,14 @@ spec:
           name: {{ include "free5gc-n3iwf.fullname" $ }}-empty-volume
         - mountPath: {{ .volume.certmount }}
           name: {{ include "free5gc-n3iwf.fullname" $ }}-cert-pvc
+        {{- if $.Values.global.oauth.samba.enabled }}
+        - mountPath: /free5gc/oauth
+          name: free5gc-oauth-dir
+        - mountPath: /free5gc/oauth/nrf.pem
+          name: free5gc-oauth-smb-volume
+          subPath: {{ $.Values.global.oauth.samba.sharePath }}/nrf.pem
+          readOnly: true
+        {{- end }}
         resources:
             {{- toYaml .resources | nindent 12 }}
       dnsPolicy: ClusterFirst
@@ -141,4 +149,12 @@ spec:
       - name: {{ include "free5gc-n3iwf.fullname" $ }}-cert-pvc
         persistentVolumeClaim:
           claimName: cert-pvc
+      {{- if $.Values.global.oauth.samba.enabled }}
+      - name: free5gc-oauth-dir
+        emptyDir: {}
+      - name: free5gc-oauth-smb-volume
+        persistentVolumeClaim:
+          claimName: {{ $.Values.global.oauth.samba.pvcName }}
+          readOnly: true
+      {{- end }}
 {{- end }}

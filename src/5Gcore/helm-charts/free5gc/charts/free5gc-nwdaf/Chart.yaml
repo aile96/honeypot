@@ -1,0 +1,6 @@
+apiVersion: v2
+name: free5gc-nwdaf
+description: Lightweight test NWDAF service for free5GC NRF registration checks
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

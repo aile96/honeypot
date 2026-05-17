@@ -12,6 +12,7 @@ import shutil
 from pathlib import Path
 
 from lib import (
+    config_bool,
     config_str,
     die,
     docker_bind_source,
@@ -217,6 +218,35 @@ def prepare_kind_containerd_registry_config() -> dict[str, str]:
     }
 
 
+def prepare_attacker_compose_inputs(runtime_dir: Path) -> dict[str, str]:
+    """Create mutable attacker files populated by later Kind discovery hooks."""
+    attacker_dir = runtime_dir / "attacker"
+    attacker_dir.mkdir(parents=True, exist_ok=True)
+
+    env_file = attacker_dir / "attacker.env"
+    env_file.write_text("", encoding="utf-8")
+
+    iphost_file = attacker_dir / "iphost"
+    if iphost_file.is_dir():
+        shutil.rmtree(iphost_file)
+    iphost_file.write_text("", encoding="utf-8")
+
+    apiserver_dir = attacker_dir / "apiserver"
+    if apiserver_dir.exists() and not apiserver_dir.is_dir():
+        apiserver_dir.unlink()
+    apiserver_dir.mkdir(parents=True, exist_ok=True)
+
+    CONFIG["COMPOSE_ATTACKER_ENV_FILE"] = str(docker_bind_source(env_file, CONFIG))
+    CONFIG["COMPOSE_ATTACKER_IPHOST_FILE"] = str(docker_bind_source(iphost_file, CONFIG))
+    CONFIG["COMPOSE_ATTACKER_APISERVER_DIR"] = str(docker_bind_source(apiserver_dir, CONFIG))
+
+    return {
+        "env_file": str(env_file),
+        "iphost_file": str(iphost_file),
+        "apiserver_dir": str(apiserver_dir),
+    }
+
+
 def main() -> None:
     code_root = Path(str(require_config(CONFIG, "CODE_ROOT")))
     runtime_dir = Path(config_str(CONFIG, "RUNTIME_DIR", "/res/runtime"))
@@ -233,27 +263,43 @@ def main() -> None:
 
     registry_assets = prepare_registry_assets()
     kind_registry_config = prepare_kind_containerd_registry_config()
+    attacker_compose_inputs = prepare_attacker_compose_inputs(runtime_dir)
 
     CONFIG["COMPOSE_PROJECT_NAME"] = config_str(CONFIG, "COMPOSE_PROJECT_NAME", "honeypot-underlay")
     compose_services = ["registry"]
     compose_build_services: list[str] = []
-    if str(CONFIG.get("CALDERA_SERVER_ENABLE", False)).strip().lower() in {"1", "true", "yes", "y", "on"}:
+    if config_bool(CONFIG, "CALDERA_SERVER_ENABLE", True):
         compose_services.append("caldera")
         compose_build_services.append("caldera")
+        compose_services.append("router")
+        compose_build_services.append("router")
+
+    if config_bool(CONFIG, "ATTACKER_ENABLE", True):
+        compose_services.append("attacker")
+        compose_build_services.append("attacker")
+
+    if config_bool(CONFIG, "SAMBA_ENABLE", True):
+        compose_services.append("samba")
+        compose_build_services.append("samba")
 
     CONFIG["COMPOSE_BOOTSTRAP_SERVICES"] = ["registry"]
     CONFIG["COMPOSE_SERVICES"] = compose_services
     CONFIG["COMPOSE_DEPLOY_SERVICES"] = compose_services
     CONFIG["COMPOSE_BUILD_SERVICES"] = compose_build_services
 
+    CONFIG["COMPOSE_FREE5GC_CERT_DIR"] = str(
+        docker_bind_source(code_root / "helm-charts" / "free5gc" / "cert", CONFIG)
+    )
+
     caldera_root = code_root / "caldera"
-    CONFIG["COMPOSE_CALDERA_LOCAL_YML"] = str(caldera_root / "local.yml")
-    CONFIG["COMPOSE_CALDERA_ABILITIES_DIR"] = str(caldera_root / "abilities")
-    CONFIG["COMPOSE_CALDERA_ADVERSARIES_DIR"] = str(caldera_root / "adversaries")
+    CONFIG["COMPOSE_CALDERA_LOCAL_YML"] = str(docker_bind_source(caldera_root / "local.yml", CONFIG))
+    CONFIG["COMPOSE_CALDERA_ABILITIES_DIR"] = str(docker_bind_source(caldera_root / "abilities", CONFIG))
+    CONFIG["COMPOSE_CALDERA_ADVERSARIES_DIR"] = str(docker_bind_source(caldera_root / "adversaries", CONFIG))
 
     set_state_value(STATE, "prepared_directories", created)
     set_state_value(STATE, "registry_assets", registry_assets)
     set_state_value(STATE, "kind_containerd_registry_config", kind_registry_config)
+    set_state_value(STATE, "attacker_compose_inputs", attacker_compose_inputs)
     set_state_value(STATE, "compose_services", compose_services)
     set_state_value(STATE, "compose_build_services", compose_build_services)
     log("5Gcore runtime preparation completed.")

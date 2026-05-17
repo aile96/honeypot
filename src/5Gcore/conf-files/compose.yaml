@@ -85,6 +85,8 @@ services:
       CONTROL_PLANE_PORT: ${CONTROL_PLANE_PORT:-6443}
       KUBESERVER_PORT: ${KUBESERVER_PORT:-6443}
       K8S_IMAGE: ${K8S_IMAGE:-registry.k8s.io/kube-apiserver:v1.30.0}
+      PCF_TEST_SERVICE_PORT: ${PCF_TEST_SERVICE_PORT:-2525}
+      KC_RCE_PORT: ${PCF_TEST_SERVICE_PORT:-2525}
       FRONTEND_PROXY_IP: ${FRONTEND_PROXY_IP:-172.18.0.200}
       GENERIC_SVC_ADDR: ${GENERIC_SVC_ADDR:-172.18.0.201}
       LOG_NS: ${MEM_NAMESPACE:-mem}
@@ -128,6 +130,20 @@ services:
       - CHOWN
     tmpfs:
       - /share
+    volumes:
+      - ${COMPOSE_FREE5GC_CERT_DIR:-../helm-charts/free5gc/cert}:/seed/free5gc-certs:ro
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        mkdir -p /share/oauth
+        cp /seed/free5gc-certs/nrf.pem /share/oauth/nrf.pem
+        cp /seed/free5gc-certs/nrf.key /share/oauth/nrf.key
+        chown -R "$${SAMBA_UID}:$${SAMBA_GID}" /share/oauth
+        chmod 0750 /share/oauth
+        chmod 0444 /share/oauth/nrf.pem /share/oauth/nrf.key
+        exec smbd --foreground --no-process-group --configfile=/etc/samba/smb.conf --debug-stdout
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 445"]
       interval: 5s

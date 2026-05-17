@@ -47,7 +47,7 @@ data:
           pem: ./cert/smf.pem
 {{- end }}
       nrfUri: {{ $.Values.global.sbi.scheme }}://{{ $.Values.global.nrf.service.name }}:{{ $.Values.global.nrf.service.port }}
-      nrfCertPem: ./cert/nrf.pem # NRF Certificate
+      nrfCertPem: {{ ternary "./oauth/nrf.pem" "./cert/nrf.pem" $.Values.global.oauth.samba.enabled }} # NRF Certificate
       {{- .configuration.urrConfiguration | nindent 6 }}
       pfcp:
 {{- if $.Values.global.smf.multus.enabled }}

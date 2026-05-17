@@ -1,6 +1,6 @@
-id: KC400000-0000-0000-0000-000000000000
-name: KC4 – CRSocket
-description: Kill chain on attacker exploiting misconfiguration of container permission on Docker.
+id: KC400000-0000-0000-0000-000000000002
+name: KC4 – Etcd
+description: Kill chain on attacker exploiting misconfiguration of etcd and API-server access.
 atomic_ordering:
   - 40000000-0000-0000-0000-000000000001
   - 40000000-0000-0000-0000-000000000002

@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC2/arp-spoof.sh
+          /opt/caldera/KC2/arp-spoof.py
         timeout: 900
         parsers: []
         cleanup: ""

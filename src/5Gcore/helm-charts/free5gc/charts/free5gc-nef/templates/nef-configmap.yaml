@@ -24,7 +24,7 @@ data:
           pem: ./cert/nef.pem # NEF TLS Certificate
           key: ./cert/nef.key # NEF TLS Private key
       nrfUri: {{ $.Values.global.sbi.scheme }}://{{ $.Values.global.nrf.service.name }}:{{ $.Values.global.nrf.service.port }} # a valid URI of NRF 
-      nrfCertPem: ./cert/nrf.pem # NRF Certificate
+      nrfCertPem: {{ ternary "./oauth/nrf.pem" "./cert/nrf.pem" $.Values.global.oauth.samba.enabled }} # NRF Certificate
       serviceList: # the SBI services provided by this NEF
         {{- .configuration.serviceList | nindent 8 }}
 

@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC1/dns-enum.sh
+          /opt/caldera/KC1/dns-enum.py
         timeout: 900
         parsers: []
         cleanup: ""

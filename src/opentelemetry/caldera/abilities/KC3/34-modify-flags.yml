@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC3/modify-flags.sh
+          /opt/caldera/KC3/modify-flags.py
         timeout: 900
         parsers: []
         cleanup: ""

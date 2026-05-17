@@ -1,4 +1,4 @@
-- id: 40000000-0000-0000-0000-000000000007
+- id: 30000000-0000-0000-0000-000000000007
   name: False state update
   description: Using the certificate of the node to continuing updating the status of the pods in Running.
   tactic: impact
@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/state-update.sh
+          /opt/caldera/KC5/flagatt-5gcore.py state-update
         timeout: 900
         parsers: []
         cleanup: ""

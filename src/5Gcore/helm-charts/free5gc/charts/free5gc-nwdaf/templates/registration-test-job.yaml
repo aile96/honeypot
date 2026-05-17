@@ -1,0 +1,61 @@
+{{- if .Values.nwdaf.registrationTest.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "free5gc-nwdaf.fullname" . }}-registration-sequence
+  labels:
+    {{- include "free5gc-nwdaf.labels" . | nindent 4 }}
+    project: {{ .Values.global.projectName }}
+    nf: {{ .Values.nwdaf.name }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: {{ .Values.nwdaf.registrationTest.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ .Values.nwdaf.registrationTest.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "free5gc-nwdaf.selectorLabels" . | nindent 8 }}
+        project: {{ .Values.global.projectName }}
+        nf: {{ .Values.nwdaf.name }}
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        {{- toYaml .Values.nwdaf.podSecurityContext | nindent 8 }}
+      containers:
+        - name: registration-sequence
+          image: {{ .Values.nwdaf.image.name }}:{{ .Values.nwdaf.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.nwdaf.image.pullPolicy }}
+          command:
+            - python3
+            - -m
+            - nwdaf.register_sequence
+          env:
+            # This Helm test registers the same container as SMF, AMF, UDM, and PCF in sequence.
+            - name: SEQUENCE_NF_TYPES
+              value: {{ .Values.nwdaf.registrationTest.sequence | quote }}
+            - name: REGISTER_SEQUENCE_DELAY_SECONDS
+              value: {{ .Values.nwdaf.registrationTest.delaySeconds | quote }}
+            - name: NRF_SCHEME
+              value: {{ .Values.global.sbi.scheme | quote }}
+            - name: NRF_HOST
+              value: {{ .Values.global.nrf.service.name | quote }}
+            - name: NRF_PORT
+              value: {{ .Values.global.nrf.service.port | quote }}
+            - name: VERIFY_TLS
+              value: {{ .Values.nwdaf.registration.verifyTls | quote }}
+            - name: NWDAF_SERVICE_HOST
+              value: {{ .Values.global.nwdaf.service.name | quote }}
+            - name: NWDAF_SERVICE_PORT
+              value: {{ .Values.global.nwdaf.service.port | quote }}
+            - name: NWDAF_SERVICE_SCHEME
+              value: {{ .Values.nwdaf.service.scheme | quote }}
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          resources:
+            {{- toYaml .Values.nwdaf.resources | nindent 12 }}
+{{- end }}

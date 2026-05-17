@@ -1,4 +1,4 @@
-- id: 40000000-0000-0000-0000-000000000003
+- id: 10000000-0000-0000-0000-000000000004
   name: Container analysis
   description: Container analysis of everything usefull inside.
   tactic: discovery
@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC4/container-analysis.sh
+          /opt/caldera/KC4/container-analysis.py
         timeout: 1800
         parsers: []
         cleanup: ""

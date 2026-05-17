@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC6/und-expansion.sh
+          /opt/caldera/KC6/und-expansion.py
         timeout: 900
         parsers: []
         cleanup: ""

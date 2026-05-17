@@ -1,4 +1,4 @@
-- id: 40000000-0000-0000-0000-000000000006
+- id: 30000000-0000-0000-0000-000000000006
   name: PVC attack
   description: Claiming a persistent volume to delete the content.
   tactic: impact
@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/pvc-attack.sh
+          /opt/caldera/KC5/flagatt-5gcore.py pvc-attack
         timeout: 900
         parsers: []
         cleanup: ""

@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          ssh -p 4222 -o StrictHostKeyChecking=no root@$(cat $DATA_PATH/KC4/attackaddr) "cat ~/.ssh/authorized_keys"
+          ssh -p 4222 -o StrictHostKeyChecking=no root@$(cat $DATA_PATH/KC2/attackaddr) "cat ~/.ssh/authorized_keys"
         timeout: 900
         parsers: []
         cleanup: ""

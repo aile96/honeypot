@@ -1,0 +1,71 @@
+{{- if and .Values.global.oauth.enabled .Values.global.oauth.samba.enabled -}}
+{{- $smb := .Values.global.oauth.samba -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $smb.secretName }}
+  labels:
+    app: {{ $.Values.global.name }}
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+type: Opaque
+stringData:
+  username: {{ $smb.username | quote }}
+  password: {{ $smb.password | quote }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ $smb.pvName }}
+  labels:
+    app: {{ $.Values.global.name }}
+    storage: oauth-smb
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - dir_mode=0755
+    - file_mode=0444
+    - uid=0
+    - gid=0
+    - vers=3.1.1
+  csi:
+    driver: smb.csi.k8s.io
+    readOnly: true
+    volumeHandle: {{ $smb.pvName }}
+    volumeAttributes:
+      source: {{ $smb.source | quote }}
+    nodeStageSecretRef:
+      name: {{ $smb.secretName }}
+      namespace: {{ $.Release.Namespace }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $smb.pvcName }}
+  labels:
+    app: {{ $.Values.global.name }}
+    storage: oauth-smb
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: {{ $smb.pvName }}
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $smb.serviceName }}
+  labels:
+    app: {{ $.Values.global.name }}
+    storage: oauth-smb
+spec:
+  type: ExternalName
+  externalName: {{ $smb.serviceName }}
+{{- end }}

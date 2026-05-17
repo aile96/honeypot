@@ -1,0 +1,108 @@
+{{- $mongo := .Values.global.mongodb | default dict -}}
+{{- $mongoAuth := $mongo.auth | default dict -}}
+{{- $migration := $mongo.migration | default dict -}}
+{{- if and (.Values.deployMongoDb | default true) ($mongoAuth.enabled | default true) ($migration.enabled | default true) -}}
+{{- $service := $mongo.service | default dict -}}
+{{- $serviceName := $service.name | default "mongodb" -}}
+{{- $servicePort := $service.port | default "27017" -}}
+{{- $rootUser := $mongoAuth.rootUser | default "root" -}}
+{{- $appUser := $mongoAuth.username | default "free5gc" -}}
+{{- $appDatabase := $mongoAuth.database | default "free5gc" -}}
+{{- $rootSecretName := $mongoAuth.rootSecretName | default "free5gc-mongodb-root" -}}
+{{- $appSecretName := $mongoAuth.appSecretName | default "free5gc-mongodb-app" -}}
+{{- $registry := .Values.mongodb.image.registry | default "" -}}
+{{- $repository := .Values.mongodb.image.repository | default "bitnamilegacy/mongodb" -}}
+{{- $tag := .Values.mongodb.image.tag | default "7.0.9-debian-12-r4" -}}
+{{- $image := printf "%s:%s" $repository $tag -}}
+{{- if $registry -}}
+  {{- $image = printf "%s/%s:%s" $registry $repository $tag -}}
+{{- end -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $.Release.Name }}-mongodb-auth-migration
+  labels:
+    app: {{ $.Values.global.name }}
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: {{ $migration.activeDeadlineSeconds | default 300 }}
+  template:
+    metadata:
+      labels:
+        app: {{ $.Values.global.name }}
+        job: mongodb-auth-migration
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: create-mongodb-users
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.mongodb.image.pullPolicy | default "IfNotPresent" }}
+          env:
+            - name: MONGODB_HOST
+              value: {{ $serviceName | quote }}
+            - name: MONGODB_PORT
+              value: {{ (toString $servicePort) | quote }}
+            - name: MONGODB_ROOT_USER
+              value: {{ $rootUser | quote }}
+            - name: MONGODB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $rootSecretName }}
+                  key: mongodb-root-password
+            - name: MONGODB_USERNAME
+              value: {{ $appUser | quote }}
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $appSecretName }}
+                  key: password
+            - name: MONGODB_DATABASE
+              value: {{ $appDatabase | quote }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              # Preserve existing MongoDB data: create users in-place before auth is enabled.
+              set -o pipefail
+
+              host="${MONGODB_HOST}"
+              port="${MONGODB_PORT}"
+              auth_args=()
+
+              echo "Waiting for MongoDB at ${host}:${port}"
+              until mongosh admin --host "${host}" --port "${port}" --quiet --eval 'db.runCommand({ ping: 1 }).ok' >/dev/null 2>&1; do
+                if mongosh admin --host "${host}" --port "${port}" --authenticationDatabase admin -u "${MONGODB_ROOT_USER}" -p "${MONGODB_ROOT_PASSWORD}" --quiet --eval 'db.runCommand({ ping: 1 }).ok' >/dev/null 2>&1; then
+                  auth_args=(--authenticationDatabase admin -u "${MONGODB_ROOT_USER}" -p "${MONGODB_ROOT_PASSWORD}")
+                  break
+                fi
+                sleep 2
+              done
+
+              mongosh "${MONGODB_DATABASE}" --host "${host}" --port "${port}" "${auth_args[@]}" --quiet <<'MONGO'
+              const rootUser = process.env.MONGODB_ROOT_USER;
+              const rootPassword = process.env.MONGODB_ROOT_PASSWORD;
+              const appUser = process.env.MONGODB_USERNAME;
+              const appPassword = process.env.MONGODB_PASSWORD;
+              const appDatabase = process.env.MONGODB_DATABASE;
+
+              const adminDb = db.getSiblingDB("admin");
+              if (!adminDb.getUser(rootUser)) {
+                adminDb.createUser({ user: rootUser, pwd: rootPassword, roles: [ { role: "root", db: "admin" } ] });
+                print("Created MongoDB root user for auth migration");
+              } else {
+                print("MongoDB root user already exists");
+              }
+
+              const appDb = db.getSiblingDB(appDatabase);
+              if (!appDb.getUser(appUser)) {
+                appDb.createUser({ user: appUser, pwd: appPassword, roles: [ { role: "readWrite", db: appDatabase } ] });
+                print("Created free5GC MongoDB application user");
+              } else {
+                print("free5GC MongoDB application user already exists");
+              }
+              MONGO
+{{- end }}

@@ -65,11 +65,21 @@ spec:
         command:
           - "/sbin/tini"
           - "--"
+          - "/bin/sh"
+          - "./config/mongodb-uri-wrapper.sh"
+          - "./config/webuicfg.yaml"
+          - "/tmp/free5gc-config/webuicfg.yaml"
           - "./webui"
         args:
           - "-c"
-          - "./config/webuicfg.yaml"
+          - "/tmp/free5gc-config/webuicfg.yaml"
         env:
+          # MongoDB credentials are read from Secret and injected into a runtime config copy.
+          - name: MONGODB_URL
+            valueFrom:
+              secretKeyRef:
+                name: {{ dig "mongodb" "auth" "appSecretName" "free5gc-mongodb-app" $.Values.global }}
+                key: url
           - name: GIN_MODE
             value: release
         volumeMounts:
@@ -79,6 +89,14 @@ spec:
           name: {{ .volume.name }}-empty
         - mountPath: {{ .volume.certmount }}
           name: {{ include "free5gc-webui.fullname" $ }}-cert-volume
+        {{- if $.Values.global.oauth.samba.enabled }}
+        - mountPath: /free5gc/oauth
+          name: free5gc-oauth-dir
+        - mountPath: /free5gc/oauth/nrf.pem
+          name: free5gc-oauth-smb-volume
+          subPath: {{ $.Values.global.oauth.samba.sharePath }}/nrf.pem
+          readOnly: true
+        {{- end }}
         resources:
             {{- toYaml .resources | nindent 12 }}
         readinessProbe:
@@ -132,4 +150,12 @@ spec:
               items:
                 - key: nrf.pem
                   path: nrf.pem
+      {{- if $.Values.global.oauth.samba.enabled }}
+      - name: free5gc-oauth-dir
+        emptyDir: {}
+      - name: free5gc-oauth-smb-volume
+        persistentVolumeClaim:
+          claimName: {{ $.Values.global.oauth.samba.pvcName }}
+          readOnly: true
+      {{- end }}
 {{- end }}

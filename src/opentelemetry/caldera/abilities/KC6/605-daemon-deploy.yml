@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC6/daemon-deploy.sh
+          KC6_DATA="${DATA_PATH:-/tmp/KCData}/KC6"; rm -f "$KC6_DATA/ssh/ssh-key" "$KC6_DATA/ssh/ssh-key.pub"; /opt/caldera/KC6/daemon-deploy.py
         timeout: 900
         parsers: []
         cleanup: ""

@@ -1,4 +1,4 @@
-- id: 40000000-0000-0000-0000-000000000002
+- id: 30000000-0000-0000-0000-000000000002
   name: MITM Attack
   description: Using the key of a certificate to impersonate the API server.
   tactic: credential-access
@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/MITM-attack.sh
+          /opt/caldera/KC5/flagatt-5gcore.py mitm
         timeout: 900
         parsers: []
         cleanup: ""

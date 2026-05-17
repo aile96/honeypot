@@ -10,7 +10,7 @@ const secret = () => enc.encode(process.env.FLAGD_UI_JWT_SECRET || "dev-secret")
 
 export async function GET() {
   try {
-    const cookieStore = await cookies(); // <- in Next 15 è Promise
+    const cookieStore = await cookies(); // In Next 15 this is a Promise
     const token = cookieStore.get("flagdui_jwt")?.value;
     if (!token) return NextResponse.json({ authenticated: false });
 

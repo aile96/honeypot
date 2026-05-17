@@ -1,0 +1,21 @@
+{{- with .Values.nwdaf }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Values.global.nwdaf.service.name }}
+  labels:
+    {{- include "free5gc-nwdaf.labels" $ | nindent 4 }}
+    project: {{ $.Values.global.projectName }}
+    nf: {{ .name }}
+spec:
+  type: {{ $.Values.global.nwdaf.service.type }}
+  ports:
+    - name: http
+      port: {{ $.Values.global.nwdaf.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "free5gc-nwdaf.selectorLabels" $ | nindent 4 }}
+    project: {{ $.Values.global.projectName }}
+    nf: {{ .name }}
+{{- end }}

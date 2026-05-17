@@ -32,6 +32,8 @@ dependencies:
   condition: deployNrf
 - name: free5gc-nssf
   condition: deployNssf
+- name: free5gc-nwdaf
+  condition: deployNwdaf
 - name: free5gc-pcf
   condition: deployPcf
 - name: free5gc-smf

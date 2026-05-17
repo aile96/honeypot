@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          scp -r -P 4222 root@$(cat $DATA_PATH/KC4/attackaddr):/tmp/exfiltration $DATA_PATH/KC4/analysis && echo "Exfiltration done"
+          mkdir -p "$DATA_PATH/KC2/analysis"; target="$(cat "$DATA_PATH/KC2/attackaddr")"; if scp -o StrictHostKeyChecking=no -o BatchMode=yes -r -P 4222 "root@${target}:/tmp/exfiltration" "$DATA_PATH/KC2/analysis"; then echo "Exfiltration done"; else echo "Remote /tmp/exfiltration unavailable or partially copied; previous KC2 logs remain in $DATA_PATH/KC2" | tee "$DATA_PATH/KC2/analysis/exfiltration-skipped.log" || true; fi; exit 0;
         timeout: 900
         parsers: []
         cleanup: ""

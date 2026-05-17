@@ -12,7 +12,12 @@ MYLOG_DIR="$DATA_PATH/KC2/myservices"
 DNS_CONF="/etc/dnsmasq.d/99-all-respond.conf"
 DNS_LOG="${MYLOG_DIR}/dnsmasq.log"
 HTTP_LOG="${MYLOG_DIR}/8080_requests.log"
-SERVER_SCRIPT="/usr/local/bin/server_8080.py"
+SERVER_SCRIPT="/usr/local/bin/services/server_8080.py"
+ATTACKER_START_SCRIPT="${ATTACKER_START_SCRIPT-/opt/caldera/start.py}"
+ATTACKER_EXECUTION_DIR="${ATTACKER_EXECUTION_DIR:-/opt/execution}"
+ATTACKER_EXECUTION_SCRIPT="${ATTACKER_EXECUTION_SCRIPT:-wait.sh}"
+START_PID=""
+MAIN_PID=""
 
 log() { printf '%s %s\n' "$(date -Is)" "$*"; }
 
@@ -86,7 +91,7 @@ start_http_logger() {
 
   log "Starting HTTP logger (port 8080) -> logs ${HTTP_LOG}"
   # Start python server in background; it should implement logging of complete requests.
-  # Use nohup to avoid SIGHUP killing it when this script exits/execs.
+  # Use nohup to avoid SIGHUP killing it when this script exits.
   nohup python3 "${SERVER_SCRIPT}" --bind 0.0.0.0 --port 8080 --logfile "${HTTP_LOG}" >>"${HTTP_LOG}" 2>&1 &
   HTTP_PID=$!
   log "HTTP logger started (pid=${HTTP_PID})"
@@ -95,6 +100,16 @@ start_http_logger() {
 # Cleanup helper (best-effort)
 cleanup_before_exit() {
   log "Entrypoint cleanup: shutting down helper background processes..."
+  if [ -n "${MAIN_PID:-}" ] && kill -0 "$MAIN_PID" 2>/dev/null; then
+    log "Stopping execution process (pid=${MAIN_PID})"
+    kill "$MAIN_PID" || true
+    wait "$MAIN_PID" 2>/dev/null || true
+  fi
+  if [ -n "${START_PID:-}" ] && kill -0 "$START_PID" 2>/dev/null; then
+    log "Stopping CALDERA bootstrap process (pid=${START_PID})"
+    kill "$START_PID" || true
+    wait "$START_PID" 2>/dev/null || true
+  fi
   if [ -n "${DNS_PID:-}" ] && kill -0 "$DNS_PID" 2>/dev/null; then
     log "Stopping dnsmasq (pid=${DNS_PID})"
     kill "$DNS_PID" || true
@@ -105,6 +120,31 @@ cleanup_before_exit() {
   fi
 }
 
+handle_signal() {
+  log "Entrypoint received termination signal."
+  cleanup_before_exit
+  exit 143
+}
+
+start_caldera_bootstrap() {
+  if [ -z "${ATTACKER_START_SCRIPT}" ]; then
+    log "CALDERA bootstrap script disabled."
+    return 0
+  fi
+
+  if [ ! -x "${ATTACKER_START_SCRIPT}" ]; then
+    log "CALDERA bootstrap script not found or not executable at ${ATTACKER_START_SCRIPT}; skipping."
+    return 0
+  fi
+
+  log "Starting CALDERA bootstrap script: ${ATTACKER_START_SCRIPT}"
+  "${ATTACKER_START_SCRIPT}" &
+  START_PID=$!
+  log "CALDERA bootstrap script started (pid=${START_PID})"
+}
+
+trap handle_signal INT TERM
+
 # --- Existing Docker daemon logic (unchanged, only minor logging integration) ---
 if [[ "${DOCKER_DAEMON:-0}" == "1" ]]; then
 
@@ -112,7 +152,6 @@ if [[ "${DOCKER_DAEMON:-0}" == "1" ]]; then
   mkdir -p "$MYLOG_DIR" "$(dirname "$DOCKER_LOG")" /var/run
   touch "$DNS_LOG" "$HTTP_LOG" || true
   chmod 0644 "$DNS_LOG" "$HTTP_LOG" || true
-  trap cleanup_before_exit INT TERM
 
   # --- Setup dnsmasq unconditionally (so DNS responder + logging are always present) ---
   setup_dnsmasq
@@ -150,7 +189,7 @@ if [[ "${DOCKER_DAEMON:-0}" == "1" ]]; then
   DOCKERD_PID=$!
   log "dockerd launched with pid $DOCKERD_PID. Waiting for Docker socket to become ready..."
 
-  # Start HTTP logger now that DOCKER_DAEMON=1 (we run it in background so exec "$@" remains main process)
+  # Start HTTP logger now that DOCKER_DAEMON=1.
   start_http_logger
 
   # Poll for 'docker info' until the daemon is responsive or timeout expires.
@@ -180,9 +219,36 @@ if [[ "${DOCKER_DAEMON:-0}" == "1" ]]; then
   log "==> Docker daemon is ready (waited ${elapsed}s)."
 fi
 
-# Export DOCKER_HOST so child processes (CMD) use the expected socket.
+# Export DOCKER_HOST so child processes use the expected socket.
 export DOCKER_HOST="${DOCKER_HOST_UNIX}"
 
-# Hand off to the container's main process (never returns).
-# Note: dnsmasq and http logger (if started) run in background.
-exec "$@"
+start_caldera_bootstrap
+
+if [ "$#" -gt 0 ]; then
+  log "Starting explicit execution command: $*"
+  "$@" &
+else
+  if [[ "${ATTACKER_EXECUTION_SCRIPT}" = /* ]]; then
+    execution_path="${ATTACKER_EXECUTION_SCRIPT}"
+  else
+    execution_path="${ATTACKER_EXECUTION_DIR%/}/${ATTACKER_EXECUTION_SCRIPT}"
+  fi
+
+  if [ ! -x "${execution_path}" ]; then
+    log "ERROR: execution script not found or not executable at ${execution_path}"
+    cleanup_before_exit
+    exit 1
+  fi
+
+  log "Starting execution script: ${execution_path}"
+  "${execution_path}" &
+fi
+
+MAIN_PID=$!
+set +e
+wait "$MAIN_PID"
+main_status=$?
+set -e
+
+cleanup_before_exit
+exit "$main_status"

@@ -2,7 +2,7 @@
 {{- $ns := default .Release.Namespace .Values.postgres.namespace }}
 {{- $common := default dict .Values.postgres.common }}
 {{- $img := default dict .Values.defaultValues.image }}
-{{- $defaultInitImage := default "busybox:1.36" .Values.defaultValues.initImage }}
+{{- $defaultInitImage := default (printf "%s/init-container:%s" $img.repository $img.version) .Values.defaultValues.initImage }}
 {{- $instances := omit .Values.postgres "enabled" "namespace" "common" }}
 {{- range $name, $pg := $instances }}
 {{- if (default true $pg.enabled) }}

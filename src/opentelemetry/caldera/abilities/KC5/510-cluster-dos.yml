@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/service-rerun.sh
+          /opt/caldera/KC5/service-rerun.py
         timeout: 900
         parsers: []
         cleanup: ""

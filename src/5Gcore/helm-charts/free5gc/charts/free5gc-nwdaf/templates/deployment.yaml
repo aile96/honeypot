@@ -1,0 +1,119 @@
+{{- with .Values.nwdaf }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "free5gc-nwdaf.fullname" $ }}-{{ .name }}
+  labels:
+    {{- include "free5gc-nwdaf.labels" $ | nindent 4 }}
+    project: {{ $.Values.global.projectName }}
+    nf: {{ .name }}
+spec:
+  replicas: {{ .replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "free5gc-nwdaf.selectorLabels" $ | nindent 6 }}
+      project: {{ $.Values.global.projectName }}
+      nf: {{ .name }}
+  template:
+    metadata:
+      annotations:
+        {{- toYaml .podAnnotations | nindent 8 }}
+      labels:
+        {{- include "free5gc-nwdaf.selectorLabels" $ | nindent 8 }}
+        project: {{ $.Values.global.projectName }}
+        nf: {{ .name }}
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        {{- toYaml .imagePullSecrets | nindent 8 }}
+      securityContext:
+        {{- toYaml .podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .name }}
+          image: {{ .image.name }}:{{ .image.tag | default $.Chart.AppVersion }}
+          imagePullPolicy: {{ .image.pullPolicy }}
+          securityContext:
+            {{- toYaml .securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ $.Values.global.nwdaf.service.port }}
+              protocol: TCP
+          env:
+            # Register this test container as its own NWDAF network function.
+            - name: REGISTER_ON_START
+              value: {{ .registration.enabled | quote }}
+            - name: NF_TYPE
+              value: {{ .registration.nfType | quote }}
+            - name: NF_SERVICE_NAME
+              value: {{ .registration.serviceName | quote }}
+            - name: HEARTBEAT_TIMER
+              value: {{ .registration.heartbeatTimer | quote }}
+            - name: NRF_SCHEME
+              value: {{ $.Values.global.sbi.scheme | quote }}
+            - name: NRF_HOST
+              value: {{ $.Values.global.nrf.service.name | quote }}
+            - name: NRF_PORT
+              value: {{ $.Values.global.nrf.service.port | quote }}
+            - name: VERIFY_TLS
+              value: {{ .registration.verifyTls | quote }}
+            - name: REGISTER_RETRY_SECONDS
+              value: {{ .registration.retrySeconds | quote }}
+            - name: REGISTER_TIMEOUT_SECONDS
+              value: {{ .registration.timeoutSeconds | quote }}
+            - name: NWDAF_HOST
+              value: "0.0.0.0"
+            - name: NWDAF_PORT
+              value: {{ $.Values.global.nwdaf.service.port | quote }}
+            - name: NWDAF_SERVICE_HOST
+              value: {{ $.Values.global.nwdaf.service.name | quote }}
+            - name: NWDAF_SERVICE_PORT
+              value: {{ $.Values.global.nwdaf.service.port | quote }}
+            - name: NWDAF_SERVICE_SCHEME
+              value: {{ .service.scheme | quote }}
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: ATTACKER_START_SCRIPT
+              value: "/opt/caldera/start.py"
+            - name: GROUP
+              value: "cluster"
+            - name: CALDERA_URL
+              value: "http://caldera:8888"
+            - name: WAIT
+              value: "0"
+          {{- if .readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: {{ .readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .readinessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: {{ .livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .livenessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      nodeSelector:
+        {{- toYaml .nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .tolerations | nindent 8 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

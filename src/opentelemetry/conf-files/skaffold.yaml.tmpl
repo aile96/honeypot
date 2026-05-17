@@ -36,7 +36,7 @@ build:
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/checkout
       context: containers/checkout
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/controller
-      context: containers/controller
+      context: ../common/controller
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/currency
       context: containers/currency
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/email
@@ -51,12 +51,26 @@ build:
       context: containers/frontend
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/frontend-proxy
       context: containers/frontend-proxy
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/grafana
+      context: containers/grafana
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/init-container
+      context: ../common/init-container
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/jaeger
+      context: containers/jaeger
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/image-provider
       context: containers/image-provider
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/kafka
       context: containers/kafka
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/load-generator
+      context: containers/load-generator
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/opensearch
+      context: containers/opensearch
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/opentelemetry-collector
+      context: containers/opentelemetry-collector
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/payment
       context: containers/payment
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/postgres-client
+      context: ../common/postgres-client
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/postgres
       context: containers/postgres
       docker:
@@ -74,6 +88,8 @@ build:
           DB: pay
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/product-catalog
       context: containers/product-catalog
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/prometheus
+      context: containers/prometheus
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/quote
       context: containers/quote
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/recommendation
@@ -134,6 +150,7 @@ deploy:
           "config.objects.smb-creds.namespace": "${MEM_NAMESPACE:-mem}"
           "defaultValues.image.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}"
           "defaultValues.image.version": "${IMAGE_VERSION:-2.0.2}"
+          "defaultValues.initImage": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/init-container:${IMAGE_VERSION:-2.0.2}"
           "namespaces.enabled": true
           "namespaces.list": "${APP_NAMESPACE:-app}\\, ${DMZ_NAMESPACE:-dmz}\\, ${DAT_NAMESPACE:-dat}\\, ${PAY_NAMESPACE:-pay}\\, ${MEM_NAMESPACE:-mem}\\, ${TST_NAMESPACE:-tst}"
           "networkPolicies.allowKubeAPIServer": true
@@ -207,26 +224,26 @@ deploy:
           - helm-charts/telemetry/values-${TELEMETRY_VALUES_MODE:-noauth}.yaml
         setValues:
           "grafana.enabled": true
-          "grafana.image.registry": "docker.io"
-          "grafana.image.repository": "grafana/grafana"
-          "grafana.image.tag": "11.5.2"
+          "grafana.image.registry": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}"
+          "grafana.image.repository": "grafana"
+          "grafana.image.tag": "${IMAGE_VERSION:-2.0.2}"
           "jaeger.allInOne.args[0]": "--memory.max-traces=2000"
           "jaeger.allInOne.args[1]": "--query.base-path=/jaeger/ui"
           "jaeger.allInOne.args[2]": "--prometheus.server-url=http://prometheus:9090"
           "jaeger.allInOne.args[3]": "--prometheus.query.normalize-calls=true"
           "jaeger.allInOne.args[4]": "--prometheus.query.normalize-duration=true"
-          "jaeger.allInOne.image.registry": "docker.io"
-          "jaeger.allInOne.image.repository": "jaegertracing/all-in-one"
-          "jaeger.allInOne.image.tag": "1.53.0"
+          "jaeger.allInOne.image.registry": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}"
+          "jaeger.allInOne.image.repository": "jaeger"
+          "jaeger.allInOne.image.tag": "${IMAGE_VERSION:-2.0.2}"
           "jaeger.allInOne.resources.limits.cpu": "1000m"
-          "jaeger.allInOne.resources.limits.memory": "768Mi"
+          "jaeger.allInOne.resources.limits.memory": "1536Mi"
           "jaeger.allInOne.resources.requests.cpu": "100m"
-          "jaeger.allInOne.resources.requests.memory": "256Mi"
+          "jaeger.allInOne.resources.requests.memory": "384Mi"
           "jaeger.enabled": true
           "opensearch.enabled": true
-          "opensearch.global.dockerRegistry": "docker.io"
-          "opensearch.image.repository": "opensearchproject/opensearch"
-          "opensearch.image.tag": "2.19.0"
+          "opensearch.global.dockerRegistry": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}"
+          "opensearch.image.repository": "opensearch"
+          "opensearch.image.tag": "${IMAGE_VERSION:-2.0.2}"
           "opentelemetry-collector.config.exporters.otlp.endpoint": "jaeger-collector.${MEM_NAMESPACE:-mem}.svc.cluster.local:4317"
           "opentelemetry-collector.config.exporters.otlp.retry_on_failure.enabled": true
           "opentelemetry-collector.config.exporters.otlp.retry_on_failure.initial_interval": "1s"
@@ -249,15 +266,15 @@ deploy:
           "opentelemetry-collector.config.service.telemetry.metrics.readers[0].periodic.interval": 10000
           "opentelemetry-collector.config.service.telemetry.metrics.readers[0].periodic.timeout": 5000
           "opentelemetry-collector.enabled": true
-          "opentelemetry-collector.image.repository": "otel/opentelemetry-collector-contrib"
-          "opentelemetry-collector.image.tag": "0.120.0"
+          "opentelemetry-collector.image.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/opentelemetry-collector"
+          "opentelemetry-collector.image.tag": "${IMAGE_VERSION:-2.0.2}"
           "opentelemetry-collector.resources.limits.cpu": "1000m"
           "opentelemetry-collector.resources.limits.memory": "512Mi"
           "opentelemetry-collector.resources.requests.cpu": "200m"
           "opentelemetry-collector.resources.requests.memory": "256Mi"
           "prometheus.enabled": true
-          "prometheus.server.image.repository": "quay.io/prometheus/prometheus"
-          "prometheus.server.image.tag": "v3.1.0"
+          "prometheus.server.image.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/prometheus"
+          "prometheus.server.image.tag": "${IMAGE_VERSION:-2.0.2}"
 
       - name: honeypot-astronomy-shop
         chartPath: helm-charts/astronomy-shop
@@ -430,6 +447,9 @@ deploy:
           "default.envOverrides[0].value": "otel-collector.${MEM_NAMESPACE:-mem}"
           "default.image.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}"
           "default.image.tag": "${IMAGE_VERSION:-2.0.2}"
+          "default.initContainerImage": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/init-container:${IMAGE_VERSION:-2.0.2}"
+          "default.postgresClientImage": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/postgres-client:${IMAGE_VERSION:-2.0.2}"
+          "components.load-generator.imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/load-generator"
 
 profiles:
   - name: without-samba

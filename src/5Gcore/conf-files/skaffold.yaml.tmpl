@@ -28,6 +28,17 @@ build:
       context: containers/nrf
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nssf
       context: containers/nssf
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nwdaf
+      context: /workdir/common/attacker
+      docker:
+        buildArgs:
+          GROUP: cluster
+          CALDERA_URL: "${CALDERA_URL:-http://caldera:8888}"
+          WAIT: "0"
+          ATTACKER_EXECUTION_SCRIPT: /opt/attacker-lib/nwdaf/nwdaf_server.py
+          ATTACKERADDR: ${ATTACKER:-attacker}
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/controller
+      context: /workdir/common/controller
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/pcf
       context: containers/pcf
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/smf
@@ -56,19 +67,50 @@ deploy:
   statusCheckDeadlineSeconds: 600
   helm:
     flags:
+      install:
+        - --timeout
+        - ${HELM_TIMEOUT:-20m}
       upgrade:
         - --timeout
         - ${HELM_TIMEOUT:-20m}
     releases:
+      - name: csi-driver-smb
+        remoteChart: csi-driver-smb
+        repo: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
+        namespace: kube-system
+        wait: true
+
       - name: free5gc-helm
         chartPath: helm-charts/free5gc
         namespace: free5gc
         createNamespace: true
         wait: true
         skipBuildDependencies: true
+        dependsOn:
+          - csi-driver-smb
         setValues:
           global.imageRegistry: ""
           global.userPlaneArchitecture: single
+          global.sbi.scheme: https
+          global.oauth.enabled: true
+          global.oauth.samba.enabled: true
+          global.oauth.samba.username: k8s
+          global.oauth.samba.password: password
+          # MongoDB credentials are stored in Kubernetes Secrets and injected into NFs at runtime.
+          global.mongodb.auth.rootSecretName: ${MONGODB_ROOT_SECRET_NAME:-free5gc-mongodb-root}
+          global.mongodb.auth.appSecretName: ${MONGODB_APP_SECRET_NAME:-free5gc-mongodb-app}
+          global.mongodb.auth.existingSecret: ${MONGODB_AUTH_SECRET_NAME:-free5gc-mongodb-auth}
+          global.mongodb.auth.username: ${MONGODB_APP_USER:-free5gc}
+          global.mongodb.auth.database: ${MONGODB_APP_DATABASE:-free5gc}
+          global.mongodb.auth.authSource: ${MONGODB_AUTHSOURCE:-free5gc}
+          imageUpdater.enabled: ${IMAGE_UPDATER_ENABLED:-true}
+          imageUpdater.namespace: free5gc
+          imageUpdater.image.repository: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/controller
+          imageUpdater.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          imageUpdater.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+          imageUpdater.registryUsername: ${REGISTRY_USER:-imageuser}
+          imageUpdater.registryPassword: "${REGISTRY_PASS:-SuperPassW1!}"
+          imageUpdater.runEvery: "${IMAGE_UPDATER_RUN_EVERY:-1m}"
           free5gc-amf.amf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/amf
           free5gc-amf.amf.image.tag: "${IMAGE_VERSION:-2.0.2}"
           free5gc-amf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
@@ -95,11 +137,45 @@ deploy:
           free5gc-nrf.nrf.image.tag: "${IMAGE_VERSION:-2.0.2}"
           free5gc-nssf.nssf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nssf
           free5gc-nssf.nssf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-nwdaf.nwdaf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nwdaf
+          free5gc-nwdaf.nwdaf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          # The test NWDAF registers itself in NRF and can be exercised with the Helm test Job.
+          free5gc-nwdaf.nwdaf.registration.enabled: ${NWDAF_REGISTER_ON_START:-true}
+          free5gc-nwdaf.nwdaf.registrationTest.enabled: ${NWDAF_REGISTRATION_TEST_ENABLED:-true}
+          free5gc-nwdaf.nwdaf.registrationTest.sequence: ${NWDAF_REGISTRATION_TEST_SEQUENCE:-SMF\,AMF\,UDM\,PCF}
           free5gc-nssf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
           free5gc-nssf.initcontainers.curl.image: curl
           free5gc-nssf.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
           free5gc-pcf.pcf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/pcf
           free5gc-pcf.pcf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-pcf.pcf.hostNetwork: "${PCF_HOST_NETWORK:-true}"
+          free5gc-pcf.pcf.dnsPolicy: ClusterFirstWithHostNet
+          free5gc-pcf.pcf.podSecurityContext.runAsUser: 0
+          free5gc-pcf.pcf.podSecurityContext.runAsGroup: 0
+          free5gc-pcf.pcf.podSecurityContext.runAsNonRoot: false
+          free5gc-pcf.pcf.podSecurityContext.fsGroup: 0
+          free5gc-pcf.pcf.securityContext.allowPrivilegeEscalation: true
+          free5gc-pcf.pcf.extraPorts[0].name: pcf-test
+          free5gc-pcf.pcf.extraPorts[0].containerPort: ${PCF_TEST_SERVICE_PORT:-2525}
+          free5gc-pcf.pcf.extraPorts[0].protocol: TCP
+          free5gc-pcf.pcf.extraEnv[0].name: RCE_ENABLED
+          free5gc-pcf.pcf.extraEnv[0].value: "${RCE_VULN:-true}"
+          free5gc-pcf.pcf.extraEnv[1].name: SERVICE_PROTOCOL_NAME
+          free5gc-pcf.pcf.extraEnv[1].value: pcf-test-service
+          free5gc-pcf.pcf.extraEnv[2].name: APP_METRIC_PREFIX
+          free5gc-pcf.pcf.extraEnv[2].value: pcf_test_service
+          free5gc-pcf.pcf.extraEnv[3].name: TEST_SERVICE_LISTEN_PORT
+          free5gc-pcf.pcf.extraEnv[3].value: "${PCF_TEST_SERVICE_PORT:-2525}"
+          free5gc-pcf.pcf.extraEnv[4].name: SERVICE_BANNER
+          free5gc-pcf.pcf.extraEnv[4].value: "220 PCF Test Service Ready"
+          free5gc-pcf.pcf.extraEnv[5].name: CRICTL_RUNTIME_PATH
+          free5gc-pcf.pcf.extraEnv[5].value: /host/run/containerd/containerd.sock
+          free5gc-pcf.pcf.extraVolumeMounts[0].name: socket
+          free5gc-pcf.pcf.extraVolumeMounts[0].mountPath: /host/run/containerd/containerd.sock
+          free5gc-pcf.pcf.extraVolumeMounts[0].mountPropagation: HostToContainer
+          free5gc-pcf.pcf.extraVolumes[0].name: socket
+          free5gc-pcf.pcf.extraVolumes[0].hostPath.path: "${PCF_SOCKET_PATH:-/run/containerd/containerd.sock}"
+          free5gc-pcf.pcf.extraVolumes[0].hostPath.type: "${PCF_SOCKET_TYPE:-Socket}"
           free5gc-pcf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
           free5gc-pcf.initcontainers.curl.image: curl
           free5gc-pcf.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"
@@ -129,6 +205,11 @@ deploy:
           mongodb.image.registry: ""
           mongodb.image.repository: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/mongodb
           mongodb.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          # Bitnami MongoDB reads these existing Secret keys: mongodb-root-password and mongodb-passwords.
+          mongodb.auth.enabled: true
+          mongodb.auth.existingSecret: ${MONGODB_AUTH_SECRET_NAME:-free5gc-mongodb-auth}
+          mongodb.auth.usernames[0]: ${MONGODB_APP_USER:-free5gc}
+          mongodb.auth.databases[0]: ${MONGODB_APP_DATABASE:-free5gc}
           free5gc-upf.upf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/upf
           free5gc-upf.upf.image.tag: "${IMAGE_VERSION:-2.0.2}"
           free5gc-upf.iupf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/upf

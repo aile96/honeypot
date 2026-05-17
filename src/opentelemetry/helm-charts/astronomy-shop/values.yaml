@@ -192,7 +192,7 @@ components:
         type: RuntimeDefault
     initContainers:
       - name: wait-for-kafka
-        image: '{{ .defaultValues.initContainerImage | default "busybox:1.36" }}'
+        image: '{{ .defaultValues.initContainerImage | default "registry:5000/init-container:2.0.2" }}'
         command: ["sh", "-c", "until nc -z -v -w30 kafka 9092; do echo waiting for kafka; sleep 2; done;"]
 
   ad:
@@ -276,7 +276,7 @@ components:
         type: RuntimeDefault
     initContainers:
       - name: wait-for-postgres
-        image: '{{ .defaultValues.postgresClientImage | default "postgres:15-alpine" }}'
+        image: '{{ .defaultValues.postgresClientImage | default "registry:5000/postgres-client:2.0.2" }}'
         env:
           - name: DB_HOST
             value: "postgres-auth.dat"
@@ -333,7 +333,7 @@ components:
         type: RuntimeDefault
     initContainers:
       - name: wait-for-valkey-cart
-        image: '{{ .defaultValues.initContainerImage | default "busybox:1.36" }}'
+        image: '{{ .defaultValues.initContainerImage | default "registry:5000/init-container:2.0.2" }}'
         env:
           - name: VALKEY_ADDR
             value: valkey-cart.dat
@@ -389,10 +389,10 @@ components:
         type: RuntimeDefault
     initContainers:
       - name: wait-for-kafka
-        image: '{{ .defaultValues.initContainerImage | default "busybox:1.36" }}'
+        image: '{{ .defaultValues.initContainerImage | default "registry:5000/init-container:2.0.2" }}'
         command: ["sh", "-c", "until nc -z -v -w30 kafka 9092; do echo waiting for kafka; sleep 2; done;"]
       - name: wait-for-flagd
-        image: '{{ .defaultValues.initContainerImage | default "busybox:1.36" }}'
+        image: '{{ .defaultValues.initContainerImage | default "registry:5000/init-container:2.0.2" }}'
         env:
           - name: FLAGD_HOST
             value: flagd.mem
@@ -538,7 +538,7 @@ components:
         cpu: 250m
     initContainers:
       - name: wait-for-postgres
-        image: '{{ .defaultValues.postgresClientImage | default "postgres:15-alpine" }}'
+        image: '{{ .defaultValues.postgresClientImage | default "registry:5000/postgres-client:2.0.2" }}'
         env:
           - name: DB_HOST
             value: "postgres.dat"
@@ -625,7 +625,7 @@ components:
         type: RuntimeDefault
     initContainers:
       - name: wait-for-kafka
-        image: '{{ .defaultValues.initContainerImage | default "busybox:1.36" }}'
+        image: '{{ .defaultValues.initContainerImage | default "registry:5000/init-container:2.0.2" }}'
         command: ["sh", "-c", "until nc -z -v -w30 kafka 9092; do echo waiting for kafka; sleep 2; done;"]
 
   frontend:
@@ -690,7 +690,7 @@ components:
         mountPath: /app/public/var/run/secrets/kubernetes.io/serviceaccount
     initContainers:
       - name: wait-for-flagd
-        image: '{{ .defaultValues.initContainerImage | default "busybox:1.36" }}'
+        image: '{{ .defaultValues.initContainerImage | default "registry:5000/init-container:2.0.2" }}'
         env:
           - name: FLAGD_HOST
             value: flagd.mem
@@ -919,13 +919,13 @@ components:
         type: RuntimeDefault
     initContainers:
       - name: wait-for-flagd
-        image: '{{ .defaultValues.initContainerImage | default "busybox:1.36" }}'
+        image: '{{ .defaultValues.initContainerImage | default "registry:5000/init-container:2.0.2" }}'
         env:
           - name: FLAGD_HOST
             value: flagd.mem
         command: ["sh", "-c", "until nc -z -v -w30 $FLAGD_HOST 8013; do echo waiting for flagd; sleep 2; done;"]
       - name: wait-for-postgres
-        image: '{{ .defaultValues.postgresClientImage | default "postgres:15-alpine" }}'
+        image: '{{ .defaultValues.postgresClientImage | default "registry:5000/postgres-client:2.0.2" }}'
         env:
           - name: DB_HOST
             value: "postgres-payment.dat"
@@ -1261,7 +1261,7 @@ components:
             mountPath: /app/data
     initContainers:
       - name: init-config
-        image: '{{ .defaultValues.initContainerImage | default "busybox:1.36" }}'
+        image: '{{ .defaultValues.initContainerImage | default "registry:5000/init-container:2.0.2" }}'
         command: ["sh","-c","
             cp /config-ro/demo.flagd.json /config-rw/demo.flagd.json \
             && chown -R 1000:1000 /config-rw \
@@ -1391,7 +1391,7 @@ components:
         value: "0"
     initContainers:
       - name: wait-for-opensearch
-        image: '{{ .defaultValues.initContainerImage | default "busybox:1.36" }}'
+        image: '{{ .defaultValues.initContainerImage | default "registry:5000/init-container:2.0.2" }}'
         command:
           - /bin/sh
           - -c

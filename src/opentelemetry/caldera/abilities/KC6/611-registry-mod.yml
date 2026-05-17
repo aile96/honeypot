@@ -9,5 +9,5 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC6/registry-mod.sh
+          /opt/caldera/KC6/registry-mod.py
         timeout: 900

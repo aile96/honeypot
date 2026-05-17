@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/priv-deploy.sh
+          /opt/caldera/KC5/priv-deploy.py
         timeout: 1800
         parsers: []
         cleanup: ""

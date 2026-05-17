@@ -61,8 +61,12 @@ spec:
         #command: ["node"]
         #args: ["server/index.js"]
         env:
+          # DB_URI comes from the MongoDB application Secret to avoid plaintext credentials in manifests.
           - name: DB_URI
-            value: mongodb://{{ $.Values.mongodb.service.name }}:{{ $.Values.mongodb.service.port }}
+            valueFrom:
+              secretKeyRef:
+                name: {{ dig "mongodb" "auth" "appSecretName" "free5gc-mongodb-app" $.Values.global }}
+                key: uri
         {{- if .readinessProbe.enabled }}
         readinessProbe:
           {{- if .readinessProbe.httpGet }}

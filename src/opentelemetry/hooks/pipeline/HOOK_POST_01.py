@@ -8,6 +8,7 @@ attack scenarios, and records details needed by later Compose and Skaffold hooks
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -365,6 +366,9 @@ def write_iphost_file(control_planes: list[str], workers: list[str]) -> Path:
     context = kube_context_name(CONFIG)
     attacker_dir = attacker_runtime_dir()
     iphost_file = attacker_dir / "iphost"
+    if iphost_file.is_dir():
+        warn(f"Removing directory at {iphost_file}; attacker iphost must be a file.")
+        shutil.rmtree(iphost_file)
 
     lines: list[str] = []
     for idx, node in enumerate(control_planes):

@@ -1,6 +1,6 @@
 - id: 50000000-0000-0000-0000-000000000008
   name: Pod DOS
-  description: Using the command amministrator of containers to create a Denial Of Service.
+  description: Using the command administrator of containers to create a Denial Of Service.
   tactic: execution
   technique: { attack_id: T1609, name: "Container Administration Command" }
   repeatable: false
@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/pod-dos.sh
+          /opt/caldera/KC5/pod-dos.py
         timeout: 900
         parsers: []
         cleanup: ""

@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC1/dns-poisoning.sh
+          /opt/caldera/KC1/dns-poisoning.py
         timeout: 900
         parsers: []
         cleanup: ""

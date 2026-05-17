@@ -26,7 +26,9 @@ global:
       port: "8000"
       nodePort: "30800"
   sbi:
-    scheme: http
+    scheme: https
+  oauth:
+    enabled: true
 
 initcontainers:
   curl:
@@ -120,8 +122,8 @@ nrf:
     serviceNameList: |-
       - nnrf-nfm
       - nnrf-disc
-    oauthConfiguration: |-
-      oauth: false
+    oauth:
+      enabled: true
     configuration: |-
       DefaultPlmnId:
         mcc: 208

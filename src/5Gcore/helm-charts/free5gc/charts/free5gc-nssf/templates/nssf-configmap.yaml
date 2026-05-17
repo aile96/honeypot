@@ -48,7 +48,7 @@ data:
 {{- end }}
 
       nrfUri: {{ $.Values.global.sbi.scheme }}://{{ $.Values.global.nrf.service.name }}:{{ $.Values.global.nrf.service.port }}
-      nrfCertPem: cert/nrf.pem
+      nrfCertPem: {{ ternary "oauth/nrf.pem" "cert/nrf.pem" $.Values.global.oauth.samba.enabled }}
 
       nsiList:
         - snssai:

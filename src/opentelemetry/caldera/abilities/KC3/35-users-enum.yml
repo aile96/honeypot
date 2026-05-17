@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC3/users-enum.sh
+          /opt/caldera/KC3/users-enum.py
         timeout: 900
         parsers: []
         cleanup: ""

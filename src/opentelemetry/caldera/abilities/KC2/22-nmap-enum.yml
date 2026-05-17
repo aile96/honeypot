@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC2/nmap-enum.sh
+          /opt/caldera/KC2/nmap-enum.py
         timeout: 900
         parsers: []
         cleanup: ""

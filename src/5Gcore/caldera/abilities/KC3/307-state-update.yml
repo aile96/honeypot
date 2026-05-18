@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/flagatt-5gcore.py state-update
+          /opt/caldera/KC5/state-update.py
         timeout: 900
         parsers: []
         cleanup: ""

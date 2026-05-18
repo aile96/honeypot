@@ -105,6 +105,7 @@ def prepare_kind_template_defaults(
     )
 
     state_payload: dict[str, object] = {
+        "LAB_NAME": name,
         "CLUSTER_PROFILE": name,
         "KIND_REGISTRY_ENDPOINT": config["KIND_REGISTRY_ENDPOINT"],
         "KIND_REGISTRY_MIRROR_ENDPOINT": config["KIND_REGISTRY_MIRROR_ENDPOINT"],

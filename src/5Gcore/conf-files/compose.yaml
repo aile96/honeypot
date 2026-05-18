@@ -1,9 +1,12 @@
 services:
   registry:
     image: registry:2
-    container_name: ${REGISTRY_NAME:-registry}
+    container_name: ${REGISTRY_NAME:-registry}-${LAB_NAME:-honeypotlab}
     hostname: ${REGISTRY_NAME:-registry}
     restart: unless-stopped
+    labels:
+      honeypot.lab: ${LAB_NAME:-honeypotlab}
+      honeypot.role: registry
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -36,15 +39,20 @@ services:
     build:
       context: ../../common/caldera
       dockerfile: Dockerfile
-    container_name: ${CALDERA_SERVER:-caldera}
+    container_name: ${CALDERA_SERVER:-caldera}-${LAB_NAME:-honeypotlab}
     hostname: ${CALDERA_SERVER:-caldera}
     restart: unless-stopped
+    labels:
+      honeypot.lab: ${LAB_NAME:-honeypotlab}
+      honeypot.role: caldera
     environment:
       TZ: Europe/Rome
     volumes:
       - ${COMPOSE_CALDERA_LOCAL_YML}:/usr/src/app/conf/local.yml:ro
       - ${COMPOSE_CALDERA_ABILITIES_DIR}:/usr/src/app/plugins/stockpile/data/abilities/honeypot:ro
       - ${COMPOSE_CALDERA_ADVERSARIES_DIR}:/usr/src/app/plugins/stockpile/data/adversaries/honeypot:ro
+    ports:
+      - 127.0.0.1:${CALDERA_PORT:-8888}:${CALDERA_PORT:-8888}
     networks:
       underlay:
         aliases:
@@ -61,9 +69,12 @@ services:
         CALDERA_URL: http://${CALDERA_SERVER:-caldera}:8888
         GROUP: outside
         ATTACKERADDR: ${ATTACKER:-attacker}
-    container_name: ${ATTACKER:-attacker}
+    container_name: ${ATTACKER:-attacker}-${LAB_NAME:-honeypotlab}
     hostname: ${ATTACKER:-attacker}
     restart: unless-stopped
+    labels:
+      honeypot.lab: ${LAB_NAME:-honeypotlab}
+      honeypot.role: attacker
     privileged: true
     extra_hosts:
       - host.docker.internal:host-gateway
@@ -77,7 +88,7 @@ services:
       DOCKER_DAEMON: ${ATTACKER_DOCKER_DAEMON:-1}
       REGISTRY_NAME: ${REGISTRY_NAME:-registry}
       REGISTRY_PORT: ${REGISTRY_PORT:-5000}
-      ARP_VICTIM: ${PROXY:-router}
+      ARP_VICTIM: ${LOAD_GENERATOR:-load-generator}
       REGISTRY_USER: ${REGISTRY_USER:-}
       REGISTRY_PASS: ${REGISTRY_PASS:-}
       IMAGE_VERSION: ${IMAGE_VERSION:-2.0.2}
@@ -90,6 +101,7 @@ services:
       FRONTEND_PROXY_IP: ${FRONTEND_PROXY_IP:-172.18.0.200}
       GENERIC_SVC_ADDR: ${GENERIC_SVC_ADDR:-172.18.0.201}
       LOG_NS: ${MEM_NAMESPACE:-mem}
+      UPDATER_NAMESPACE: ${IMAGE_UPDATER_NAMESPACE:-kube-system}
       ATTACKED_NS: ${DMZ_NAMESPACE:-dmz}
       AUTH_NS: ${APP_NAMESPACE:-app}
       ATTACKERADDR: ${ATTACKER:-attacker}
@@ -111,9 +123,12 @@ services:
     build:
       context: ../../common/samba
       dockerfile: Dockerfile
-    container_name: samba-pv
+    container_name: samba-pv-${LAB_NAME:-honeypotlab}
     hostname: samba-pv
     restart: unless-stopped
+    labels:
+      honeypot.lab: ${LAB_NAME:-honeypotlab}
+      honeypot.role: samba
     environment:
       TZ: Europe/Rome
       SAMBA_USER: k8s
@@ -154,37 +169,6 @@ services:
       underlay:
         aliases:
           - samba-pv
-
-  router:
-    image: proxy:${IMAGE_VERSION:-2.0.2}
-    build:
-      context: ../../common/proxy
-      dockerfile: Dockerfile
-    container_name: ${PROXY:-router}
-    hostname: ${PROXY:-router}
-    restart: unless-stopped
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    ports:
-      - ${COMPOSE_PORT_BIND_ADDR:-127.0.0.1}:8888:8888
-      - ${COMPOSE_PORT_BIND_ADDR:-127.0.0.1}:${GENERIC_SVC_PORT:-8085}:${GENERIC_SVC_PORT:-8085}
-    environment:
-      FRONTEND_PROXY: ${FRONTEND_PROXY_IP:-172.18.0.200}
-      CALDERA_SERVER: ${CALDERA_SERVER:-caldera}
-      GENERIC_SVC_ADDR: ${GENERIC_SVC_ADDR:-172.18.0.201}
-      GENERIC_SVC_PORT: ${GENERIC_SVC_PORT:-8085}
-      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8888/healthz"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 5s
-    networks:
-      underlay:
-        aliases:
-          - ${PROXY:-router}
-          - proxy
 
 networks:
   underlay:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from lib import (
     die,
     docker_bind_source,
     find_docker_container_by_ip,
+    kind_cluster_name,
     kubectl,
     kube_context_name,
     log,
@@ -32,6 +34,68 @@ from lib import (
 def kubectl_json(args: list[str]) -> dict[str, Any]:
     completed = kubectl(CONFIG, args, capture_output=True)
     return json.loads(completed.stdout)
+
+
+def configure_controller_kubeconfig_endpoint() -> None:
+    """Rewrite Kind's host-loopback kubeconfig endpoint for container access."""
+    if not config_bool(CONFIG, "HOST_SOCKET", False):
+        return
+
+    context = kube_context_name(CONFIG)
+    completed = run_cmd(
+        ["kubectl", "config", "view", "--raw", "-o", "json"],
+        check=False,
+        capture_output=True,
+        quiet=True,
+        config=CONFIG,
+    )
+    if completed.returncode != 0 or not completed.stdout.strip():
+        warn("Could not read kubeconfig to rewrite host-socket endpoint.")
+        return
+
+    try:
+        kubeconfig = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        warn(f"Could not parse kubeconfig JSON: {exc}")
+        return
+
+    server = ""
+    for cluster in kubeconfig.get("clusters", []):
+        if cluster.get("name") == context:
+            server = str((cluster.get("cluster") or {}).get("server") or "")
+            break
+
+    if not any(server.startswith(prefix) for prefix in ("https://127.0.0.1:", "https://localhost:", "https://0.0.0.0:")):
+        return
+
+    rewritten = f"https://{kind_cluster_name(CONFIG)}-control-plane:6443"
+    run_cmd(["kubectl", "config", "set-cluster", context, f"--server={rewritten}"], quiet=True, config=CONFIG)
+    set_state_value(STATE, "controller_kubeconfig_server", rewritten)
+    log(f"HOST_SOCKET=true: rewrote controller kubeconfig server to {rewritten}.")
+
+
+def wait_kubernetes_api() -> None:
+    """Wait until the kube-apiserver accepts simple kubectl requests."""
+    timeout = config_int(CONFIG, "APISERVER_WAIT_TIMEOUT", 300, minimum=1)
+    deadline = time.monotonic() + timeout
+    last_error = ""
+
+    while time.monotonic() <= deadline:
+        completed = kubectl(
+            CONFIG,
+            ["--request-timeout=5s", "get", "namespace", "default", "-o", "name"],
+            check=False,
+            capture_output=True,
+            quiet=True,
+        )
+        if completed.returncode == 0:
+            log("Kubernetes API is reachable.")
+            return
+
+        last_error = (completed.stderr or completed.stdout or "").strip()
+        time.sleep(2)
+
+    die(f"Kubernetes API did not become reachable within {timeout}s: {last_error or 'no kubectl output'}")
 
 
 def discover_nodes() -> tuple[list[str], list[str], list[str]]:
@@ -171,7 +235,10 @@ def taint_control_plane(control_plane_node: str) -> None:
 
 
 def attacker_runtime_dir() -> Path:
-    path = Path(config_str(CONFIG, "ATTACKER_RUNTIME_DIR", "/res/runtime/attacker"))
+    runtime_dir = Path(config_str(CONFIG, "RUNTIME_DIR", "/res/runtime"))
+    path = Path(config_str(CONFIG, "ATTACKER_RUNTIME_DIR", str(runtime_dir / "attacker")))
+    if str(path) == "/res/runtime/attacker":
+        path = runtime_dir / "attacker"
     path.mkdir(parents=True, exist_ok=True)
     CONFIG["ATTACKER_RUNTIME_DIR"] = str(path)
     return path
@@ -312,6 +379,8 @@ fi
 
 
 def main() -> None:
+    configure_controller_kubeconfig_endpoint()
+    wait_kubernetes_api()
     all_nodes, control_planes, workers = discover_nodes()
     control_plane_node = control_planes[0]
     cp_ip, cp_container, cp_networks, cp_network = resolve_control_plane(control_plane_node)

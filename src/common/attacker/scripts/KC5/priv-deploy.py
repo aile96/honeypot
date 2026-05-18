@@ -13,7 +13,7 @@ from pathlib import Path
 _SCRIPT = r"""#!/usr/bin/env bash
 set -euo pipefail
 
-NAMESPACE="$LOG_NS"
+NAMESPACE="${PRIV_DEPLOY_NAMESPACE:-${UPDATER_NAMESPACE:-${LOG_NS:-mem}}}"
 KUBE_APISERVER="https://$(dig +short $CONTROL_PLANE_NODE A):$CONTROL_PLANE_PORT"
 TOKEN="$(cat $DATA_PATH/KC5/found_token)"
 FILE_IP="/tmp/iphost"

@@ -17,6 +17,7 @@ import ssl
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from typing import Any
@@ -213,13 +214,13 @@ def oauth_token(
         "targetNfType": target_nf_type.upper(),
         "scope": scope,
     }
-    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    body = urllib.parse.urlencode(payload).encode("utf-8")
     request = urllib.request.Request(
         url,
         data=body,
         method="POST",
         headers={
-            "Content-Type": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json",
         },
     )

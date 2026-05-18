@@ -27,6 +27,8 @@ from lib import (  # noqa: E402
     DEFAULT_DOCKERD_LOG_FILE,
     cleanup_docker_compose_stack,
     cleanup_kind_cluster,
+    cleanup_lab_labeled_containers,
+    cleanup_lab_network,
     docker_env,
     log,
     parse_bool_value,
@@ -35,6 +37,7 @@ from lib import (  # noqa: E402
     send_signal_to_process_group,
     start_internal_dockerd,
     terminate_process,
+    verify_no_lab_leftovers,
     wait_for_docker_ready,
     warn,
 )
@@ -45,10 +48,11 @@ DEFAULT_ENV_FILE = "/workdir/code/conf-files/variables.py"
 DEFAULT_FIRST_SCRIPT = "/app/start_lab.py"
 DEFAULT_SECOND_SCRIPT = "/start_controller.py"
 DEFAULT_DOCKER_SOCKET_PATH = "/var/run/docker.sock"
-DEFAULT_RUNTIME_DIR = "/res/runtime"
+DEFAULT_RUNTIME_DIR = "/res/runtime/honeypotlab"
 DEFAULT_IDLE_SLEEP_SECONDS = "3600"
 DEFAULT_DOCKER_READY_TIMEOUT = "60"
-DEFAULT_COMPOSE_PROJECT_NAME = "honeypot-underlay"
+DEFAULT_COMPOSE_PROJECT_NAME = "honeypot-honeypotlab"
+DEFAULT_PROXY_SCRIPT = "/app/proxy_controller.py"
 
 ENTRYPOINT_ENV_DEFAULTS: dict[str, str] = {
     "HOST_SOCKET": "false",
@@ -59,6 +63,7 @@ ENTRYPOINT_ENV_DEFAULTS: dict[str, str] = {
     "RUNTIME_DIR": DEFAULT_RUNTIME_DIR,
     "FIRST_SCRIPT": DEFAULT_FIRST_SCRIPT,
     "SECOND_SCRIPT": DEFAULT_SECOND_SCRIPT,
+    "PROXY_SCRIPT": DEFAULT_PROXY_SCRIPT,
 }
 
 REQUIRED_ENTRYPOINT_ENV_KEYS = tuple(ENTRYPOINT_ENV_DEFAULTS.keys())
@@ -73,6 +78,7 @@ ENTRYPOINT_ABSOLUTE_PATH_KEYS = (
     "DOCKER_SOCKET_PATH",
     "FIRST_SCRIPT",
     "SECOND_SCRIPT",
+    "PROXY_SCRIPT",
     "RUNTIME_DIR",
 )
 
@@ -235,7 +241,10 @@ def cleanup_runtime_dir(runtime_dir: Path) -> None:
         except Exception as exc:
             warn(f"Could not remove runtime item {item}: {exc}")
 
-    runtime_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        runtime_dir.rmdir()
+    except OSError as exc:
+        warn(f"Could not remove runtime directory {runtime_dir}: {exc}")
     log(f"Cleaned runtime directory {runtime_dir} ({removed} top-level item(s) removed).")
 
 
@@ -249,19 +258,43 @@ def cleanup_values() -> dict[str, str]:
 
     for name in (
         "CODE_ROOT",
+        "LAB_NAME",
         "CLUSTER_PROFILE",
         "KUBE_CONTEXT",
         "COMPOSE_PROJECT_NAME",
+        "CP_NETWORK",
         "HOST_SOCKET",
     ):
         raw = os.environ.get(name)
         if raw is not None and raw.strip() != "":
             values[name] = raw
 
+    lab_name = values.get("LAB_NAME") or values.get("CLUSTER_PROFILE") or "honeypotlab"
+    values["LAB_NAME"] = lab_name
+    values["CLUSTER_PROFILE"] = lab_name
     values.setdefault("CODE_ROOT", DEFAULT_CODE_ROOT)
-    values.setdefault("COMPOSE_PROJECT_NAME", DEFAULT_COMPOSE_PROJECT_NAME)
+    values.setdefault("COMPOSE_PROJECT_NAME", f"honeypot-{lab_name}")
+    values.setdefault("CP_NETWORK", f"kind-{lab_name}")
     return values
 
+
+
+def start_proxy_process(proxy_script: Path, socket_path: Path) -> Optional[subprocess.Popen]:
+    """Start the controller HTTP proxy as a background child process."""
+    if not proxy_script.exists():
+        warn(f"Proxy script not found; controller proxy disabled: {proxy_script}")
+        return None
+
+    log(f"Starting controller proxy: {proxy_script}")
+    try:
+        return subprocess.Popen(
+            [sys.executable, str(proxy_script)],
+            env=build_child_env(socket_path),
+            start_new_session=True,
+        )
+    except OSError as exc:
+        warn(f"Failed to start controller proxy at {proxy_script}: {exc}")
+        return None
 
 def main() -> int:
     """Prepare Docker access, run configured scripts, then keep container alive."""
@@ -277,7 +310,9 @@ def main() -> int:
     runtime_dir = Path(runtime["RUNTIME_DIR"])
     first_script = Path(runtime["FIRST_SCRIPT"])
     second_script = Path(runtime["SECOND_SCRIPT"])
+    proxy_script = Path(runtime["PROXY_SCRIPT"])
     dockerd_proc: Optional[subprocess.Popen] = None
+    proxy_proc: Optional[subprocess.Popen] = None
 
     log("Entrypoint starting.")
     log(f"ENV_FILE for child scripts: {os.environ.get('ENV_FILE', DEFAULT_ENV_FILE)}")
@@ -308,6 +343,7 @@ def main() -> int:
                 shutdown_exit_code=current_signal_exit_code,
             )
 
+        proxy_proc = start_proxy_process(proxy_script, socket_path)
         run_child_script(first_script, "FIRST_SCRIPT", socket_path)
         run_child_script(second_script, "SECOND_SCRIPT", socket_path)
 
@@ -326,7 +362,25 @@ def main() -> int:
         except Exception as exc:
             warn(f"Error during Kind cluster cleanup: {exc}")
 
+        try:
+            cleanup_lab_labeled_containers(socket_path, cleanup_config)
+        except Exception as exc:
+            warn(f"Error during labelled Docker cleanup: {exc}")
+
+        try:
+            cleanup_lab_network(socket_path, cleanup_config)
+        except Exception as exc:
+            warn(f"Error during Docker network cleanup: {exc}")
+
+        try:
+            verify_no_lab_leftovers(socket_path, cleanup_config)
+        except Exception as exc:
+            warn(f"Error while verifying cleanup: {exc}")
+
         cleanup_runtime_dir(runtime_dir)
+
+        if proxy_proc is not None and proxy_proc.poll() is None:
+            terminate_process(proxy_proc, "controller proxy")
 
         if dockerd_proc is not None and dockerd_proc.poll() is None:
             terminate_process(dockerd_proc, "dockerd")

@@ -17,7 +17,7 @@ from .docker_runtime import docker_env, to_text
 from .logging import log, warn
 from .target import config_list
 
-DEFAULT_COMPOSE_CONTAINER_NAMES = ["registry", "caldera", "attacker", "samba", "load-generator", "router"]
+DEFAULT_COMPOSE_CONTAINER_NAMES = ["registry", "caldera", "attacker", "samba", "load-generator"]
 
 
 def discover_underlay_container_names(config: Mapping[str, Any] | None = None) -> list[str]:
@@ -32,7 +32,7 @@ def discover_underlay_container_names(config: Mapping[str, Any] | None = None) -
         ("REGISTRY_NAME", "registry"),
         ("CALDERA_SERVER", "caldera"),
         ("ATTACKER", "attacker"),
-        ("PROXY", "router"),
+        ("LOAD_GENERATOR", "load-generator"),
     ):
         value = str(config.get(key, default)).strip()
         if value:
@@ -127,10 +127,10 @@ def infer_kind_cluster_name(config: Mapping[str, Any] | None = None, *, env: dic
     """Infer the Kind cluster name from CONFIG or local kind state."""
     config = config or {}
     kube_ctx = str(config.get("KUBE_CONTEXT", "")).strip()
-    cluster_profile = str(config.get("CLUSTER_PROFILE", "")).strip()
+    lab_name = str(config.get("LAB_NAME", "") or config.get("CLUSTER_PROFILE", "")).strip()
 
-    if cluster_profile:
-        return cluster_profile
+    if lab_name:
+        return lab_name
 
     if kube_ctx.startswith("kind-") and len(kube_ctx) > len("kind-"):
         return kube_ctx.removeprefix("kind-")
@@ -158,7 +158,7 @@ def infer_kind_cluster_name(config: Mapping[str, Any] | None = None, *, env: dic
 
     log(
         "Unable to infer Kind cluster to delete "
-        f"(found: {clusters}). Set CLUSTER_PROFILE to enable cleanup."
+        f"(found: {clusters}). Set LAB_NAME to enable cleanup."
     )
     return ""
 
@@ -220,3 +220,56 @@ def cleanup_kind_cluster(config: Config | None = None, socket_path: Path | None 
             f"Failed to delete Kind cluster '{cluster_name}': "
             f"{stderr or f'kind delete exited with {completed.returncode}'}"
         )
+
+
+def cleanup_lab_labeled_containers(socket_path: Path, config: Config | None = None) -> None:
+    """Remove all Docker containers carrying the lab label."""
+    config = config or {}
+    lab_name = str(config.get("LAB_NAME") or config.get("CLUSTER_PROFILE") or "").strip()
+    if not lab_name:
+        log("No LAB_NAME available; skipping labelled container cleanup.")
+        return
+
+    env = docker_env(socket_path)
+    completed = subprocess.run(
+        ["docker", "ps", "-a", "--filter", f"label=honeypot.lab={lab_name}", "-q"],
+        env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=15,
+    )
+    ids = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    if not ids:
+        log(f"No labelled Docker containers remain for lab {lab_name}.")
+        return
+    subprocess.run(["docker", "rm", "-f", *ids], env=env, check=False, timeout=60)
+    log(f"Removed {len(ids)} labelled Docker container(s) for lab {lab_name}.")
+
+
+def cleanup_lab_network(socket_path: Path, config: Config | None = None) -> None:
+    """Remove the per-lab Docker network when it is empty."""
+    config = config or {}
+    lab_name = str(config.get("LAB_NAME") or config.get("CLUSTER_PROFILE") or "honeypotlab").strip()
+    network = str(config.get("CP_NETWORK") or f"kind-{lab_name}").strip()
+    if not network:
+        return
+    env = docker_env(socket_path)
+    subprocess.run(["docker", "network", "rm", network], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=30)
+
+
+def verify_no_lab_leftovers(socket_path: Path, config: Config | None = None) -> None:
+    """Warn if Docker or Kind resources for the lab are still present."""
+    config = config or {}
+    lab_name = str(config.get("LAB_NAME") or config.get("CLUSTER_PROFILE") or "").strip()
+    if not lab_name:
+        return
+    env = docker_env(socket_path)
+    completed = subprocess.run(
+        ["docker", "ps", "-a", "--filter", f"label=honeypot.lab={lab_name}", "-q"],
+        env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=15,
+    )
+    if completed.stdout.strip():
+        warn(f"Docker containers still exist for lab {lab_name} after cleanup.")
+    cluster_name = infer_kind_cluster_name(config, env=env)
+    if cluster_name:
+        completed = subprocess.run(["kind", "get", "clusters"], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=15)
+        clusters = {line.strip() for line in completed.stdout.splitlines() if line.strip()}
+        if cluster_name in clusters:
+            warn(f"Kind cluster {cluster_name} still exists after cleanup.")

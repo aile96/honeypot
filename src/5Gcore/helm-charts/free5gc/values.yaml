@@ -182,7 +182,7 @@ global:
 imageUpdater:
   enabled: false
   name: image-updater
-  namespace: ""
+  namespace: kube-system
   serviceAccountName: updater-sa
   image:
     repository: registry:5000/controller

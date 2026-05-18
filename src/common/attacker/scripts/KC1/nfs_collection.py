@@ -66,6 +66,11 @@ def env_int(name: str, default: int) -> int:
         raise SystemExit(f"{name} must be an integer, got {raw!r}") from exc
 
 
+def env_bool(name: str, default: bool) -> bool:
+    raw = env(name, "true" if default else "false").strip().lower()
+    return raw in {"1", "true", "yes", "y", "on", "enabled"}
+
+
 def env_list(name: str, default: str) -> list[str]:
     raw = env(name, default)
     return [item.strip() for item in raw.split(",") if item.strip()]
@@ -121,6 +126,8 @@ class Collector:
         self.calls: list[dict[str, Any]] = []
         self.discovery: dict[str, dict[str, str]] = {}
         self.nf_api_roots: dict[str, str] = {}
+        self.oauth_tokens: dict[tuple[str, str, str, str], str] = {}
+        self.oauth_evidence: dict[str, dict[str, Any]] = {}
         self.started_at = utc_now()
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -139,6 +146,9 @@ class Collector:
         requester_nf_type: str,
         body: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        target_nf_type: str = "",
+        scope: str = "",
+        nrf_root: str = "",
     ) -> dict[str, Any]:
         self.counter += 1
         data = None
@@ -151,6 +161,8 @@ class Collector:
         if body is not None:
             data = compact_json(body).encode("utf-8")
             request_headers["Content-Type"] = "application/json"
+        if target_nf_type and scope:
+            request_headers.update(self.oauth_headers(requester_nf_type, target_nf_type, scope, nrf_root))
         if headers:
             request_headers.update(headers)
 
@@ -278,6 +290,7 @@ class Collector:
             },
             "discoveredApiRoots": self.nf_api_roots,
             "discoveredServices": self.discovery,
+            "oauth": self.oauth_evidence,
             "calls": self.calls,
         }
         self.write_json("manifest.json", manifest)
@@ -294,11 +307,72 @@ class Collector:
         ]
         (self.out_dir / "summary.txt").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
+    def oauth_headers(self, requester_nf_type: str, target_nf_type: str, scope: str, nrf_root: str) -> dict[str, str]:
+        """Return a cached free5GC NRF OAuth header for a protected SBI request."""
+        if not env_bool("NRF_OAUTH_ENABLED", True):
+            return {}
+
+        add_attacker_lib_path()
+        try:
+            from nwdaf import nrf_register
+        except Exception as exc:  # noqa: BLE001 - keep the collector evidence-first.
+            self.record_oauth_evidence(requester_nf_type, target_nf_type, scope, 0, repr(exc), False)
+            return {}
+
+        base_url = nrf_root.rstrip("/") or nrf_register.nrf_base_url().rstrip("/")
+        requester = requester_nf_type.upper()
+        target = target_nf_type.upper()
+        key = (base_url, requester, target, scope)
+        token = self.oauth_tokens.get(key, "")
+        if token:
+            return {"Authorization": f"Bearer {token}"}
+
+        try:
+            instance_id = nrf_register.deterministic_instance_id(requester)
+            status, body, token = nrf_register.oauth_token(
+                requester,
+                instance_id=instance_id,
+                base_url=base_url,
+                target_nf_type=target,
+                scope=scope,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.record_oauth_evidence(requester, target, scope, 0, repr(exc), False)
+            return {}
+
+        self.record_oauth_evidence(requester, target, scope, status, body, bool(token))
+        if not token:
+            return {}
+
+        self.oauth_tokens[key] = token
+        return {"Authorization": f"Bearer {token}"}
+
+    def record_oauth_evidence(
+        self,
+        requester_nf_type: str,
+        target_nf_type: str,
+        scope: str,
+        status: int,
+        body: str,
+        has_token: bool,
+    ) -> None:
+        """Save non-secret OAuth request evidence in the manifest."""
+        key = f"{requester_nf_type.upper()}->{target_nf_type.upper()}:{scope}"
+        self.oauth_evidence[key] = {
+            "requesterNfType": requester_nf_type.upper(),
+            "targetNfType": target_nf_type.upper(),
+            "scope": scope,
+            "status": status,
+            "hasToken": has_token,
+            "bodyPreview": body[:300] if not has_token else "",
+        }
+
 
 def add_attacker_lib_path() -> None:
     candidates = [Path(os.getenv("ATTACKER_LIB_DIR", "/opt/attacker-lib"))]
     here = Path(__file__).resolve()
-    candidates.append(here.parents[2] / "lib")
+    if len(here.parents) > 2:
+        candidates.append(here.parents[2] / "lib")
     for candidate in candidates:
         if candidate.exists():
             sys.path.insert(0, str(candidate))
@@ -340,6 +414,9 @@ def collect_nrf(collector: Collector, nrf_root: str) -> None:
         join_url(nrf_root, "/nnrf-nfm/v1/nf-instances"),
         section="nrf",
         requester_nf_type="NWDAF",
+        target_nf_type="NRF",
+        scope="nnrf-nfm",
+        nrf_root=nrf_root,
     )
     collector.remember_nf_profiles(response["response"]["bodyJson"])
 
@@ -354,6 +431,9 @@ def collect_nrf(collector: Collector, nrf_root: str) -> None:
             ),
             section="nrf",
             requester_nf_type="NWDAF",
+            target_nf_type="NRF",
+            scope="nnrf-disc",
+            nrf_root=nrf_root,
         )
         collector.remember_nf_profiles(response["response"]["bodyJson"])
 
@@ -373,6 +453,9 @@ def collect_nrf(collector: Collector, nrf_root: str) -> None:
                 ),
                 section="nrf",
                 requester_nf_type="NWDAF",
+                target_nf_type="NRF",
+                scope="nnrf-disc",
+                nrf_root=nrf_root,
             )
             collector.remember_nf_profiles(response["response"]["bodyJson"])
 
@@ -412,7 +495,7 @@ def udr_policy_paths(supi: str, snssai: dict[str, Any], dnn: str) -> list[tuple[
     ]
 
 
-def collect_udr(collector: Collector, fallback_root: str) -> None:
+def collect_udr(collector: Collector, fallback_root: str, nrf_root: str) -> None:
     root = collector.service_root("UDR", "nudr-dr", fallback_root)
     supis = env_list("UDM_EX_SUPIS", DEFAULT_SUPIS)
     serving_plmn = env("UDM_EX_SERVING_PLMN", DEFAULT_SERVING_PLMN)
@@ -427,6 +510,9 @@ def collect_udr(collector: Collector, fallback_root: str) -> None:
                 join_url(root, path, query),
                 section="udr_subscriber_data",
                 requester_nf_type="UDM",
+                target_nf_type="UDR",
+                scope="nudr-dr",
+                nrf_root=nrf_root,
             )
         for label, path, query in udr_policy_paths(supi, snssai, dnn):
             collector.request(
@@ -435,6 +521,9 @@ def collect_udr(collector: Collector, fallback_root: str) -> None:
                 join_url(root, path, query),
                 section="udr_policy_data",
                 requester_nf_type="PCF",
+                target_nf_type="UDR",
+                scope="nudr-dr",
+                nrf_root=nrf_root,
             )
 
 
@@ -464,7 +553,17 @@ def pcf_sm_policy_body(supi: str, notification_uri: str, snssai: dict[str, Any],
     }
 
 
-def follow_location(collector: Collector, label: str, response: dict[str, Any], requester_nf_type: str, root: str) -> None:
+def follow_location(
+    collector: Collector,
+    label: str,
+    response: dict[str, Any],
+    requester_nf_type: str,
+    root: str,
+    *,
+    nrf_root: str,
+    target_nf_type: str,
+    scope: str,
+) -> None:
     location = response["response"]["headers"].get("Location") or response["response"]["headers"].get("location")
     if not location:
         body = response["response"].get("bodyJson")
@@ -477,10 +576,13 @@ def follow_location(collector: Collector, label: str, response: dict[str, Any], 
             absolute_url(root, str(location)),
             section="pcf_policy_decision",
             requester_nf_type=requester_nf_type,
+            target_nf_type=target_nf_type,
+            scope=scope,
+            nrf_root=nrf_root,
         )
 
 
-def collect_pcf(collector: Collector, fallback_root: str) -> None:
+def collect_pcf(collector: Collector, fallback_root: str, nrf_root: str) -> None:
     notification_uri = env("UDM_EX_NOTIFICATION_URI", "http://nwdaf-nnwdaf:8080/kc1")
     supis = env_list("UDM_EX_SUPIS", DEFAULT_SUPIS)
     snssai = {"sst": env_int("UDM_EX_SST", DEFAULT_SST), "sd": env("UDM_EX_SD", DEFAULT_SD)}
@@ -496,8 +598,20 @@ def collect_pcf(collector: Collector, fallback_root: str) -> None:
             section="pcf_policy_decision",
             requester_nf_type="AMF",
             body=pcf_am_policy_body(supi, notification_uri),
+            target_nf_type="PCF",
+            scope="npcf-am-policy-control",
+            nrf_root=nrf_root,
         )
-        follow_location(collector, f"pcf_as_amf_{supi}_am_policy_get", am_response, "AMF", am_root)
+        follow_location(
+            collector,
+            f"pcf_as_amf_{supi}_am_policy_get",
+            am_response,
+            "AMF",
+            am_root,
+            nrf_root=nrf_root,
+            target_nf_type="PCF",
+            scope="npcf-am-policy-control",
+        )
 
         sm_response = collector.request(
             f"pcf_as_smf_{supi}_sm_policy_create",
@@ -506,19 +620,35 @@ def collect_pcf(collector: Collector, fallback_root: str) -> None:
             section="pcf_policy_decision",
             requester_nf_type="SMF",
             body=pcf_sm_policy_body(supi, notification_uri, snssai, dnn),
+            target_nf_type="PCF",
+            scope="npcf-smpolicycontrol",
+            nrf_root=nrf_root,
         )
-        follow_location(collector, f"pcf_as_smf_{supi}_sm_policy_get", sm_response, "SMF", sm_root)
+        follow_location(
+            collector,
+            f"pcf_as_smf_{supi}_sm_policy_get",
+            sm_response,
+            "SMF",
+            sm_root,
+            nrf_root=nrf_root,
+            target_nf_type="PCF",
+            scope="npcf-smpolicycontrol",
+        )
+
+
+def chf_consumer_identification() -> dict[str, Any]:
+    return {
+        "nFName": env("UDM_EX_SMF_NAME", socket.gethostname()),
+        "nodeFunctionality": "SMF",
+        "nFIPv4Address": env("POD_IP", "127.0.0.1"),
+    }
 
 
 def chf_initial_body(supi: str, snssai: dict[str, Any], dnn: str) -> dict[str, Any]:
     sequence = env_int("UDM_EX_CHF_SEQUENCE", 1)
     return {
         "subscriberIdentifier": supi,
-        "nfConsumerIdentification": {
-            "nFName": env("UDM_EX_SMF_NAME", socket.gethostname()),
-            "nodeFunctionality": "SMF",
-            "nFIPv4Address": env("POD_IP", "127.0.0.1"),
-        },
+        "nfConsumerIdentification": chf_consumer_identification(),
         "invocationTimeStamp": utc_now(),
         "invocationSequenceNumber": sequence,
         "oneTimeEvent": False,
@@ -538,8 +668,10 @@ def chf_initial_body(supi: str, snssai: dict[str, Any], dnn: str) -> dict[str, A
     }
 
 
-def chf_update_body(sequence: int) -> dict[str, Any]:
+def chf_update_body(supi: str, sequence: int) -> dict[str, Any]:
     return {
+        "subscriberIdentifier": supi,
+        "nfConsumerIdentification": chf_consumer_identification(),
         "invocationTimeStamp": utc_now(),
         "invocationSequenceNumber": sequence,
         "triggers": [{"triggerType": "QUOTA_MANAGEMENT"}],
@@ -551,8 +683,10 @@ def chf_update_body(sequence: int) -> dict[str, Any]:
     }
 
 
-def chf_release_body(sequence: int) -> dict[str, Any]:
+def chf_release_body(supi: str, sequence: int) -> dict[str, Any]:
     return {
+        "subscriberIdentifier": supi,
+        "nfConsumerIdentification": chf_consumer_identification(),
         "invocationTimeStamp": utc_now(),
         "invocationSequenceNumber": sequence,
         "pDUSessionChargingInformation": {
@@ -577,12 +711,12 @@ def charging_refs(response: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(refs))
 
 
-def collect_chf(collector: Collector, fallback_root: str) -> None:
+def collect_chf(collector: Collector, fallback_root: str, nrf_root: str) -> None:
     root = collector.service_root("CHF", "nchf-convergedcharging", fallback_root)
     supis = env_list("UDM_EX_SUPIS", DEFAULT_SUPIS)
     snssai = {"sst": env_int("UDM_EX_SST", DEFAULT_SST), "sd": env("UDM_EX_SD", DEFAULT_SD)}
     dnn = env("UDM_EX_DNN", DEFAULT_DNN)
-    versions = env_list("UDM_EX_CHF_VERSIONS", "v3,v2,v1")
+    versions = env_list("UDM_EX_CHF_VERSIONS", "v3")
 
     for supi in supis:
         for version in versions:
@@ -593,6 +727,9 @@ def collect_chf(collector: Collector, fallback_root: str) -> None:
                 section="chf_charging_quota_reporting",
                 requester_nf_type="SMF",
                 body=chf_initial_body(supi, snssai, dnn),
+                target_nf_type="CHF",
+                scope="nchf-convergedcharging",
+                nrf_root=nrf_root,
             )
             if not (isinstance(create["response"]["status"], int) and 200 <= create["response"]["status"] < 300):
                 continue
@@ -605,7 +742,10 @@ def collect_chf(collector: Collector, fallback_root: str) -> None:
                     join_url(ref_url, "update"),
                     section="chf_charging_quota_reporting",
                     requester_nf_type="SMF",
-                    body=chf_update_body(2),
+                    body=chf_update_body(supi, 2),
+                    target_nf_type="CHF",
+                    scope="nchf-convergedcharging",
+                    nrf_root=nrf_root,
                 )
                 collector.request(
                     f"chf_as_smf_{supi}_{version}_reporting_release",
@@ -613,7 +753,10 @@ def collect_chf(collector: Collector, fallback_root: str) -> None:
                     join_url(ref_url, "release"),
                     section="chf_charging_quota_reporting",
                     requester_nf_type="SMF",
-                    body=chf_release_body(3),
+                    body=chf_release_body(supi, 3),
+                    target_nf_type="CHF",
+                    scope="nchf-convergedcharging",
+                    nrf_root=nrf_root,
                 )
             break
 
@@ -628,9 +771,9 @@ def main() -> int:
     try:
         register_requester_profiles(collector)
         collect_nrf(collector, nrf_root)
-        collect_udr(collector, udr_root)
-        collect_pcf(collector, pcf_root)
-        collect_chf(collector, chf_root)
+        collect_udr(collector, udr_root, nrf_root)
+        collect_pcf(collector, pcf_root, nrf_root)
+        collect_chf(collector, chf_root, nrf_root)
     finally:
         collector.finalize()
 

@@ -15,11 +15,8 @@ from .config import Config, config_str
 
 
 def kind_cluster_name(config: Config) -> str:
-    """Return the Kind cluster name for the lab.
-
-    CLUSTER_PROFILE is the single source of truth for the lab/cluster name.
-    """
-    return config_str(config, "CLUSTER_PROFILE", "honeypotlab", allow_empty=False)
+    """Return the Kind cluster name for the lab."""
+    return config_str(config, "LAB_NAME", config_str(config, "CLUSTER_PROFILE", "honeypotlab"), allow_empty=False)
 
 
 def kube_context_name(config: Config) -> str:

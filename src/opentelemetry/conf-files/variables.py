@@ -12,6 +12,9 @@ variables = [
     {'name': 'DOCKER_BUILD_PARALLELISM', 'type': 'int', 'value': 4},
     {'name': 'DOCKER_BUILD_TIMEOUT_SECONDS', 'type': 'int', 'value': 0},
     {'name': 'IMAGE_VERSION', 'type': 'str', 'value': '2.0.2'},
+    {'name': 'RESTORE_LAB', 'type': 'bool', 'value': False},
+    {'name': 'RESTORE_LAB_MODE', 'type': 'str', 'value': 'soft'},
+    {'name': 'DESTROY_RUN_FILE', 'type': 'bool', 'value': False},
 
     # Temporary Docker build-helper used by Skaffold and local image builds.
     {'name': 'BUILD_HELPER_NAME', 'type': 'str', 'value': 'docker-cli-helper'},
@@ -23,19 +26,16 @@ variables = [
     # Underlay service toggles and service names.
     {'name': 'LOAD_GENERATOR_ENABLE', 'type': 'bool', 'value': True},
     {'name': 'SAMBA_ENABLE', 'type': 'bool', 'value': True},
-    {'name': 'PROXY_ENABLE', 'type': 'bool', 'value': True},
     {'name': 'ATTACKER_ENABLE', 'type': 'bool', 'value': True},
     {'name': 'CALDERA_SERVER_ENABLE', 'type': 'bool', 'value': True},
     {'name': 'CILIUM_ENABLED', 'type': 'bool', 'value': True},
     {'name': 'CALDERA_SERVER', 'type': 'str', 'value': 'caldera'},
     {'name': 'CALDERA_PORT', 'type': 'int', 'value': 8888},
     {'name': 'ATTACKER', 'type': 'str', 'value': 'attacker'},
-    {'name': 'PROXY', 'type': 'str', 'value': 'router'},
-    {'name': 'GENERIC_SVC_PORT', 'type': 'int', 'value': 8085},
     {'name': 'GENERIC_SVC_ADDR', 'type': 'str', 'value': '127.0.0.1'},
     {'name': 'FRONTEND_PROXY_IP', 'type': 'str', 'value': '127.0.0.1'},
-    {'name': 'CP_NETWORK', 'type': 'str', 'value': 'kind'},
-    {'name': 'COMPOSE_PROJECT_NAME', 'type': 'str', 'value': 'honeypot-underlay'},
+    {'name': 'CP_NETWORK', 'type': 'str', 'value': 'kind-honeypotlab'},
+    {'name': 'COMPOSE_PROJECT_NAME', 'type': 'str', 'value': 'honeypot-honeypotlab'},
 
     # Control-plane and Kubernetes API exposure settings used by attack scenarios.
     {'name': 'CONTROL_PLANE_NODE', 'type': 'str', 'value': 'kind-control-plane'},

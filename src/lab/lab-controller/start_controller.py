@@ -16,6 +16,7 @@ import signal
 import time
 import traceback
 import urllib.request
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -42,22 +43,41 @@ def env_value(value: Any) -> str:
     return "" if value is None else str(value)
 
 
-def load_variables_file(path: str | Path) -> bool:
+def variables_file_candidates() -> list[str]:
+    return [
+        os.getenv("TARGET_CONFIG_FILE", "").strip(),
+        os.getenv("ENV_FILE", "").strip(),
+        "/workdir/code/conf-files/variables.py",
+    ]
+
+
+def read_variables_values(path: str | Path) -> dict[str, str] | None:
     variables_path = Path(path)
     if not variables_path.is_file():
-        return False
+        return None
 
     loaded = runpy.run_path(str(variables_path))
     variables = loaded.get("variables")
     if not isinstance(variables, list):
-        return False
+        return None
 
+    values: dict[str, str] = {}
     for item in variables:
         if not isinstance(item, dict):
             continue
         name = str(item.get("name", "")).strip()
         if name:
-            os.environ.setdefault(name, env_value(item.get("value")))
+            values[name] = env_value(item.get("value"))
+    return values
+
+
+def load_variables_file(path: str | Path) -> bool:
+    values = read_variables_values(path)
+    if values is None:
+        return False
+
+    for name, value in values.items():
+        os.environ.setdefault(name, value)
     return True
 
 
@@ -74,11 +94,49 @@ def read_caldera_api_key(code_root: str) -> str:
         log(f"controller: could not read Caldera API key from {local_yml}: {exc!r}")
     return ""
 
+
+def ensure_results_location() -> None:
+    """Make the legacy /results path land in the configured per-lab results dir."""
+    lab_name = os.getenv("LAB_NAME", "honeypotlab")
+    results_dir = Path(os.getenv("RESULTS_DIR") or f"/res/results/{lab_name}")
+    os.environ.setdefault("RESULTS_DIR", str(results_dir))
+
+    try:
+        results_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        log(f"controller: could not create results dir {results_dir}: {exc!r}")
+
+    alias = Path("/results")
+    try:
+        if alias.is_symlink():
+            if alias.resolve() != results_dir.resolve():
+                alias.unlink()
+                alias.symlink_to(results_dir, target_is_directory=True)
+        elif alias.exists():
+            if alias.is_dir() and not any(alias.iterdir()):
+                alias.rmdir()
+                alias.symlink_to(results_dir, target_is_directory=True)
+        else:
+            alias.symlink_to(results_dir, target_is_directory=True)
+    except OSError as exc:
+        log(f"controller: could not map /results to {results_dir}: {exc!r}")
+
+    os.environ.setdefault("KILLCHAIN_SUMMARY_PATH", str(results_dir / "killchain-summary.json"))
+
+
 def env_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
+    return bool_value(os.getenv(name), default)
+
+
+def bool_value(value: Any, default: bool) -> bool:
+    if value is None:
         return default
-    return raw.strip().lower() not in {"0", "false", "no", "off"}
+    if isinstance(value, bool):
+        return value
+    raw = str(value).strip()
+    if raw == "":
+        return default
+    return raw.lower() not in {"0", "false", "no", "off"}
 
 
 def env_int(name: str, default: int, minimum: int = 0) -> int:
@@ -98,13 +156,7 @@ def env_float(name: str, default: float, minimum: float = 0.0) -> float:
 
 
 def bootstrap_environment() -> None:
-    candidates = [
-        os.getenv("TARGET_CONFIG_FILE", "").strip(),
-        os.getenv("ENV_FILE", "").strip(),
-        "/workdir/code/conf-files/variables.py",
-    ]
-
-    for candidate in candidates:
+    for candidate in variables_file_candidates():
         if candidate and load_variables_file(candidate):
             os.environ.setdefault("ENV_FILE", candidate)
             break
@@ -114,7 +166,7 @@ def bootstrap_environment() -> None:
     os.environ.setdefault("CALDERA_ROOT", str(Path(code_root) / "caldera"))
     os.environ.setdefault("CALDERA_ADVERSARIES_DIR", str(Path(os.environ["CALDERA_ROOT"]) / "adversaries"))
     os.environ.setdefault("CONTROLLER_HOOKS_DIR", str(Path(code_root) / "hooks" / "controller"))
-    os.environ.setdefault("KILLCHAIN_SUMMARY_PATH", "/results/killchain-summary.json")
+    ensure_results_location()
     api_key = read_caldera_api_key(code_root)
     if api_key:
         os.environ["CALDERA_API_KEY"] = api_key
@@ -122,7 +174,9 @@ def bootstrap_environment() -> None:
     os.environ.setdefault("ATT_NS", os.getenv("TST_NAMESPACE", "tst"))
 
     if not os.getenv("CALDERA_URL"):
-        os.environ["CALDERA_URL"] = f"http://localhost:{os.getenv('CALDERA_PORT', '8888')}"
+        caldera_server = os.getenv("CALDERA_SERVER", "caldera")
+        caldera_port = os.getenv("CALDERA_PORT", "8888")
+        os.environ["CALDERA_URL"] = f"http://{caldera_server}:{caldera_port}"
 
 
 bootstrap_environment()
@@ -144,6 +198,8 @@ CALDERA_WAIT_TIMEOUT = env_int("CALDERA_WAIT_TIMEOUT", 300, 1)
 AGENT_WAIT_TIMEOUT = env_int("AGENT_WAIT_TIMEOUT", 600, 1)
 CONTROLLER_HOOKS_DIR = Path(os.getenv("CONTROLLER_HOOKS_DIR", "/workdir/code/hooks/controller"))
 SUMMARY_PATH = Path(os.getenv("KILLCHAIN_SUMMARY_PATH", "/results/killchain-summary.json"))
+RUN_FILE = Path(os.getenv("KILLCHAIN_RUN_FILE", "/start/run"))
+RUN_FILE_WAIT_LOG_INTERVAL = env_float("RUN_FILE_WAIT_LOG_INTERVAL", 60.0, 1.0)
 
 
 def handle_signals() -> None:
@@ -192,6 +248,109 @@ def wait_caldera() -> bool:
             return True
         time.sleep(2)
     return False
+
+
+def current_variables_file() -> Path | None:
+    for candidate in variables_file_candidates():
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if path.is_file():
+            return path
+    return None
+
+
+def runtime_variables_values() -> dict[str, str]:
+    variables_path = current_variables_file()
+    if variables_path is None:
+        return {}
+
+    try:
+        values = read_variables_values(variables_path)
+    except Exception as exc:
+        log(f"controller: could not reload variables from {variables_path}: {exc!r}; using environment/defaults.")
+        return {}
+    return values or {}
+
+
+def runtime_bool_from_names(names: list[str], default: bool) -> tuple[bool, str]:
+    values = runtime_variables_values()
+    for name in names:
+        if name in values:
+            return bool_value(values[name], default), name
+
+    for name in names:
+        raw = os.getenv(name)
+        if raw is not None and raw != "":
+            return bool_value(raw, default), name
+
+    return default, names[0] if names else ""
+
+
+def killchain_enable_variable_names(adversary: Adversary) -> list[str]:
+    if not adversary.key:
+        return []
+
+    match = re.search(r"(\d+)", adversary.key)
+    if not match:
+        return []
+
+    raw_number = match.group(1)
+    normalized_number = str(int(raw_number)) if raw_number else raw_number
+    names = [f"ENABLE_KC{normalized_number}"]
+    if raw_number != normalized_number:
+        names.append(f"ENABLE_KC{raw_number}")
+    return names
+
+
+def killchain_enabled(adversary: Adversary) -> tuple[bool, str]:
+    names = killchain_enable_variable_names(adversary)
+    if not names:
+        return True, ""
+    return runtime_bool_from_names(names, True)
+
+
+def wait_for_run_file(adversary: Adversary) -> tuple[bool, str]:
+    try:
+        RUN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        log(f"controller: could not create run-file directory {RUN_FILE.parent}: {exc!r}")
+
+    waited = False
+    last_log = 0.0
+    while not RUN_FILE.is_file():
+        enabled, enable_variable = killchain_enabled(adversary)
+        if not enabled:
+            return False, enable_variable
+
+        waited = True
+        now = time.time()
+        if now - last_log >= RUN_FILE_WAIT_LOG_INTERVAL:
+            if RUN_FILE.exists():
+                log(f"controller: {RUN_FILE} exists but is not a regular file; waiting before {adversary.key or adversary.name}.")
+            else:
+                log(f"controller: waiting for run file {RUN_FILE} before starting {adversary.key or adversary.name}.")
+            last_log = now
+        time.sleep(POLL_INTERVAL)
+
+    if waited:
+        log(f"controller: run file {RUN_FILE} found; continuing with {adversary.key or adversary.name}.")
+    return True, ""
+
+
+def destroy_run_file_if_requested(adversary: Adversary) -> None:
+    should_destroy, variable_name = runtime_bool_from_names(["DESTROY_RUN_FILE"], False)
+    if not should_destroy:
+        return
+
+    try:
+        if RUN_FILE.is_file() or RUN_FILE.is_symlink():
+            RUN_FILE.unlink()
+            log(f"controller: removed run file {RUN_FILE} after {adversary.key or adversary.name} ({variable_name}=true).")
+        elif RUN_FILE.exists():
+            log(f"controller: {variable_name}=true but {RUN_FILE} is not a regular file; leaving it in place.")
+    except OSError as exc:
+        log(f"controller: could not remove run file {RUN_FILE}: {exc!r}")
 
 
 def natural_key(value: str) -> list[Any]:
@@ -592,6 +751,87 @@ def wait_operation_done(op_id: str) -> tuple[bool, str]:
     return False, last or "timeout"
 
 
+def restore_hook_candidates(adversary: Adversary) -> list[Path]:
+    """Return target restore scripts for the completed kill chain."""
+    base = Path(os.getenv("CODE_ROOT", "/workdir/code")) / "hooks" / "restore"
+    keys: list[str] = []
+    if adversary.key:
+        keys.append(adversary.key.upper())
+        number = adversary.key.removeprefix("KC")
+        if number:
+            keys.append(number.zfill(2))
+    keys.append(adversary.path.stem)
+
+    candidates = [base / "HOOK_RESTORE.py"]
+    for key in keys:
+        candidates.append(base / f"HOOK_RESTORE_{key}.py")
+
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        unique.append(candidate)
+    return unique
+
+
+def run_soft_restore(adversary: Adversary, op_id: str, ok: bool, state: str) -> None:
+    """Run optional target-specific restore scripts after one kill chain."""
+    candidates = [path for path in restore_hook_candidates(adversary) if path.is_file()]
+    if not candidates:
+        log(f"controller: no soft restore script found for {adversary.key or adversary.name}; continuing.")
+        return
+
+    for script in candidates:
+        log(f"controller: running restore script {script.name}")
+        globals_dict = {
+            "ADVERSARY": adversary,
+            "ADVERSARY_NAME": adversary.name,
+            "ADVERSARY_GROUP": adversary.group,
+            "KILLCHAIN_KEY": adversary.key,
+            "KILLCHAIN_ID": adversary.source_id,
+            "KILLCHAIN_ATTACKER_SELECTOR": adversary.attacker_selector,
+            "KILLCHAIN_FILE": str(adversary.path),
+            "OP_ID": op_id,
+            "OP_OK": ok,
+            "OP_STATE": state,
+        }
+        runpy.run_path(str(script), run_name="__main__", init_globals=globals_dict)
+
+
+def run_hard_restore() -> None:
+    """Reset pipeline state and rerun the lab pipeline."""
+    state_file = Path(os.getenv("STATE_FILE", os.path.join(os.getenv("RUNTIME_DIR", "/res/runtime/honeypotlab"), "generated", "lab-state.json")))
+    if state_file.exists():
+        state_file.unlink()
+        log(f"controller: removed pipeline state before hard restore: {state_file}")
+    script = Path(os.getenv("FIRST_SCRIPT", "/app/start_lab.py"))
+    env = os.environ.copy()
+    env.setdefault("PYTHONPATH", "/app")
+    completed = subprocess.run([os.sys.executable, str(script)], env=env, text=True, check=False)
+    if completed.returncode != 0:
+        raise RuntimeError(f"hard restore failed with exit code {completed.returncode}")
+
+
+def restore_lab_after_killchain(adversary: Adversary, op_id: str, ok: bool, state: str) -> None:
+    """Restore lab state after a kill chain when RESTORE_LAB is enabled."""
+    if not env_bool("RESTORE_LAB", False):
+        return
+    mode = os.getenv("RESTORE_LAB_MODE", "soft").strip().lower()
+    log(f"controller: restoring lab after {adversary.key or adversary.name} mode={mode}")
+    try:
+        if mode == "hard":
+            run_hard_restore()
+        elif mode == "soft":
+            run_soft_restore(adversary, op_id, ok, state)
+        else:
+            log(f"controller: unsupported RESTORE_LAB_MODE={mode!r}; skipping restore.")
+    except Exception:
+        log("controller: lab restore failed; continuing with next kill chain.")
+        traceback.print_exc()
+
+
 def write_summary(results: list[dict[str, Any]]) -> bool:
     ok_all = bool(results) and all(bool(item.get("ok")) for item in results)
     SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -627,9 +867,31 @@ def run_sequence(adversaries: list[Adversary]) -> int:
     for index, adversary in enumerate(adversaries, 1):
         log(f"controller: [{index}/{len(adversaries)}] adversary={adversary.name!r} group={adversary.group}")
 
+        enabled, enable_variable = killchain_enabled(adversary)
+        if not enabled:
+            state = f"{enable_variable}=false"
+            log(f"controller: skipping {adversary.key or adversary.name}; {state}.")
+            results.append({"adversary": adversary.name, "group": adversary.group, "key": adversary.key, "id": adversary.source_id, "attacker_selector": adversary.attacker_selector, "ok": True, "state": state})
+            continue
+
+        run_file_ready, enable_variable = wait_for_run_file(adversary)
+        if not run_file_ready:
+            state = f"{enable_variable}=false"
+            log(f"controller: skipping {adversary.key or adversary.name}; {state}.")
+            results.append({"adversary": adversary.name, "group": adversary.group, "key": adversary.key, "id": adversary.source_id, "attacker_selector": adversary.attacker_selector, "ok": True, "state": state})
+            continue
+
+        enabled, enable_variable = killchain_enabled(adversary)
+        if not enabled:
+            state = f"{enable_variable}=false"
+            log(f"controller: skipping {adversary.key or adversary.name}; {state}.")
+            results.append({"adversary": adversary.name, "group": adversary.group, "key": adversary.key, "id": adversary.source_id, "attacker_selector": adversary.attacker_selector, "ok": True, "state": state})
+            continue
+
         if not wait_agent_in_group(adversary.group):
             state = f"no Caldera agent in group {adversary.group!r} after {AGENT_WAIT_TIMEOUT}s"
             results.append({"adversary": adversary.name, "group": adversary.group, "key": adversary.key, "id": adversary.source_id, "attacker_selector": adversary.attacker_selector, "ok": False, "state": state})
+            destroy_run_file_if_requested(adversary)
             continue
 
         adversary_id = ""
@@ -642,6 +904,7 @@ def run_sequence(adversaries: list[Adversary]) -> int:
         if not adversary_id:
             state = f"adversary {adversary.name!r} not found in Caldera"
             results.append({"adversary": adversary.name, "group": adversary.group, "key": adversary.key, "id": adversary.source_id, "attacker_selector": adversary.attacker_selector, "ok": False, "state": state})
+            destroy_run_file_if_requested(adversary)
             continue
 
         op_id = ""
@@ -673,6 +936,9 @@ def run_sequence(adversaries: list[Adversary]) -> int:
             fail_on_error=env_bool("CONTROLLER_FAIL_ON_POST_HOOK", False),
             extra={"OP_ID": op_id, "OP_OK": ok, "OP_STATE": state},
         )
+
+        restore_lab_after_killchain(adversary, op_id, ok, state)
+        destroy_run_file_if_requested(adversary)
 
         if index < len(adversaries):
             time.sleep(DELAY_BETWEEN)

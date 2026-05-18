@@ -97,7 +97,10 @@ from .docker_runtime import (
 from .cleanup import (
     cleanup_docker_compose_stack,
     cleanup_kind_cluster,
+    cleanup_lab_labeled_containers,
+    cleanup_lab_network,
     cleanup_underlay_containers,
+    verify_no_lab_leftovers,
 )
 
 from .hosts import (

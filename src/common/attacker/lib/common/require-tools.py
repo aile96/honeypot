@@ -10,7 +10,25 @@ import sys
 import tempfile
 from pathlib import Path
 
-_SCRIPT = '#!/usr/bin/env bash\n\nrequire_tools() {\n  local missing=()\n  local tool\n\n  for tool in "$@"; do\n    if ! command -v "$tool" >/dev/null 2>&1; then\n      missing+=("$tool")\n    fi\n  done\n\n  if (( ${#missing[@]} > 0 )); then\n    echo "Missing required tools: ${missing[*]}" >&2\n    echo "Rebuild the attacker image so the preinstalled dependencies are available." >&2\n    exit 1\n  fi\n}\n'
+_SCRIPT = r"""#!/usr/bin/env bash
+
+require_tools() {
+  local missing=()
+  local tool
+
+  for tool in "$@"; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      missing+=("$tool")
+    fi
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    echo "Missing required tools: ${missing[*]}" >&2
+    echo "Rebuild the attacker image so the preinstalled dependencies are available." >&2
+    exit 1
+  fi
+}
+"""
 
 
 def _run_embedded_bash(script: str, argv: list[str]) -> int:

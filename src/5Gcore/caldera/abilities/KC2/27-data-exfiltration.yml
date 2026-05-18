@@ -1,4 +1,4 @@
-- id: 20000000-0000-0000-0000-000000000008
+- id: 20000000-0000-0000-0000-000000000007
   name: Data exfiltration
   description: Data exfiltration of the information accumulated.
   tactic: exfiltration

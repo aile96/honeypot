@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/flagatt-5gcore.py pod-dos
+          /opt/caldera/KC5/pod-dos.py
         timeout: 900
         parsers: []
         cleanup: ""

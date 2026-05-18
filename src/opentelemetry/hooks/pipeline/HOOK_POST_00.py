@@ -289,7 +289,11 @@ def prepare_registry_assets() -> dict[str, object]:
     username, password = require_registry_credentials()
     scheme = registry_scheme()
 
-    auth_dir = Path(config_str(CONFIG, "REGISTRY_AUTH_DIR", "/res/runtime/registry"))
+    runtime_dir = Path(config_str(CONFIG, "RUNTIME_DIR", "/res/runtime"))
+    auth_dir = Path(config_str(CONFIG, "REGISTRY_AUTH_DIR", str(runtime_dir / "registry")))
+    if str(auth_dir) == "/res/runtime/registry":
+        auth_dir = runtime_dir / "registry"
+    CONFIG["REGISTRY_AUTH_DIR"] = str(auth_dir)
     certs_dir = auth_dir / "certs"
 
     for path in (auth_dir, certs_dir):
@@ -324,7 +328,11 @@ def prepare_kind_containerd_registry_config() -> dict[str, str]:
     username, password = require_registry_credentials()
     auth_b64 = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
 
-    auth_dir = Path(config_str(CONFIG, "REGISTRY_AUTH_DIR", "/res/runtime/registry"))
+    runtime_dir = Path(config_str(CONFIG, "RUNTIME_DIR", "/res/runtime"))
+    auth_dir = Path(config_str(CONFIG, "REGISTRY_AUTH_DIR", str(runtime_dir / "registry")))
+    if str(auth_dir) == "/res/runtime/registry":
+        auth_dir = runtime_dir / "registry"
+    CONFIG["REGISTRY_AUTH_DIR"] = str(auth_dir)
     root_dir = auth_dir / "containerd-certs.d"
     registry_dir = root_dir / hostport
     registry_dir.mkdir(parents=True, exist_ok=True)
@@ -368,14 +376,8 @@ def prepare_kind_containerd_registry_config() -> dict[str, str]:
 
 
 def configure_compose_port_binding() -> None:
-    """Expose Compose-published ports where the outer runtime can reach them."""
-    if config_bool(CONFIG, "HOST_SOCKET", False):
-        CONFIG["COMPOSE_PORT_BIND_ADDR"] = (
-            "0.0.0.0" if config_bool(CONFIG, "PROXY_BIND_ALL", False) else "127.0.0.1"
-        )
-    else:
-        CONFIG["COMPOSE_PORT_BIND_ADDR"] = "0.0.0.0"
-
+    """Bind Compose-published ports on all interfaces inside the active Docker daemon."""
+    CONFIG["COMPOSE_PORT_BIND_ADDR"] = "0.0.0.0"
     CONFIG["COMPOSE_PARALLEL_LIMIT"] = str(
         config_int(CONFIG, "DOCKER_BUILD_PARALLELISM", 4, minimum=1)
     )
@@ -383,7 +385,10 @@ def configure_compose_port_binding() -> None:
 
 def prepare_attacker_env_file() -> dict[str, object]:
     """Write dynamic attacker env vars that cannot be listed statically in Compose."""
-    attacker_dir = Path(config_str(CONFIG, "ATTACKER_RUNTIME_DIR", "/res/runtime/attacker"))
+    runtime_dir = Path(config_str(CONFIG, "RUNTIME_DIR", "/res/runtime"))
+    attacker_dir = Path(config_str(CONFIG, "ATTACKER_RUNTIME_DIR", str(runtime_dir / "attacker")))
+    if str(attacker_dir) == "/res/runtime/attacker":
+        attacker_dir = runtime_dir / "attacker"
     attacker_dir.mkdir(parents=True, exist_ok=True)
 
     env_file = attacker_dir / "attacker.env"
@@ -395,7 +400,7 @@ def prepare_attacker_env_file() -> dict[str, object]:
 
     env_file.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
-    CONFIG["COMPOSE_ATTACKER_ENV_FILE"] = str(docker_bind_source(env_file, CONFIG))
+    CONFIG["COMPOSE_ATTACKER_ENV_FILE"] = str(env_file)
     CONFIG["ATTACKER_RUNTIME_DIR"] = str(attacker_dir)
 
     return {
@@ -433,7 +438,9 @@ def main() -> None:
     set_state_value(STATE, "kind_containerd_registry_config", prepare_kind_containerd_registry_config())
     set_state_value(STATE, "attacker_env_file", prepare_attacker_env_file())
 
-    CONFIG["COMPOSE_PROJECT_NAME"] = config_str(CONFIG, "COMPOSE_PROJECT_NAME", "honeypot-underlay")
+    lab_name = config_str(CONFIG, "LAB_NAME", config_str(CONFIG, "CLUSTER_PROFILE", "honeypotlab"), allow_empty=False)
+    CONFIG["COMPOSE_PROJECT_NAME"] = config_str(CONFIG, "COMPOSE_PROJECT_NAME", f"honeypot-{lab_name}")
+    CONFIG["CP_NETWORK"] = config_str(CONFIG, "CP_NETWORK", f"kind-{lab_name}")
 
     compose_services = ["registry"]
     compose_build_services: list[str] = []
@@ -453,10 +460,6 @@ def main() -> None:
     if config_bool(CONFIG, "LOAD_GENERATOR_ENABLE", True):
         compose_services.append("load-generator")
         compose_build_services.append("load-generator")
-
-    if config_bool(CONFIG, "PROXY_ENABLE", True):
-        compose_services.append("router")
-        compose_build_services.append("router")
 
     CONFIG["COMPOSE_SERVICES"] = compose_services
     CONFIG["COMPOSE_DEPLOY_SERVICES"] = compose_services

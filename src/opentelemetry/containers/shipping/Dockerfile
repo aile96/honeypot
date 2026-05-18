@@ -12,13 +12,13 @@ RUN echo Building on ${BUILDPLATFORM} for ${TARGETPLATFORM}
 
 # Check if we are doing cross-compilation, if so we need to add in some more dependencies and run rustup
 RUN if [ "${TARGETPLATFORM}" = "${BUILDPLATFORM}" ] ; then \
-        apt-get update && apt-get install --no-install-recommends -y g++=4:12.2.0-3 libc6-dev=2.36-9+deb12u13 libprotobuf-dev=3.21.12-3 protobuf-compiler=3.21.12-3 ca-certificates=20230311+deb12u1; \
+        apt-get update && apt-get install --no-install-recommends -y g++ libc6-dev libprotobuf-dev protobuf-compiler ca-certificates; \
     elif [ "${TARGETPLATFORM}" = "linux/arm64" ] ; then \
-        apt-get update && apt-get install --no-install-recommends -y g++-aarch64-linux-gnu=4:12.2.0-3 libc6-dev-arm64-cross=2.36-8cross1 libprotobuf-dev=3.21.12-3 protobuf-compiler=3.21.12-3 ca-certificates=20230311+deb12u1 && \
+        apt-get update && apt-get install --no-install-recommends -y g++-aarch64-linux-gnu libc6-dev-arm64-cross libprotobuf-dev protobuf-compiler ca-certificates && \
         rustup target add aarch64-unknown-linux-gnu && \
         rustup toolchain install ${RUST_TOOLCHAIN_VERSION}-aarch64-unknown-linux-gnu; \
     elif [ "${TARGETPLATFORM}" = "linux/amd64" ] ; then \
-        apt-get update && apt-get install --no-install-recommends -y g++-x86-64-linux-gnu libc6-amd64-cross=2.36-8cross1 libprotobuf-dev=3.21.12-3 protobuf-compiler=3.21.12-3 ca-certificates=20230311+deb12u1 && \
+        apt-get update && apt-get install --no-install-recommends -y g++-x86-64-linux-gnu libc6-amd64-cross libprotobuf-dev protobuf-compiler ca-certificates && \
         rustup target add x86_64-unknown-linux-gnu && \
         rustup toolchain install ${RUST_TOOLCHAIN_VERSION}-x86_64-unknown-linux-gnu; \
     else \

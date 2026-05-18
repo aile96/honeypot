@@ -191,6 +191,12 @@ load_env_file() {
         value="$raw"
       fi
 
+      # Keep explicit environment overrides such as LAB_NAME=demo ./start.sh.
+      if [[ -v "$key" ]]; then
+        export "$key"
+        continue
+      fi
+
       # Assign the parsed value to the variable named by $key.
       printf -v "$key" '%s' "$value"
 

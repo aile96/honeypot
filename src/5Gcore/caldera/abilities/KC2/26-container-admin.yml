@@ -1,4 +1,4 @@
-- id: 20000000-0000-0000-0000-000000000007
+- id: 20000000-0000-0000-0000-000000000006
   name: Container admin execution
   description: Using container administrator commands to obtain every information from the DBs.
   tactic: execution

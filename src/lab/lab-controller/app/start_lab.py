@@ -59,10 +59,18 @@ _MISSING = object()
 
 # Dockerfile ENV values that are still meaningful to the pipeline runner.
 DOCKERFILE_PIPELINE_ENV_KEYS = (
+    "LAB_NAME",
     "CLUSTER_PROFILE",
     "ENV_FILE",
     "RES_DIR",
-    "GENERIC_SVC_PORT",
+    "RUNTIME_DIR",
+    "RESULTS_DIR",
+    "GENERATED_DIR",
+    "STATE_FILE",
+    "COMPOSE_PROJECT_NAME",
+    "CP_NETWORK",
+    "KUBE_CONTEXT",
+    "CONTROLLER_PROXY_CONTAINER_PORT",
     "EXPOSE_TO_HOST",
     "HOST_SOCKET",
     "PROXY_BIND_ALL",
@@ -73,9 +81,17 @@ DOCKERFILE_PIPELINE_ENV_KEYS = (
 START_SH_PIPELINE_ENV_KEYS = (
     "CODE_ROOT",
     "ENV_FILE",
+    "LAB_NAME",
     "CLUSTER_PROFILE",
     "RES_DIR",
-    "GENERIC_SVC_PORT",
+    "RUNTIME_DIR",
+    "RESULTS_DIR",
+    "GENERATED_DIR",
+    "STATE_FILE",
+    "COMPOSE_PROJECT_NAME",
+    "CP_NETWORK",
+    "KUBE_CONTEXT",
+    "CONTROLLER_PROXY_CONTAINER_PORT",
     "EXPOSE_TO_HOST",
     "HOST_SOCKET",
     "PROXY_BIND_ALL",
@@ -98,8 +114,7 @@ PIPELINE_REQUIRED_CONFIG_KEYS = (
     "CODE_ROOT",
     "ENV_FILE",
     "RES_DIR",
-    "CLUSTER_PROFILE",
-    "GENERIC_SVC_PORT",
+    "LAB_NAME",
     "EXPOSE_TO_HOST",
     "BUILD_HELPER_CACHE_DIR",
     "HOST_CODE_ROOT",
@@ -448,6 +463,14 @@ def install_pipeline_defaults(config: Config) -> None:
     code_root = Path(str(config.get("CODE_ROOT", DEFAULT_CODE_ROOT)))
     set_config_default(config, "CODE_ROOT", str(code_root))
 
+    lab_name = str(config.get("LAB_NAME") or config.get("CLUSTER_PROFILE") or "honeypotlab").strip()
+    set_config_default(config, "LAB_NAME", lab_name)
+    # Compatibility for target code that still reads CLUSTER_PROFILE.
+    config["CLUSTER_PROFILE"] = lab_name
+    set_config_default(config, "COMPOSE_PROJECT_NAME", f"honeypot-{lab_name}")
+    set_config_default(config, "CP_NETWORK", f"kind-{lab_name}")
+    set_config_default(config, "KUBE_CONTEXT", f"kind-{lab_name}")
+
     set_config_default(config, "PIPELINE_ROOT", DEFAULT_PIPELINE_ROOT)
     pipeline_root = Path(str(config["PIPELINE_ROOT"]))
 
@@ -459,17 +482,28 @@ def install_pipeline_defaults(config: Config) -> None:
     set_config_default(config, "HELM_CHARTS_ROOT", str(code_root / "helm-charts"))
 
     res_dir = str(config.get("RES_DIR", DEFAULT_RES_DIR))
-    runtime_dir = Path(res_dir) / "runtime"
-    generated_dir = runtime_dir / "generated"
-    results_dir = Path(res_dir) / "results"
+    lab_name = str(config["LAB_NAME"])
+    runtime_dir = Path(str(config.get("RUNTIME_DIR") or Path(res_dir) / "runtime" / lab_name))
+    generated_dir = Path(str(config.get("GENERATED_DIR") or runtime_dir / "generated"))
+    results_dir = Path(str(config.get("RESULTS_DIR") or Path(res_dir) / "results" / lab_name))
 
     set_config_default(config, "RES_DIR", res_dir)
     set_config_default(config, "RUNTIME_DIR", str(runtime_dir))
     set_config_default(config, "GENERATED_DIR", str(generated_dir))
     set_config_default(config, "RESULTS_DIR", str(results_dir))
-    set_config_default(config, "STATE_FILE", str(generated_dir / "lab-state.json"))
+    set_config_default(config, "STATE_FILE", str(config.get("STATE_FILE") or generated_dir / "lab-state.json"))
     set_config_default(config, "STATE_DIR", str(generated_dir))
-    set_config_default(config, "CACHE_DIR", str(Path(res_dir) / "cache" / "images"))
+    set_config_default(config, "CACHE_DIR", str(Path(res_dir) / "cache" / "images" / lab_name))
+
+    if str(config.get("REGISTRY_AUTH_DIR", "")).strip() in {"", "/res/runtime/registry"}:
+        config["REGISTRY_AUTH_DIR"] = str(runtime_dir / "registry")
+    if str(config.get("REGISTRY_CA_FILE", "")).strip() in {"", "/res/runtime/registry/certs/rootca.crt"}:
+        config["REGISTRY_CA_FILE"] = str(runtime_dir / "registry" / "certs" / "rootca.crt")
+    config.setdefault("COMPOSE_REGISTRY_AUTH_DIR", str(runtime_dir / "registry"))
+    config.setdefault("COMPOSE_REGISTRY_CERTS_DIR", str(runtime_dir / "registry" / "certs"))
+    config.setdefault("COMPOSE_ATTACKER_ENV_FILE", str(runtime_dir / "attacker" / "attacker.env"))
+    config.setdefault("COMPOSE_ATTACKER_IPHOST_FILE", str(runtime_dir / "attacker" / "iphost"))
+    config.setdefault("COMPOSE_ATTACKER_APISERVER_DIR", str(runtime_dir / "attacker" / "apiserver"))
 
     if not pipeline_root.is_absolute():
         die(f"PIPELINE_ROOT must be an absolute path, got: {pipeline_root}")
@@ -504,8 +538,6 @@ def validate_pipeline_config(config: Config) -> None:
             die(str(exc))
 
         config[name] = normalized
-
-    require_port_config(config, "GENERIC_SVC_PORT")
 
     for name in PIPELINE_ABSOLUTE_PATH_KEYS:
         if name not in config or config[name] is None or str(config[name]).strip() == "":

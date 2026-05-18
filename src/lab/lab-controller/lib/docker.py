@@ -35,6 +35,27 @@ def docker_bind_source(path: Path, config: Mapping[str, Any] | None = None) -> P
     if config is None or not config_bool(config, "HOST_SOCKET", False):
         return source
 
+    dynamic_mappings = [
+        ("DOCKER_DATA_ROOT", "HOST_CONTROLLER_DOCKER_DATA_DIR"),
+        ("BUILD_HELPER_CACHE_DIR", "HOST_BUILD_HELPER_CACHE_DIR"),
+        ("RUNTIME_DIR", "HOST_RUNTIME_DIR"),
+        ("RESULTS_DIR", "HOST_CONTROLLER_RESULTS_DIR"),
+    ]
+    for container_config_name, host_config_name in dynamic_mappings:
+        container_prefix_raw = config_str(config, container_config_name, "").strip()
+        host_prefix_raw = config_str(config, host_config_name, "").strip()
+        if not container_prefix_raw or not host_prefix_raw:
+            continue
+
+        container_prefix = Path(container_prefix_raw).resolve()
+        host_prefix = Path(host_prefix_raw).resolve()
+        try:
+            relative = source.relative_to(container_prefix)
+        except ValueError:
+            continue
+
+        return (host_prefix / relative).resolve()
+
     mount_mappings = [
         ("/res/cache/images", "HOST_CONTROLLER_DOCKER_DATA_DIR"),
         ("/res/cache/build-helper", "HOST_BUILD_HELPER_CACHE_DIR"),
@@ -97,7 +118,13 @@ def ensure_docker_network(network_name: str, config: Config | None = None) -> No
     """Create a Docker network when missing."""
     if docker_network_exists(network_name, config):
         return
-    run_cmd(["docker", "network", "create", network_name], config=config)
+    command = ["docker", "network", "create"]
+    if config is not None:
+        lab_name = config_str(config, "LAB_NAME", config_str(config, "CLUSTER_PROFILE", ""), allow_empty=True).strip()
+        if lab_name:
+            command.extend(["--label", f"honeypot.lab={lab_name}"])
+    command.append(network_name)
+    run_cmd(command, config=config)
     log(f"Created Docker network {network_name}.")
 
 

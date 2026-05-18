@@ -55,10 +55,13 @@ ENV PYTHONUNBUFFERED=1 \
     FIRST_SCRIPT=/app/start_lab.py \
     SECOND_SCRIPT=/start_controller.py \
     IDLE_SLEEP_SECONDS=3600 \
+    LAB_NAME=honeypotlab \
     CLUSTER_PROFILE=honeypotlab \
     ENV_FILE=/workdir/code/conf-files/variables.py \
     RES_DIR=/res \
-    GENERIC_SVC_PORT=8085 \
+    RUNTIME_DIR=/res/runtime/honeypotlab \
+    RESULTS_DIR=/res/results/honeypotlab \
+    CONTROLLER_PROXY_CONTAINER_PORT=18080 \
     EXPOSE_TO_HOST=true
 
 # Fail early if someone builds this for the wrong architecture.
@@ -191,11 +194,14 @@ RUN kubectl version --client=true \
 # Application files.
 COPY lab/lab-controller/entrypoint.py /usr/local/bin/entrypoint.py
 COPY lab/lab-controller/start_controller.py /start_controller.py
+COPY lab/lab-controller/proxy_controller.py /app/proxy_controller.py
 COPY lab/lab-controller/app/ /app/
 COPY lab/lab-controller/lib/ /app/lib/
 
 RUN chmod +x /usr/local/bin/entrypoint.py \
-    && chmod +x /start_controller.py
+    && chmod +x /start_controller.py \
+    && mkdir -p /start \
+    && touch /start/run
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.py"]
 CMD []

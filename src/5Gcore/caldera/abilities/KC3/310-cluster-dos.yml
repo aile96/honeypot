@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/flagatt-5gcore.py cluster-dos
+          /opt/caldera/KC5/service-rerun.py
         timeout: 900
         parsers: []
         cleanup: ""

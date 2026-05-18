@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        samba=2:4.22.8+dfsg-0+deb13u1 smbclient=2:4.22.8+dfsg-0+deb13u1 tini=0.19.0-3+b6 ca-certificates=20250419 tzdata=2026a-0+deb13u1 procps=2:4.0.4-9 netcat-openbsd=1.229-1 gettext-base=0.23.1-2 iproute2=6.15.0-1 && \
+        samba smbclient tini ca-certificates tzdata procps netcat-openbsd gettext-base iproute2 && \
     rm -rf /var/lib/apt/lists/*
 
 # Standard directories: /data (config, state) and /share (content)

@@ -8,7 +8,7 @@ ENV RCE_ENABLED="$RCE_ENABLED"
 # Install sshd + tini for a clean PID1
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
- openssh-server=1:10.0p1-7+deb13u2 tini=0.19.0-3+b6 curl=8.14.1-2+deb13u2 containerd=1.7.24~ds1-6+deb13u1 docker.io=26.1.5+dfsg1-9+b12 unzip=6.0-29 jq=1.7.1-6+deb13u1 \
+ openssh-server tini curl containerd docker-cli unzip jq \
  && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \

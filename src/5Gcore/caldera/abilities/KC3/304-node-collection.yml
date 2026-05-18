@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/flagatt-5gcore.py node-collection
+          /opt/caldera/KC5/node-collection.py
         timeout: 1800
         parsers: []
         cleanup: ""

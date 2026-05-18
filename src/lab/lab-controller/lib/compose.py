@@ -27,19 +27,15 @@ def compose_file_path(config: Mapping[str, Any]) -> Path:
 
 def compose_project_name(config: Mapping[str, Any]) -> str:
     """Return the Compose project name for the underlay stack."""
-    return config_str(config, "COMPOSE_PROJECT_NAME", "honeypot-underlay", allow_empty=False)
+    lab_name = config_str(config, "LAB_NAME", config_str(config, "CLUSTER_PROFILE", "honeypotlab"), allow_empty=False)
+    return config_str(config, "COMPOSE_PROJECT_NAME", f"honeypot-{lab_name}", allow_empty=False)
 
 
 def compose_environment(config: Mapping[str, Any]) -> dict[str, str]:
     """Build the environment exposed to Docker Compose."""
     env = config_to_env(config)
     env["IMAGE_VERSION"] = image_version(config)
-    if config_bool(config, "HOST_SOCKET", False):
-        default_bind_addr = config_str(config, "PROXY_BIND_ALL", "false").strip().lower()
-        default_bind_addr = "0.0.0.0" if default_bind_addr in {"1", "true", "yes", "y", "on"} else "127.0.0.1"
-    else:
-        default_bind_addr = "0.0.0.0"
-    env.setdefault("COMPOSE_PORT_BIND_ADDR", default_bind_addr)
+    env.setdefault("COMPOSE_PORT_BIND_ADDR", "0.0.0.0")
     env.setdefault("COMPOSE_PARALLEL_LIMIT", config_str(config, "DOCKER_BUILD_PARALLELISM", "4"))
 
     return env

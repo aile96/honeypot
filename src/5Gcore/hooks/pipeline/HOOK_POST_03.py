@@ -22,6 +22,14 @@ from lib import (
 )
 
 
+def lab_container_name(base: str) -> str:
+    lab_name = config_str(CONFIG, "LAB_NAME", config_str(CONFIG, "CLUSTER_PROFILE", "honeypotlab"), allow_empty=False)
+    suffix = f"-{lab_name}"
+    if base.endswith(suffix):
+        return base
+    return f"{base}{suffix}"
+
+
 def coredns_configmap() -> dict[str, Any]:
     completed = kubectl(
         CONFIG,
@@ -191,15 +199,16 @@ def configure_coredns() -> None:
         return
 
     attacker = config_str(CONFIG, "ATTACKER", "attacker", allow_empty=False)
+    attacker_container = lab_container_name(attacker)
 
-    if not docker_container_exists(attacker, CONFIG):
-        warn(f"Container {attacker!r} not found. Skipping attacker DNS zone insertion.")
+    if not docker_container_exists(attacker_container, CONFIG):
+        warn(f"Container {attacker_container!r} not found. Skipping attacker DNS zone insertion.")
         set_state_value(STATE, "coredns_attacker_zone_inserted", False)
         return
 
-    docker_ip = docker_container_ip(attacker)
+    docker_ip = docker_container_ip(attacker_container)
     if not docker_ip:
-        die(f"Could not determine IP for docker container {attacker!r}.")
+        die(f"Could not determine IP for docker container {attacker_container!r}.")
 
     new_corefile, changed = insert_zone_block(corefile, attacker, docker_ip)
 
@@ -214,6 +223,7 @@ def configure_coredns() -> None:
         "coredns_attacker_zone",
         {
             "zone": attacker,
+            "container": attacker_container,
             "docker_ip": docker_ip,
             "inserted_or_present": True,
         },

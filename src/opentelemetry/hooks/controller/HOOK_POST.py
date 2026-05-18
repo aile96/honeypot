@@ -74,6 +74,23 @@ def docker_container_exists(name: str) -> bool:
     return rc == 0 and name in {line.strip() for line in out.splitlines()}
 
 
+def resolve_container_name(base: str) -> str:
+    rc, out, _ = run_capture(["docker", "ps", "-a", "--format", "{{.Names}}"])
+    if rc != 0:
+        return base
+
+    names = {line.strip() for line in out.splitlines()}
+    lab_name = os.getenv("LAB_NAME", "").strip()
+    candidates = [base]
+    if lab_name and not base.endswith(f"-{lab_name}"):
+        candidates.append(f"{base}-{lab_name}")
+
+    for candidate in candidates:
+        if candidate in names:
+            return candidate
+    return base
+
+
 def docker_exec_stdout(container: str, args: list[str], *, timeout: int = 60) -> str:
     rc, out, err = run_capture(["docker", "exec", container, *args], timeout=timeout)
     if rc != 0:
@@ -83,7 +100,7 @@ def docker_exec_stdout(container: str, args: list[str], *, timeout: int = 60) ->
 
 
 def copy_docker_kc_results(kc_key: str) -> None:
-    attacker = os.getenv("ATT_OUT", os.getenv("ATTACKER", "attacker"))
+    attacker = resolve_container_name(os.getenv("ATT_OUT", os.getenv("ATTACKER", "attacker")))
     if not docker_container_exists(attacker):
         log(f"attacker container {attacker!r} not found; skipping {kc_key} docker results")
         return
@@ -157,7 +174,7 @@ def discover_attacker_pod(namespace: str) -> str:
 
 
 def copy_caldera_event_logs() -> None:
-    caldera = os.getenv("CALDERA_SERVER", "caldera")
+    caldera = resolve_container_name(os.getenv("CALDERA_SERVER", "caldera"))
     if not docker_container_exists(caldera):
         log(f"Caldera container {caldera!r} not found; skipping event logs")
         return

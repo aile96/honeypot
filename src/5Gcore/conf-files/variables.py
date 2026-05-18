@@ -20,6 +20,9 @@ variables = [
 
     # Shared image tag used by local wrapper images and target helper images.
     {'name': 'IMAGE_VERSION', 'type': 'str', 'value': '2.0.2'},
+    {'name': 'RESTORE_LAB', 'type': 'bool', 'value': False},
+    {'name': 'RESTORE_LAB_MODE', 'type': 'str', 'value': 'soft'},
+    {'name': 'DESTROY_RUN_FILE', 'type': 'bool', 'value': False},
 
     # 5Gcore underlay services used by the Caldera kill chains.
     {'name': 'CALDERA_SERVER_ENABLE', 'type': 'bool', 'value': True},
@@ -27,9 +30,10 @@ variables = [
     {'name': 'CALDERA_SERVER', 'type': 'str', 'value': 'caldera'},
     {'name': 'CALDERA_PORT', 'type': 'int', 'value': 8888},
     {'name': 'ATTACKER', 'type': 'str', 'value': 'attacker'},
-    {'name': 'CP_NETWORK', 'type': 'str', 'value': 'kind'},
-    {'name': 'COMPOSE_PROJECT_NAME', 'type': 'str', 'value': 'honeypot-underlay'},
+    {'name': 'CP_NETWORK', 'type': 'str', 'value': 'kind-honeypotlab'},
+    {'name': 'COMPOSE_PROJECT_NAME', 'type': 'str', 'value': 'honeypot-honeypotlab'},
     {'name': 'SAMBA_ENABLE', 'type': 'bool', 'value': True},
+    {'name': 'CILIUM_ENABLED', 'type': 'bool', 'value': True},
 
     # Intentional PCF lab surface used by 5Gcore KC2.
     {'name': 'PCF_HOST_NETWORK', 'type': 'bool', 'value': True},
@@ -43,6 +47,7 @@ variables = [
 
     # Reusable controller image deployed as the registry image updater.
     {'name': 'IMAGE_UPDATER_ENABLED', 'type': 'bool', 'value': True},
+    {'name': 'IMAGE_UPDATER_NAMESPACE', 'type': 'str', 'value': 'kube-system'},
     {'name': 'IMAGE_UPDATER_RUN_EVERY', 'type': 'str', 'value': '1m'},
 
     # Local HTTPS registry used by Skaffold builds and Kind image pulls.

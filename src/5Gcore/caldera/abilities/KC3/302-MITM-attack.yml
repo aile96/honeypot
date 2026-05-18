@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/flagatt-5gcore.py mitm
+          /opt/caldera/KC5/MITM-attack.py
         timeout: 900
         parsers: []
         cleanup: ""

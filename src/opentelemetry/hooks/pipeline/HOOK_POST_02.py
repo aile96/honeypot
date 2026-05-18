@@ -17,13 +17,19 @@ from lib import (
 )
 
 
+def lab_container_name(base: str) -> str:
+    """Return the physical Docker container name for a lab-scoped service."""
+    lab_name = config_str(CONFIG, "LAB_NAME", config_str(CONFIG, "CLUSTER_PROFILE", "honeypotlab"), allow_empty=False)
+    return f"{base}-{lab_name}"
+
+
 def map_registry_hostname() -> None:
-    """Map the registry container name inside the controller /etc/hosts."""
+    """Map the registry service alias inside the controller /etc/hosts."""
     registry_name = config_str(CONFIG, "REGISTRY_NAME", "registry").strip()
     if not registry_name:
         return
 
-    registry_ip = docker_first_container_ip(registry_name, CONFIG)
+    registry_ip = docker_first_container_ip(lab_container_name(registry_name), CONFIG)
     if not registry_ip:
         log(f"Registry container {registry_name!r} has no Docker IP yet; skipping /etc/hosts mapping.")
         return
@@ -53,17 +59,15 @@ def map_underlay_hostnames(services: list[str]) -> None:
     """Map well-known underlay hostnames in the controller /etc/hosts."""
     mappings: dict[str, str] = {}
     service_containers = {
-        "registry": config_str(CONFIG, "REGISTRY_NAME", "registry"),
-        "caldera": config_str(CONFIG, "CALDERA_SERVER", "caldera"),
-        "attacker": config_str(CONFIG, "ATTACKER", "attacker"),
-        "router": config_str(CONFIG, "PROXY", "router"),
-        "samba": "samba-pv",
-        "load-generator": "load-generator",
+        "registry": lab_container_name(config_str(CONFIG, "REGISTRY_NAME", "registry")),
+        "caldera": lab_container_name(config_str(CONFIG, "CALDERA_SERVER", "caldera")),
+        "attacker": lab_container_name(config_str(CONFIG, "ATTACKER", "attacker")),
+        "samba": lab_container_name("samba-pv"),
+        "load-generator": lab_container_name("load-generator"),
     }
     service_aliases = {
         "caldera": ["caldera.dock"],
         "attacker": ["caldera.outs"],
-        "router": ["proxy"],
         "samba": ["samba-pv"],
     }
 

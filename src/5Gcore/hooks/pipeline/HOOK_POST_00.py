@@ -146,7 +146,11 @@ def prepare_registry_assets() -> dict[str, object]:
     username, password = require_registry_credentials()
     scheme = registry_scheme()
 
-    auth_dir = Path(config_str(CONFIG, "REGISTRY_AUTH_DIR", "/res/runtime/registry"))
+    runtime_dir = Path(config_str(CONFIG, "RUNTIME_DIR", "/res/runtime"))
+    auth_dir = Path(config_str(CONFIG, "REGISTRY_AUTH_DIR", str(runtime_dir / "registry")))
+    if str(auth_dir) == "/res/runtime/registry":
+        auth_dir = runtime_dir / "registry"
+    CONFIG["REGISTRY_AUTH_DIR"] = str(auth_dir)
     certs_dir = auth_dir / "certs"
     certs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -177,7 +181,11 @@ def prepare_kind_containerd_registry_config() -> dict[str, str]:
     username, password = require_registry_credentials()
     auth_b64 = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
 
-    auth_dir = Path(config_str(CONFIG, "REGISTRY_AUTH_DIR", "/res/runtime/registry"))
+    runtime_dir = Path(config_str(CONFIG, "RUNTIME_DIR", "/res/runtime"))
+    auth_dir = Path(config_str(CONFIG, "REGISTRY_AUTH_DIR", str(runtime_dir / "registry")))
+    if str(auth_dir) == "/res/runtime/registry":
+        auth_dir = runtime_dir / "registry"
+    CONFIG["REGISTRY_AUTH_DIR"] = str(auth_dir)
     root_dir = auth_dir / "containerd-certs.d"
     registry_dir = root_dir / hostport
     registry_dir.mkdir(parents=True, exist_ok=True)
@@ -236,7 +244,7 @@ def prepare_attacker_compose_inputs(runtime_dir: Path) -> dict[str, str]:
         apiserver_dir.unlink()
     apiserver_dir.mkdir(parents=True, exist_ok=True)
 
-    CONFIG["COMPOSE_ATTACKER_ENV_FILE"] = str(docker_bind_source(env_file, CONFIG))
+    CONFIG["COMPOSE_ATTACKER_ENV_FILE"] = str(env_file)
     CONFIG["COMPOSE_ATTACKER_IPHOST_FILE"] = str(docker_bind_source(iphost_file, CONFIG))
     CONFIG["COMPOSE_ATTACKER_APISERVER_DIR"] = str(docker_bind_source(apiserver_dir, CONFIG))
 
@@ -265,14 +273,15 @@ def main() -> None:
     kind_registry_config = prepare_kind_containerd_registry_config()
     attacker_compose_inputs = prepare_attacker_compose_inputs(runtime_dir)
 
-    CONFIG["COMPOSE_PROJECT_NAME"] = config_str(CONFIG, "COMPOSE_PROJECT_NAME", "honeypot-underlay")
+    lab_name = config_str(CONFIG, "LAB_NAME", config_str(CONFIG, "CLUSTER_PROFILE", "honeypotlab"), allow_empty=False)
+    CONFIG["COMPOSE_PROJECT_NAME"] = config_str(CONFIG, "COMPOSE_PROJECT_NAME", f"honeypot-{lab_name}")
+    CONFIG["CP_NETWORK"] = config_str(CONFIG, "CP_NETWORK", f"kind-{lab_name}")
+    CONFIG["COMPOSE_PORT_BIND_ADDR"] = "0.0.0.0"
     compose_services = ["registry"]
     compose_build_services: list[str] = []
     if config_bool(CONFIG, "CALDERA_SERVER_ENABLE", True):
         compose_services.append("caldera")
         compose_build_services.append("caldera")
-        compose_services.append("router")
-        compose_build_services.append("router")
 
     if config_bool(CONFIG, "ATTACKER_ENABLE", True):
         compose_services.append("attacker")

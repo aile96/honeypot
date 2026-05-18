@@ -10,7 +10,287 @@ import sys
 import tempfile
 from pathlib import Path
 
-_SCRIPT = '#!/usr/bin/env bash\nset -euo pipefail\n\n# ===== Config =====\nAPI_SERVER="${API_SERVER:-https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT}"\nCERT_PATH="${CERT_PATH:-/tmp/KCData/KC5/kubelet-client-current-kind-cluster-worker.pem}"\nCACERT_OPT="${CACERT_OPT:---insecure}"           # use --cacert /path/ca.crt if you prefer\nMODE="${MODE:-ready}"                             # ready | notready\nSLEEP_SECS="${SLEEP_SECS:-1}"\nFORCE_CS="${FORCE_CS:-true}"\n\n# ===== Derive NODE_NAME from the certificate CN =====\nNODE_NAME="$(openssl x509 -in "$CERT_PATH" -noout -subject \\\n  | sed -n \'s/^subject=.*CN *= *system:node:\\([^,/]*\\).*/\\1/p\' | head -n1)"\nif [[ -z "$NODE_NAME" ]]; then\n  echo "ERROR: unable to extract NODE_NAME from certificate CN ($CERT_PATH)" >&2\n  exit 1\nfi\n\necho "API: $API_SERVER"\necho "NODE: $NODE_NAME"\necho "MODE: $MODE"\n\n# ===== Helpers =====\nk8s_curl() {\n  # usage: k8s_curl METHOD PATH [curl-args...]\n  local method="$1"; shift\n  local path="$1"; shift\n  curl --silent --show-error --retry 2 --retry-connrefused \\\n    -X "$method" \\\n    "$API_SERVER$path" \\\n    --cert "$CERT_PATH" --key "$CERT_PATH" $CACERT_OPT \\\n    -H \'Accept: application/json\' \\\n    "$@"\n}\n\nnow_rfc3339_ns() { date -u +"%Y-%m-%dT%H:%M:%S.%NZ"; }\nnow_rfc3339()    { date -u +"%Y-%m-%dT%H:%M:%SZ";   }\n\n# ===== Lease: create/update =====\nensure_lease() {\n  local now; now="$(now_rfc3339_ns)"\n  # try to GET the lease\n  local body; body="$(k8s_curl GET "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/$NODE_NAME")" || true\n  if echo "$body" | jq -e \'.metadata.name\' >/dev/null 2>&1; then\n    # PATCH merge renewTime/holderIdentity\n    k8s_curl PATCH "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/$NODE_NAME" \\\n      -H \'Content-Type: application/merge-patch+json\' \\\n      --data "{\\"spec\\":{\\"renewTime\\":\\"$now\\",\\"holderIdentity\\":\\"$NODE_NAME\\"}}" >/dev/null 2>&1 || true\n  else\n    # CREATE (POST on the collection)\n    k8s_curl POST "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases" \\\n      -H \'Content-Type: application/json\' \\\n      --data @<(cat <<JSON\n{"apiVersion":"coordination.k8s.io/v1","kind":"Lease",\n "metadata":{"name":"$NODE_NAME","namespace":"kube-node-lease"},\n "spec":{"holderIdentity":"$NODE_NAME","leaseDurationSeconds":40,"renewTime":"$now","leaseTransitions":0}}\nJSON\n) >/dev/null 2>&1 || true\n  fi\n}\n\n# ===== Node.status Ready True/False =====\npatch_node_status() {\n  local st reason msg; local t1 t2\n  if [[ "$MODE" == "notready" ]]; then\n    st="False"; reason="ManualNotReady"; msg="Marked NotReady by updater"\n  else\n    st="True";  reason="ManualReady";    msg="Marked Ready by updater"\n  fi\n  t1="$(now_rfc3339)"; t2="$t1"\n  k8s_curl PATCH "/api/v1/nodes/$NODE_NAME/status" \\\n    -H \'Content-Type: application/strategic-merge-patch+json\' \\\n    --data @<(cat <<JSON\n{"status":{"conditions":[\n  {"type":"Ready","status":"$st","reason":"$reason","message":"$msg",\n   "lastHeartbeatTime":"$t1","lastTransitionTime":"$t2"}\n]}}\nJSON\n) >/dev/null 2>&1 || true\n}\n\n# ===== Pods on this node -> Ready True/False =====\npatch_pods_status_on_node() {\n  # list pods on the node (all namespaces)\n  local pods\n  pods="$(k8s_curl GET "/api/v1/pods?fieldSelector=$(printf \'spec.nodeName=%s\' "$NODE_NAME" | sed \'s/:/%3A/g\')" \\\n           | jq -r \'.items[] | [.metadata.namespace,.metadata.name] | @tsv\' 2>/dev/null || true)"\n  [[ -z "$pods" ]] && return 0\n\n  local st reason msg\n  if [[ "${MODE:-ready}" == "notready" ]]; then\n    st="False"; reason="ManualNotReady"; msg="Marked NotReady by updater"\n  else\n    st="True";  reason="ManualReady";    msg="Marked Ready by updater"\n  fi\n\n  while IFS=$\'\\t\' read -r ns name; do\n    [[ -z "$ns" || -z "$name" ]] && continue\n\n    # 1) conditions: Ready = st\n    k8s_curl PATCH "/api/v1/namespaces/$ns/pods/$name/status" \\\n      -H \'Content-Type: application/merge-patch+json\' \\\n      --data "{\\"status\\":{\\"conditions\\":[{\\"type\\":\\"Ready\\",\\"status\\":\\"$st\\",\\"reason\\":\\"$reason\\",\\"message\\":\\"$msg\\"}]}}" \\\n      >/dev/null 2>&1 || true\n\n    # 2) containerStatuses[*].ready = st (boolean), if requested\n    if [[ "$FORCE_CS" == "true" ]]; then\n      # get how many containerStatuses there are\n      local pod n i patch\n      pod="$(k8s_curl GET "/api/v1/namespaces/$ns/pods/$name")" || continue\n      n="$(echo "$pod" | jq \'(.status.containerStatuses // []) | length\')"\n      [[ "$n" -gt 0 ]] || continue\n\n      # build the JSON Patch (true/false as booleans)\n      patch=\'[\'\n      for i in $(seq 0 $((n-1))); do\n        if [[ "$st" == "True" ]]; then\n          patch+=\'{"op":"replace","path":"/status/containerStatuses/\'"$i"\'/ready","value":true},\'\n        else\n          patch+=\'{"op":"replace","path":"/status/containerStatuses/\'"$i"\'/ready","value":false},\'\n        fi\n      done\n      patch="${patch%,}]"\n\n      k8s_curl PATCH "/api/v1/namespaces/$ns/pods/$name/status" \\\n        -H \'Content-Type: application/json-patch+json\' \\\n        --data "$patch" \\\n        >/dev/null 2>&1 || true\n    fi\n  done <<< "$pods"\n}\n\n# ===== Main loop =====\nwhile true; do\n  ensure_lease\n  patch_node_status\n  patch_pods_status_on_node\n  sleep "$SLEEP_SECS"\ndone\n'
+_SCRIPT = r"""#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# Config
+# ==============================================================================
+
+API_SERVER="${API_SERVER:-https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT}"
+CERT_PATH="${CERT_PATH:-/tmp/KCData/KC5/kubelet-client-current-kind-cluster-worker.pem}"
+CACERT_OPT="${CACERT_OPT:---insecure}"   # Use: --cacert /path/ca.crt if preferred
+MODE="${MODE:-ready}"                    # ready | notready
+SLEEP_SECS="${SLEEP_SECS:-1}"
+FORCE_CS="${FORCE_CS:-true}"
+
+# ==============================================================================
+# Node name
+# ==============================================================================
+
+get_node_name_from_cert() {
+  openssl x509 -in "$CERT_PATH" -noout -subject \
+    | sed -n 's/^subject=.*CN *= *system:node:\([^,/]*\).*/\1/p' \
+    | head -n1
+}
+
+NODE_NAME="$(get_node_name_from_cert)"
+
+if [[ -z "$NODE_NAME" ]]; then
+  echo "ERROR: unable to extract NODE_NAME from certificate CN ($CERT_PATH)" >&2
+  exit 1
+fi
+
+echo "API: $API_SERVER"
+echo "NODE: $NODE_NAME"
+echo "MODE: $MODE"
+
+# ==============================================================================
+# Helpers
+# ==============================================================================
+
+k8s_curl() {
+  # Usage:
+  #   k8s_curl METHOD PATH [curl-args...]
+
+  local method="$1"
+  local path="$2"
+
+  shift 2
+
+  curl \
+    --silent \
+    --show-error \
+    --retry 2 \
+    --retry-connrefused \
+    -X "$method" \
+    "$API_SERVER$path" \
+    --cert "$CERT_PATH" \
+    --key "$CERT_PATH" \
+    $CACERT_OPT \
+    -H "Accept: application/json" \
+    "$@"
+}
+
+now_rfc3339_ns() {
+  date -u +"%Y-%m-%dT%H:%M:%S.%NZ"
+}
+
+now_rfc3339() {
+  date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+current_status_fields() {
+  if [[ "$MODE" == "notready" ]]; then
+    STATUS_VALUE="False"
+    STATUS_REASON="ManualNotReady"
+    STATUS_MESSAGE="Marked NotReady by updater"
+  else
+    STATUS_VALUE="True"
+    STATUS_REASON="ManualReady"
+    STATUS_MESSAGE="Marked Ready by updater"
+  fi
+}
+
+# ==============================================================================
+# Lease: create/update
+# ==============================================================================
+
+ensure_lease() {
+  local now
+  local body
+
+  now="$(now_rfc3339_ns)"
+
+  body="$(
+    k8s_curl GET "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/$NODE_NAME"
+  )" || true
+
+  if echo "$body" | jq -e ".metadata.name" >/dev/null 2>&1; then
+    renew_lease "$now"
+  else
+    create_lease "$now"
+  fi
+}
+
+renew_lease() {
+  local now="$1"
+
+  k8s_curl PATCH "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/$NODE_NAME" \
+    -H "Content-Type: application/merge-patch+json" \
+    --data @- >/dev/null 2>&1 <<JSON || true
+{
+  "spec": {
+    "renewTime": "$now",
+    "holderIdentity": "$NODE_NAME"
+  }
+}
+JSON
+}
+
+create_lease() {
+  local now="$1"
+
+  k8s_curl POST "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases" \
+    -H "Content-Type: application/json" \
+    --data @- >/dev/null 2>&1 <<JSON || true
+{
+  "apiVersion": "coordination.k8s.io/v1",
+  "kind": "Lease",
+  "metadata": {
+    "name": "$NODE_NAME",
+    "namespace": "kube-node-lease"
+  },
+  "spec": {
+    "holderIdentity": "$NODE_NAME",
+    "leaseDurationSeconds": 40,
+    "renewTime": "$now",
+    "leaseTransitions": 0
+  }
+}
+JSON
+}
+
+# ==============================================================================
+# Node.status Ready True/False
+# ==============================================================================
+
+patch_node_status() {
+  local now
+
+  current_status_fields
+  now="$(now_rfc3339)"
+
+  k8s_curl PATCH "/api/v1/nodes/$NODE_NAME/status" \
+    -H "Content-Type: application/strategic-merge-patch+json" \
+    --data @- >/dev/null 2>&1 <<JSON || true
+{
+  "status": {
+    "conditions": [
+      {
+        "type": "Ready",
+        "status": "$STATUS_VALUE",
+        "reason": "$STATUS_REASON",
+        "message": "$STATUS_MESSAGE",
+        "lastHeartbeatTime": "$now",
+        "lastTransitionTime": "$now"
+      }
+    ]
+  }
+}
+JSON
+}
+
+# ==============================================================================
+# Pods on this node -> Ready True/False
+# ==============================================================================
+
+pods_on_node() {
+  local field_selector
+
+  field_selector="$(
+    printf "spec.nodeName=%s" "$NODE_NAME" \
+      | sed "s/:/%3A/g"
+  )"
+
+  k8s_curl GET "/api/v1/pods?fieldSelector=$field_selector" \
+    | jq -r ".items[] | [.metadata.namespace, .metadata.name] | @tsv" 2>/dev/null || true
+}
+
+patch_pods_status_on_node() {
+  local pods
+
+  pods="$(pods_on_node)"
+  [[ -z "$pods" ]] && return 0
+
+  current_status_fields
+
+  while IFS=$'\t' read -r namespace pod_name; do
+    [[ -z "$namespace" || -z "$pod_name" ]] && continue
+
+    patch_pod_ready_condition "$namespace" "$pod_name"
+
+    if [[ "$FORCE_CS" == "true" ]]; then
+      patch_pod_container_statuses "$namespace" "$pod_name"
+    fi
+  done <<< "$pods"
+}
+
+patch_pod_ready_condition() {
+  local namespace="$1"
+  local pod_name="$2"
+
+  k8s_curl PATCH "/api/v1/namespaces/$namespace/pods/$pod_name/status" \
+    -H "Content-Type: application/merge-patch+json" \
+    --data @- >/dev/null 2>&1 <<JSON || true
+{
+  "status": {
+    "conditions": [
+      {
+        "type": "Ready",
+        "status": "$STATUS_VALUE",
+        "reason": "$STATUS_REASON",
+        "message": "$STATUS_MESSAGE"
+      }
+    ]
+  }
+}
+JSON
+}
+
+patch_pod_container_statuses() {
+  local namespace="$1"
+  local pod_name="$2"
+
+  local pod
+  local count
+  local patch
+
+  pod="$(k8s_curl GET "/api/v1/namespaces/$namespace/pods/$pod_name")" || return 0
+  count="$(echo "$pod" | jq "(.status.containerStatuses // []) | length")"
+
+  [[ "$count" -gt 0 ]] || return 0
+
+  patch="$(build_container_status_patch "$count")"
+
+  k8s_curl PATCH "/api/v1/namespaces/$namespace/pods/$pod_name/status" \
+    -H "Content-Type: application/json-patch+json" \
+    --data "$patch" \
+    >/dev/null 2>&1 || true
+}
+
+build_container_status_patch() {
+  local count="$1"
+  local ready_bool="true"
+
+  if [[ "$STATUS_VALUE" != "True" ]]; then
+    ready_bool="false"
+  fi
+
+  jq -nc --argjson count "$count" --argjson ready "$ready_bool" '
+    [
+      range(0; $count) as $i
+      | {
+          op: "replace",
+          path: "/status/containerStatuses/\($i)/ready",
+          value: $ready
+        }
+    ]
+  '
+}
+
+# ==============================================================================
+# Main loop
+# ==============================================================================
+
+while true; do
+  ensure_lease
+  patch_node_status
+  patch_pods_status_on_node
+
+  sleep "$SLEEP_SECS"
+done
+"""
 
 
 def _run_embedded_bash(script: str, argv: list[str]) -> int:

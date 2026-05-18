@@ -8,6 +8,7 @@ push the wrapper images under src/5Gcore/containers."""
 
 from lib import (
     clear_pending_helm_release,
+    config_bool,
     config_str,
     kube_context_name,
     log,
@@ -22,7 +23,15 @@ from lib import (
 def prepare_skaffold_render_env() -> None:
     """Prepare the environment consumed by the generic Skaffold step."""
     env = skaffold_runtime_env(CONFIG)
+    if "CILIUM_ENABLED" in CONFIG:
+        env["CILIUM_ENABLED"] = (
+            "true" if config_bool(CONFIG, "CILIUM_ENABLED", False) else "false"
+        )
+    else:
+        env["CILIUM_ENABLED"] = "false"
+
     set_state_value(STATE, "skaffold_render_env", env)
+    set_state_value(STATE, "cilium_skaffold_enabled", env.get("CILIUM_ENABLED") == "true")
 
 
 def docker_login_registry(docker_env: dict[str, str]) -> None:

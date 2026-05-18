@@ -104,7 +104,7 @@ deploy:
           global.mongodb.auth.database: ${MONGODB_APP_DATABASE:-free5gc}
           global.mongodb.auth.authSource: ${MONGODB_AUTHSOURCE:-free5gc}
           imageUpdater.enabled: ${IMAGE_UPDATER_ENABLED:-true}
-          imageUpdater.namespace: free5gc
+          imageUpdater.namespace: ${IMAGE_UPDATER_NAMESPACE:-kube-system}
           imageUpdater.image.repository: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/controller
           imageUpdater.image.tag: "${IMAGE_VERSION:-2.0.2}"
           imageUpdater.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
@@ -244,3 +244,20 @@ deploy:
           ue.enabled: true
           ue.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ueransim
           ue.image.tag: "${IMAGE_VERSION:-2.0.2}"
+
+profiles:
+  - name: with-cilium
+    activation:
+      - env: CILIUM_ENABLED=true
+    patches:
+      - op: add
+        path: /deploy/helm/releases/0
+        value:
+          name: cilium
+          remoteChart: cilium
+          repo: https://helm.cilium.io/
+          namespace: kube-system
+          wait: true
+          setValues:
+            "operator.replicas": 1
+            "sctp.enabled": true

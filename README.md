@@ -1,18 +1,65 @@
 # Kubernetes Honeypot Lab
 
-Local Kubernetes honeypot and adversary-emulation lab for research, training, and defensive validation. The default flow runs entirely on the local Docker/KinD environment and deploys an adapted OpenTelemetry Astronomy Shop, telemetry components, MITRE Caldera, and simulated kill chains.
+Local Kubernetes honeypot and adversary-emulation lab for research, training, and defensive validation. The lab runs on the local Docker/Kind environment and can deploy either the OpenTelemetry target or the 5Gcore target with MITRE Caldera kill chains.
 
 Do not point this project at production clusters or third-party infrastructure.
 
 ## Entry Point
 
-Run everything from the repository root:
+Run commands from the repository root:
 
 ```bash
 ./start.sh
 ```
 
-`start.sh` is the real entry point. It loads `configuration.conf`, validates the runtime options, builds or reuses `lab-controller:latest`, and starts the controller container named `honeypotlab-controller`.
+`start.sh` loads `configuration.conf`, then preserves explicit environment overrides such as:
+
+```bash
+LAB_NAME=demo-otel CLUSTER_TARGET=opentelemetry ./start.sh
+LAB_NAME=demo-5g CLUSTER_TARGET=5Gcore ./start.sh
+```
+
+Each lab is scoped by `LAB_NAME`. For example `LAB_NAME=demo-otel` creates a controller named `demo-otel-controller`, a Compose project named `honeypot-demo-otel`, a Kind cluster named `demo-otel`, a Docker network named `kind-demo-otel`, runtime state under `res/runtime/demo-otel`, and results under `res/results/demo-otel`.
+
+## Targets
+
+Select the target with:
+
+```text
+CLUSTER_TARGET=opentelemetry
+CLUSTER_TARGET=5Gcore
+```
+
+Target defaults live in:
+
+```text
+src/<CLUSTER_TARGET>/conf-files/variables.py
+```
+
+The controller mounts `src/<CLUSTER_TARGET>` and runs the target pipeline hooks, Caldera assets, controller hooks, and restore hooks from that tree.
+
+## Docker Modes
+
+`HOST_SOCKET=false` runs an isolated Docker daemon inside the controller. This supports multiple labs at the same time because each controller owns its own nested Docker resources.
+
+`HOST_SOCKET=true` mounts the host Docker socket. Only one host-socket lab may run at a time; a second host-socket start fails before creating resources.
+
+Host exposure is controlled by:
+
+```text
+EXPOSE_TO_HOST=true
+PROXY_BIND_ALL=false
+```
+
+When exposure is enabled, the controller proxy publishes container port `18080` to a dynamic host port. The selected port and bind address are written to:
+
+```text
+res/runtime/<LAB_NAME>/info
+```
+
+`PROXY_BIND_ALL=false` binds the proxy to `127.0.0.1`. `PROXY_BIND_ALL=true` binds it to `0.0.0.0`. `EXPOSE_TO_HOST=false` publishes no host proxy port.
+
+## Runtime Flow
 
 The controller image is built from:
 
@@ -20,92 +67,44 @@ The controller image is built from:
 src/lab/lab-controller/Dockerfile
 ```
 
-The controller startup flow is:
+The startup flow is:
 
 ```text
 start.sh
-  -> configuration.conf
-  -> src/lab/lab-controller/Dockerfile
+  -> configuration.conf plus environment overrides
   -> src/lab/lab-controller/entrypoint.py
   -> /app/start_lab.py
   -> /app/pipeline/*.py
   -> /start_controller.py
 ```
 
-## What The Controller Does
+The pipeline renders target templates, creates or reuses the lab-specific Kind cluster, builds Compose and Skaffold artifacts, starts target Compose services, deploys the target Helm/Skaffold stack, and runs target-specific pipeline hooks.
 
-Inside `honeypotlab-controller`, `entrypoint.py` prepares Docker access, always runs `/app/start_lab.py`, then runs `/start_controller.py` and idles until shutdown.
+After the pipeline completes, `/start_controller.py` connects to Caldera, discovers adversaries in `src/<CLUSTER_TARGET>/caldera/adversaries`, waits for agents, runs kill chains in filename order, calls target controller hooks, and writes the kill-chain summary.
 
-`/app/start_lab.py` loads the target configuration from:
+## Local Endpoints
 
-```text
-src/opentelemetry/conf-files/variables.py
+Read the active proxy endpoint from:
+
+```bash
+python3 -m json.tool res/runtime/<LAB_NAME>/info
 ```
 
-It then overlays runtime values from `configuration.conf` and executes the Python pipeline in lexical order from:
+Common proxy routes include:
 
-```text
-src/lab/lab-controller/app/pipeline
+- `/healthz` for controller proxy health
+- `/caldera/` for Caldera when enabled
+- `/frontend/` for the OpenTelemetry frontend when the target exposes it
+- `/registry/` for the local registry route when enabled
+
+The pipeline also writes a host-ready kubeconfig for each lab:
+
+```bash
+export KUBECONFIG="$PWD/res/runtime/<LAB_NAME>/kubeconfig"
+kubectl get pods -A
 ```
 
-The pipeline currently performs these phases:
-
-- Validate the selected target layout and required files.
-- Render `conf-files/kind-cluster.yaml.tmpl` with target variables and create or reuse the Kind cluster.
-- Build Docker Compose services and Skaffold artifacts declared by the rendered configuration; Skaffold build uses a temporary Docker-in-Docker helper when artifacts exist.
-- Start the target Docker Compose stack from `conf-files/compose.yaml`.
-- Deploy the target Skaffold stack from `conf-files/skaffold.yaml.tmpl`.
-- Run target-specific pipeline hooks from `src/<target>/hooks/pipeline`.
-
-After the lab pipeline completes, the entrypoint starts:
-
-```text
-/start_controller.py
-```
-
-That process connects to Caldera when the target provides it, discovers adversaries from `src/<target>/caldera/adversaries`, waits for the required agents, runs the discovered kill chains, calls target-specific hooks from `src/<target>/hooks/controller`, and writes the kill-chain summary.
-
-## Image Build And Deploy Flow
-
-Image builds are target-defined rather than inferred from every directory:
-
-- Underlay images are the services with `build:` entries in `src/opentelemetry/conf-files/compose.yaml`.
-- Cluster images are the explicit Skaffold artifacts in `src/opentelemetry/conf-files/skaffold.yaml.tmpl`.
-
-Image names and Dockerfile locations come from those files. For example, `cart` is built by Skaffold with `context: containers/cart` and `dockerfile: src/Dockerfile`, while the three PostgreSQL images reuse `containers/postgres` with different build arguments.
-
-The Compose build uses the controller Docker daemon. The cluster build starts a temporary helper container named `cluster-build-helper`, keeps its layer cache under `res/cache/controller/build-helper`, builds and pushes with Skaffold, then removes the helper container.
-
-Generated runtime deployment files are written under `res/runtime/generated`:
-
-- `skaffold.yaml` for cluster image build and Helm release deploy
-- `skaffold-build-artifacts.json` for deploys that reuse the images just built
-
-## Caldera And Kill Chains
-
-Caldera is built from the shared `src/common/caldera` image context and mounts the target Caldera assets from:
-
-```text
-src/opentelemetry/caldera/
-```
-
-The controller runs every `.yml` or `.yaml` adversary file found in:
-
-```text
-src/opentelemetry/caldera/adversaries
-```
-
-Files are processed in filename order. By default `KC0` and `KC1` use the Caldera `cluster` group, while the later kill chains use the `outside` group.
-
-## Default Local Services
-
-The default `configuration.conf` uses `HOST_SOCKET=true`, so the controller uses the host Docker socket and host networking. With this mode, `EXPOSE_TO_HOST=true` is effectively satisfied through host networking and the managed port-forward.
-
-Expected local endpoints:
-
-- Astronomy Shop frontend: <http://localhost:8080>
-- Caldera: <http://localhost:8888>
-- Local registry: `127.0.0.1:5000` on the host and `registry:5000` inside Docker/KinD networking
+For `HOST_SOCKET=true`, that kubeconfig points directly to the Kind API port published by the host Docker daemon. For `HOST_SOCKET=false`, it points to the controller proxy port and the proxy tunnels Kubernetes API TLS traffic to the nested Kind cluster. In both modes the file keeps `kind-<LAB_NAME>` as the current context, so `--context` is optional when `KUBECONFIG` points to this file.
 
 Caldera credentials are local lab credentials from the mounted Caldera config:
 
@@ -115,44 +114,84 @@ Caldera credentials are local lab credentials from the mounted Caldera config:
 
 ## Results
 
-Runtime output is written under:
+Results are preserved under:
 
 ```text
-res/results
+res/results/<LAB_NAME>
 ```
 
 Important files and directories include:
 
-- `res/results/lab-state.json`
-- `res/results/killchain-summary.json`
-- `res/results/KC*`
-- `res/results/caldera`
-- `res/results/kube_events`
-- `res/results/telemetry`
-- `res/results/frontend-port-forward.log`
+- `killchain-summary.json`
+- `KC*`
+- `caldera`
+- `kube_events`
+- `telemetry`
+- `frontend-port-forward.log` for OpenTelemetry
 
-Cache and generated runtime data are kept under:
+Runtime state is disposable and kept under:
+
+```text
+res/runtime/<LAB_NAME>
+```
+
+Build caches are kept under:
 
 ```text
 res/cache
-res/runtime
 ```
 
 ## Quick Verification
 
-After `./start.sh` has completed the pipeline and the controller is still running:
+Set the lab name you started:
 
 ```bash
-docker ps
-docker exec honeypotlab-controller kind get clusters
-docker exec honeypotlab-controller kubectl --context kind-honeypotlab get pods -A
-docker exec honeypotlab-controller kubectl --context kind-honeypotlab get svc -A
-docker exec honeypotlab-controller helm --kube-context kind-honeypotlab list -A
-curl http://localhost:8080
-curl http://localhost:8888
+LAB_NAME=honeypotlab
 ```
 
-`FOLLOW_CONTROLLER_LOGS=true` keeps `./start.sh` attached to the controller logs. Pressing `Ctrl-C` stops log following, not the already running controller container.
+Then inspect the runtime state and local resources:
+
+```bash
+python3 -m json.tool "res/runtime/${LAB_NAME}/info"
+docker ps -a --filter "name=${LAB_NAME}-controller"
+docker port "${LAB_NAME}-controller" 18080/tcp
+```
+
+For `HOST_SOCKET=false`, inspect the nested Docker daemon from the controller:
+
+```bash
+docker exec "${LAB_NAME}-controller" docker ps
+docker exec "${LAB_NAME}-controller" kind get clusters
+docker exec "${LAB_NAME}-controller" kubectl --context "kind-${LAB_NAME}" get pods -A
+```
+
+For `HOST_SOCKET=true`, the controller uses the host Docker daemon:
+
+```bash
+docker exec "${LAB_NAME}-controller" docker ps
+kind get clusters
+```
+
+From the host, use the generated kubeconfig in either Docker mode:
+
+```bash
+export KUBECONFIG="$PWD/res/runtime/${LAB_NAME}/kubeconfig"
+kubectl get nodes
+kubectl get pods -A
+```
+
+After the controller proxy is exposed:
+
+```bash
+PORT=$(python3 - <<'PY'
+import json, os
+info=json.load(open(f"res/runtime/{os.environ['LAB_NAME']}/info"))
+print(info["controller_proxy"]["host_port"])
+PY
+)
+curl "http://127.0.0.1:${PORT}/healthz"
+curl "http://127.0.0.1:${PORT}/caldera/"
+```
 
 ## Configuration Notes
 
@@ -162,25 +201,48 @@ Most user-facing options live in:
 configuration.conf
 ```
 
-Target defaults live in:
+Common options:
 
-```text
-src/opentelemetry/conf-files/variables.py
-```
-
-Notable effective options:
-
-- `CLUSTER_TARGET=opentelemetry`
-- `CLUSTER_PROFILE=honeypotlab`
+- `LAB_NAME=honeypotlab`
+- `CLUSTER_TARGET=opentelemetry` or `CLUSTER_TARGET=5Gcore`
 - `BUILD_CONTROLLER=true`
 - `FOLLOW_CONTROLLER_LOGS=false`
-- `HOST_SOCKET=true`
+- `HOST_SOCKET=false`
 - `EXPOSE_TO_HOST=true`
-- `CALDERA_ADVERSARIES_DIR=/workdir/code/caldera/adversaries`
-- `CALDERA_SERVER_ENABLE=true`
-- `ATTACKER_ENABLE=true`
+- `PROXY_BIND_ALL=false`
+- `SKIP_RESOURCE_CHECK=false`
 
-The pipeline is always started by the entrypoint. Cleanup is always performed when the controller exits, and the entrypoint itself keeps the container alive after `/start_controller.py` completes.
+`RESTORE_LAB` and `RESTORE_LAB_MODE` are target defaults in `src/<target>/conf-files/variables.py`; they are not declared in `configuration.conf`.
+
+Legacy `CLUSTER_PROFILE` and `GENERIC_SVC_PORT` are not required for new runs.
+
+## Cleanup
+
+Clean a specific lab with:
+
+```bash
+./remove_all.sh <LAB_NAME>
+```
+
+If no argument is supplied, `remove_all.sh` uses the configured `LAB_NAME`.
+
+Cleanup is scoped to the selected lab. It removes the matching controller container, lab Compose project, lab Kind cluster, lab Docker network, and `res/runtime/<LAB_NAME>`. It preserves `res/results/<LAB_NAME>` and build caches.
+
+Example:
+
+```bash
+./remove_all.sh honeypotlab
+```
+
+Verify cleanup:
+
+```bash
+LAB_NAME=honeypotlab
+docker ps -a --format '{{.Names}} {{.Labels}}' | grep "${LAB_NAME}" || true
+docker network ls --format '{{.Name}} {{.Labels}}' | grep "${LAB_NAME}" || true
+kind get clusters | grep "${LAB_NAME}" || true
+test ! -d "res/runtime/${LAB_NAME}"
+```
 
 ## Repository Map
 
@@ -192,44 +254,9 @@ src/lab/lab-controller/
 src/lab/lab-controller/app/start_lab.py
 src/lab/lab-controller/app/pipeline/
 src/lab/lab-controller/start_controller.py
-src/opentelemetry/hooks/pipeline/
-src/opentelemetry/hooks/controller/
-src/opentelemetry/conf-files/variables.py
-src/opentelemetry/caldera/
-src/opentelemetry/helm-charts/
-src/opentelemetry/containers/
+src/opentelemetry/
+src/5Gcore/
 src/common/
+res/runtime/
 res/results/
 ```
-
-The active controller implementation is under `src/lab/lab-controller`. The target tree mounted into the controller is `src/<CLUSTER_TARGET>`, so with the default configuration that is `src/opentelemetry`.
-
-Target `compose.yaml` files are executed directly through Docker Compose. Skaffold templates are rendered under `res/runtime/generated` before build/deploy.
-
-## Cleanup
-
-Remove the lab controller container:
-
-```bash
-./remove_all.sh
-```
-
-`remove_all.sh` loads `configuration.conf`, resolves the same controller container name used by `start.sh`, and removes that container if it exists. With the default configuration this is:
-
-```text
-honeypotlab-controller
-```
-
-The script is safe to run when the controller container is already absent; it reports that there is nothing to remove and exits cleanly. It requires Docker to be installed and the Docker daemon to be reachable, and it exits with an error if Docker cannot remove an existing controller container.
-
-The cleanup is intentionally scoped to the controller container. It does not delete the KinD cluster, local registry data, generated runtime files, results, or image caches. The Python pipeline can reuse those resources on later runs.
-
-To verify cleanup:
-
-```bash
-docker ps -a --filter "name=^/honeypotlab-controller$" --format '{{.Names}}'
-```
-
-The command should print nothing after `./remove_all.sh` has removed the default controller container.
-
-For a deeper manual reset, remove the KinD cluster and Compose containers with Docker/KinD commands appropriate for your local environment.

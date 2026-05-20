@@ -1,87 +1,63 @@
 #!/usr/bin/env python3
-"""Bootstrap the lab-controller container and manage child processes.
-
-The entrypoint handles container lifecycle concerns only: it validates the Docker
-access mode, starts or reuses Docker access, launches the configured pipeline and
-controller scripts, keeps the container alive when requested, and performs
-best-effort cleanup during shutdown. It deliberately does not load target CONFIG."""
+"""Bootstrap the lab-controller container and manage child processes."""
 
 from __future__ import annotations
 
 import os
-import shutil
 import signal
 import subprocess
 import sys
 import time
+import tomllib
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
-APP_ROOT = Path(os.environ.get("APP_ROOT", "/app")).resolve()
+APP_ROOT = Path("/app").resolve()
+CONFIG_FILE = Path("/runtime/config.toml")
+
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from lib import (  # noqa: E402
-    DEFAULT_DOCKER_DATA_ROOT,
     DEFAULT_DOCKERD_LOG_FILE,
     cleanup_docker_compose_stack,
     cleanup_kind_cluster,
-    cleanup_lab_labeled_containers,
-    cleanup_lab_network,
     docker_env,
     log,
     parse_bool_value,
     parse_positive_float_value,
     require_existing_unix_socket,
+    registry_endpoint,
     send_signal_to_process_group,
     start_internal_dockerd,
     terminate_process,
-    verify_no_lab_leftovers,
     wait_for_docker_ready,
     warn,
 )
 
 
-DEFAULT_CODE_ROOT = "/workdir/code"
-DEFAULT_ENV_FILE = "/workdir/code/conf-files/variables.py"
-DEFAULT_FIRST_SCRIPT = "/app/start_lab.py"
-DEFAULT_SECOND_SCRIPT = "/start_controller.py"
-DEFAULT_DOCKER_SOCKET_PATH = "/var/run/docker.sock"
-DEFAULT_RUNTIME_DIR = "/res/runtime/honeypotlab"
-DEFAULT_IDLE_SLEEP_SECONDS = "3600"
-DEFAULT_DOCKER_READY_TIMEOUT = "60"
-DEFAULT_COMPOSE_PROJECT_NAME = "honeypot-honeypotlab"
-DEFAULT_PROXY_SCRIPT = "/app/proxy_controller.py"
-
-ENTRYPOINT_ENV_DEFAULTS: dict[str, str] = {
-    "HOST_SOCKET": "false",
-    "DOCKER_SOCKET_PATH": DEFAULT_DOCKER_SOCKET_PATH,
-    "DOCKER_DATA_ROOT": DEFAULT_DOCKER_DATA_ROOT,
-    "DOCKER_READY_TIMEOUT": DEFAULT_DOCKER_READY_TIMEOUT,
-    "IDLE_SLEEP_SECONDS": DEFAULT_IDLE_SLEEP_SECONDS,
-    "RUNTIME_DIR": DEFAULT_RUNTIME_DIR,
-    "FIRST_SCRIPT": DEFAULT_FIRST_SCRIPT,
-    "SECOND_SCRIPT": DEFAULT_SECOND_SCRIPT,
-    "PROXY_SCRIPT": DEFAULT_PROXY_SCRIPT,
-}
-
-REQUIRED_ENTRYPOINT_ENV_KEYS = tuple(ENTRYPOINT_ENV_DEFAULTS.keys())
-ENTRYPOINT_BOOL_KEYS = (
+REQUIRED_ENTRYPOINT_CONFIG_KEYS = (
     "HOST_SOCKET",
-)
-ENTRYPOINT_POSITIVE_FLOAT_KEYS = (
+    "DOCKER_SOCKET_PATH",
+    "DOCKER_DATA_ROOT",
     "DOCKER_READY_TIMEOUT",
+    "FIRST_SCRIPT",
+    "SECOND_SCRIPT",
+    "PROXY_SCRIPT",
     "IDLE_SLEEP_SECONDS",
+    "RUNTIME_DIR",
 )
+ENTRYPOINT_BOOL_KEYS = ("HOST_SOCKET",)
+ENTRYPOINT_POSITIVE_FLOAT_KEYS = ("DOCKER_READY_TIMEOUT", "IDLE_SLEEP_SECONDS")
 ENTRYPOINT_ABSOLUTE_PATH_KEYS = (
     "DOCKER_SOCKET_PATH",
     "FIRST_SCRIPT",
     "SECOND_SCRIPT",
     "PROXY_SCRIPT",
     "RUNTIME_DIR",
+    "DOCKER_DATA_ROOT",
 )
-
 
 shutdown_requested = False
 signal_exit_code = 0
@@ -101,37 +77,44 @@ def handle_signal(signum: int, _frame) -> None:
 
 
 def install_signal_handlers() -> None:
-    """Install graceful shutdown signal handlers."""
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
 
 
 def should_shutdown() -> bool:
-    """Return True after SIGTERM/SIGINT."""
     return shutdown_requested
 
 
 def current_signal_exit_code() -> int:
-    """Return the signal-derived exit code."""
     return signal_exit_code or 143
 
 
-def env_value(name: str, default: str | None = None) -> str:
-    """Return a non-empty environment value, applying an optional default."""
-    raw = os.environ.get(name)
-    if raw is None or raw.strip() == "":
-        if default is None:
-            raise RuntimeError(f"Missing required entrypoint environment variable: {name}")
-        return default
-    return raw
+def read_runtime_config(path: Path = CONFIG_FILE) -> dict[str, Any]:
+    """Read the controller runtime config from the fixed mounted path."""
+    if not path.is_file():
+        raise RuntimeError(f"Runtime config file not found: {path}")
+    with path.open("rb") as handle:
+        data = tomllib.load(handle)
+    table = data.get("config", data)
+    if not isinstance(table, dict):
+        raise RuntimeError(f"Runtime config must contain a [config] table: {path}")
+    return {str(key): value for key, value in table.items() if not isinstance(value, dict)}
+
+
+def require_config(config: dict[str, Any], name: str) -> Any:
+    value = config.get(name)
+    if value is None or str(value).strip() == "":
+        raise RuntimeError(f"Missing required entrypoint config value: {name}")
+    return value
 
 
 def load_entrypoint_runtime() -> dict[str, object]:
     """Load only the runtime values this entrypoint directly uses."""
-    runtime: dict[str, object] = {}
+    runtime = read_runtime_config()
 
-    for name in REQUIRED_ENTRYPOINT_ENV_KEYS:
-        runtime[name] = env_value(name, ENTRYPOINT_ENV_DEFAULTS.get(name))
+    missing = [name for name in REQUIRED_ENTRYPOINT_CONFIG_KEYS if name not in runtime or str(runtime[name]).strip() == ""]
+    if missing:
+        raise RuntimeError("Missing required entrypoint config value(s): " + ", ".join(missing))
 
     for name in ENTRYPOINT_BOOL_KEYS:
         runtime[name] = parse_bool_value(runtime[name], name=name)
@@ -145,20 +128,13 @@ def load_entrypoint_runtime() -> dict[str, object]:
             raise RuntimeError(f"{name} must be an absolute path, got: {path}")
         runtime[name] = path.resolve()
 
-    docker_data_root = Path(str(runtime["DOCKER_DATA_ROOT"])).expanduser()
-    if not docker_data_root.is_absolute():
-        raise RuntimeError(f"DOCKER_DATA_ROOT must be an absolute path, got: {docker_data_root}")
-    runtime["DOCKER_DATA_ROOT"] = docker_data_root.resolve()
-
     return runtime
 
 
 def build_child_env(socket_path: Path) -> dict[str, str]:
-    """Build child environment without loading lab CONFIG in this process."""
+    """Build the minimal child environment."""
     env = docker_env(socket_path)
     env.setdefault("PYTHONPATH", str(APP_ROOT))
-    env.setdefault("ENV_FILE", DEFAULT_ENV_FILE)
-    env.setdefault("CODE_ROOT", DEFAULT_CODE_ROOT)
     return env
 
 
@@ -213,70 +189,36 @@ def idle_forever(sleep_seconds: float) -> None:
 
 
 def cleanup_runtime_dir(runtime_dir: Path) -> None:
-    """Remove all files below RUNTIME_DIR on graceful controller shutdown."""
-    runtime_dir = runtime_dir.resolve()
-
-    if str(runtime_dir) in {"/", ""}:
-        warn(f"Refusing to clean unsafe RUNTIME_DIR: {runtime_dir}")
-        return
-
-    if not runtime_dir.exists():
-        log(f"Runtime directory not present; nothing to clean: {runtime_dir}")
-        return
-
-    if not runtime_dir.is_dir():
-        warn(f"RUNTIME_DIR is not a directory; skipping cleanup: {runtime_dir}")
-        return
-
-    removed = 0
-    for item in runtime_dir.iterdir():
-        try:
-            if item.is_dir() and not item.is_symlink():
-                shutil.rmtree(item)
-            else:
-                item.unlink()
-            removed += 1
-        except FileNotFoundError:
-            continue
-        except Exception as exc:
-            warn(f"Could not remove runtime item {item}: {exc}")
-
-    try:
-        runtime_dir.rmdir()
-    except OSError as exc:
-        warn(f"Could not remove runtime directory {runtime_dir}: {exc}")
-    log(f"Cleaned runtime directory {runtime_dir} ({removed} top-level item(s) removed).")
+    """Leave RUNTIME_DIR in place so restarted controllers reload the same CONFIG."""
+    log(f"Leaving runtime directory in place for restart persistence: {runtime_dir.resolve()}")
 
 
-def cleanup_values() -> dict[str, str]:
-    """Return minimal cleanup values sourced only from process environment.
-
-    This deliberately does not load variables.py. It only gives cleanup helpers
-    enough information to find the target compose file and likely Kind cluster.
-    """
+def cleanup_values(config: dict[str, Any]) -> dict[str, str]:
+    """Return cleanup values from the runtime config."""
     values: dict[str, str] = {}
-
     for name in (
         "CODE_ROOT",
         "LAB_NAME",
         "CLUSTER_PROFILE",
         "KUBE_CONTEXT",
         "COMPOSE_PROJECT_NAME",
+        "COMPOSE_FILE",
         "CP_NETWORK",
+        "RUNTIME_DIR",
         "HOST_SOCKET",
     ):
-        raw = os.environ.get(name)
-        if raw is not None and raw.strip() != "":
-            values[name] = raw
+        if name in config and config[name] is not None and str(config[name]).strip() != "":
+            values[name] = str(config[name])
 
     lab_name = values.get("LAB_NAME") or values.get("CLUSTER_PROFILE") or "honeypotlab"
     values["LAB_NAME"] = lab_name
     values["CLUSTER_PROFILE"] = lab_name
-    values.setdefault("CODE_ROOT", DEFAULT_CODE_ROOT)
+    values.setdefault("CODE_ROOT", "/workdir/code")
+    values.setdefault("RUNTIME_DIR", f"/res/runtime/{lab_name}")
+    values.setdefault("COMPOSE_FILE", str(Path(values["RUNTIME_DIR"]) / "generated" / "compose.yaml"))
     values.setdefault("COMPOSE_PROJECT_NAME", f"honeypot-{lab_name}")
-    values.setdefault("CP_NETWORK", f"kind-{lab_name}")
+    values.setdefault("CP_NETWORK", "lab")
     return values
-
 
 
 def start_proxy_process(proxy_script: Path, socket_path: Path) -> Optional[subprocess.Popen]:
@@ -296,10 +238,27 @@ def start_proxy_process(proxy_script: Path, socket_path: Path) -> Optional[subpr
         warn(f"Failed to start controller proxy at {proxy_script}: {exc}")
         return None
 
+
+def insecure_registry_endpoints(config: dict[str, Any]) -> list[str]:
+    """Return HTTP registry endpoints that the internal Docker daemon must allow."""
+    endpoints = [
+        str(config.get("REGISTRY_CACHE_ENDPOINT", "")).strip(),
+        registry_endpoint(config),
+    ]
+    unique: list[str] = []
+    seen: set[str] = set()
+    for endpoint in endpoints:
+        if endpoint and endpoint not in seen:
+            unique.append(endpoint)
+            seen.add(endpoint)
+    return unique
+
+
 def main() -> int:
     """Prepare Docker access, run configured scripts, then keep container alive."""
     install_signal_handlers()
 
+    config = read_runtime_config()
     runtime = load_entrypoint_runtime()
 
     host_socket_mode = bool(runtime["HOST_SOCKET"])
@@ -315,8 +274,7 @@ def main() -> int:
     proxy_proc: Optional[subprocess.Popen] = None
 
     log("Entrypoint starting.")
-    log(f"ENV_FILE for child scripts: {os.environ.get('ENV_FILE', DEFAULT_ENV_FILE)}")
-    log(f"CODE_ROOT for child scripts: {os.environ.get('CODE_ROOT', DEFAULT_CODE_ROOT)}")
+    log(f"Runtime config: {CONFIG_FILE}")
     log(f"HOST_SOCKET mode: {host_socket_mode}")
     log(f"FIRST_SCRIPT: {first_script}")
     log(f"SECOND_SCRIPT: {second_script}")
@@ -333,7 +291,11 @@ def main() -> int:
             )
         else:
             log("Using internal Docker daemon.")
-            dockerd_proc = start_internal_dockerd(socket_path, data_root=docker_data_root)
+            dockerd_proc = start_internal_dockerd(
+                socket_path,
+                data_root=docker_data_root,
+                insecure_registries=insecure_registry_endpoints(config),
+            )
             wait_for_docker_ready(
                 socket_path,
                 ready_timeout,
@@ -343,7 +305,10 @@ def main() -> int:
                 shutdown_exit_code=current_signal_exit_code,
             )
 
-        proxy_proc = start_proxy_process(proxy_script, socket_path)
+        if host_socket_mode:
+            log("HOST_SOCKET=true; controller proxy will not be started.")
+        else:
+            proxy_proc = start_proxy_process(proxy_script, socket_path)
         run_child_script(first_script, "FIRST_SCRIPT", socket_path)
         run_child_script(second_script, "SECOND_SCRIPT", socket_path)
 
@@ -351,7 +316,7 @@ def main() -> int:
         return 0
 
     finally:
-        cleanup_config = cleanup_values()
+        cleanup_config = cleanup_values(config)
         try:
             cleanup_docker_compose_stack(socket_path, cleanup_config)
         except Exception as exc:
@@ -361,21 +326,6 @@ def main() -> int:
             cleanup_kind_cluster(cleanup_config, socket_path)
         except Exception as exc:
             warn(f"Error during Kind cluster cleanup: {exc}")
-
-        try:
-            cleanup_lab_labeled_containers(socket_path, cleanup_config)
-        except Exception as exc:
-            warn(f"Error during labelled Docker cleanup: {exc}")
-
-        try:
-            cleanup_lab_network(socket_path, cleanup_config)
-        except Exception as exc:
-            warn(f"Error during Docker network cleanup: {exc}")
-
-        try:
-            verify_no_lab_leftovers(socket_path, cleanup_config)
-        except Exception as exc:
-            warn(f"Error while verifying cleanup: {exc}")
 
         cleanup_runtime_dir(runtime_dir)
 

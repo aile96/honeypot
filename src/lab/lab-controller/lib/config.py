@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Load, normalize, and validate CONFIG values for the lab controller.
+"""Load, normalize, validate, and persist CONFIG values for the lab controller.
 
-CONFIG is an explicit dictionary loaded from variables.py plus approved runtime
-overrides. These helpers parse typed values, preserve values for subprocess-local
-environments, enforce required keys, and avoid accidentally importing unrelated
-process environment variables into the pipeline."""
+CONFIG is an explicit dictionary loaded from persisted TOML plus approved
+runtime overrides. These helpers parse typed values, preserve values for
+subprocess-local environments, enforce required keys, and avoid accidentally
+importing unrelated process environment variables into the pipeline."""
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import runpy
+import tempfile
+import tomllib
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping, TypeAlias
 
@@ -33,7 +36,7 @@ def python_value_to_env(value: Any) -> str:
 
 
 def validate_config_name(name: str, *, source: str | Path | None = None) -> None:
-    """Validate a variables.py-style config name."""
+    """Validate a CONFIG variable name."""
     if _CONFIG_NAME_RE.match(name):
         return
     location = f" in {source}" if source is not None else ""
@@ -41,7 +44,7 @@ def validate_config_name(name: str, *, source: str | Path | None = None) -> None
 
 
 def load_variables_file(path: str | Path) -> Config:
-    """Load a variables.py file into an in-memory CONFIG dictionary.
+    """Load a legacy Python variable file into an in-memory CONFIG dictionary.
 
     Expected format:
 
@@ -83,11 +86,109 @@ def load_variables_file(path: str | Path) -> Config:
 
 
 def load_variables_file_if_exists(path: str | Path) -> Config:
-    """Load variables.py when present; otherwise return an empty CONFIG."""
+    """Load a legacy Python variable file when present; otherwise return an empty CONFIG."""
     variables_path = Path(path)
     if not variables_path.is_file():
         return {}
     return load_variables_file(variables_path)
+
+
+def _toml_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float):
+        return str(value)
+    if isinstance(value, list | tuple):
+        return "[" + ", ".join(_toml_scalar(item) for item in value) + "]"
+    return json.dumps("" if value is None else str(value))
+
+
+def load_toml_config_file(path: str | Path) -> Config:
+    """Load a TOML config file.
+
+    Runtime config files use a flat [config] table. For convenience, a flat
+    top-level TOML file is also accepted.
+    """
+    config_path = Path(path)
+    try:
+        with config_path.open("rb") as handle:
+            data = tomllib.load(handle)
+    except FileNotFoundError:
+        die(f"Config file not found: {config_path}")
+    except tomllib.TOMLDecodeError as exc:
+        die(f"Invalid TOML config file {config_path}: {exc}")
+
+    table = data.get("config", data)
+    if not isinstance(table, dict):
+        die(f"Config file must contain a TOML table: {config_path}")
+
+    config: Config = {}
+    for name, value in table.items():
+        if isinstance(value, dict):
+            continue
+        validate_config_name(str(name), source=config_path)
+        config[str(name)] = value
+    return config
+
+
+def load_config_file(path: str | Path) -> Config:
+    """Load either the new TOML CONFIG format or a legacy Python variable file."""
+    config_path = Path(path)
+    if config_path.suffix == ".py":
+        return load_variables_file(config_path)
+    return load_toml_config_file(config_path)
+
+
+def load_config_file_if_exists(path: str | Path) -> Config:
+    config_path = Path(path)
+    if not config_path.is_file():
+        return {}
+    return load_config_file(config_path)
+
+
+def save_config_file(config: Mapping[str, Any], path: str | Path) -> None:
+    """Atomically save runtime CONFIG as a flat TOML [config] table."""
+    config_path = Path(path)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["[config]"]
+    for name in sorted(config):
+        value = config[name]
+        if isinstance(value, dict):
+            continue
+        validate_config_name(name)
+        lines.append(f"{name} = {_toml_scalar(value)}")
+    payload = "\n".join(lines) + "\n"
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{config_path.name}.",
+        suffix=".tmp",
+        dir=str(config_path.parent),
+        text=True,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+        os.replace(tmp_name, config_path)
+    finally:
+        Path(tmp_name).unlink(missing_ok=True)
+
+
+def runtime_config_file() -> Path:
+    """Return the fixed runtime CONFIG path mounted by start.py."""
+    return Path("/runtime/config.toml")
+
+
+def load_runtime_config(*, overlay_env: bool = False, allowed_env: tuple[str, ...] | None = None) -> Config:
+    """Load persisted runtime CONFIG and optionally overlay approved env vars."""
+    path = runtime_config_file()
+    config = load_config_file(path)
+    config["CONFIG_FILE"] = str(path)
+    if overlay_env:
+        names = allowed_env if allowed_env is not None else tuple(config.keys())
+        for name in names:
+            value = os.environ.get(name)
+            if value is not None and value != "":
+                config[name] = value
+    return config
 
 
 def merge_config(*configs: Mapping[str, Any], overwrite: bool = True) -> Config:
@@ -258,11 +359,6 @@ def parse_positive_float_value(value: Any, *, name: str = "value") -> float:
     return parsed
 
 
-def is_true(value: Any) -> bool:
-    """Return True when value represents a true boolean value."""
-    return parse_bool_value(value)
-
-
 def config_bool(config: Mapping[str, Any], name: str, default: Any = False) -> bool:
     """Read a CONFIG value as boolean."""
     return parse_bool_value(config.get(name, default), name=name)
@@ -336,16 +432,16 @@ def load_default_config(
         "TARGET_ROOT": str(target_root),
     }
 
-    main_env_file = Path(env_file or os.environ.get("ENV_FILE", project_root / "variables.py"))
+    main_env_file = Path(env_file or os.environ.get("CONFIG_FILE") or os.environ.get("ENV_FILE", project_root / "configuration.conf"))
     target_env_file = Path(
         target_config_file
-        or os.environ.get("TARGET_CONFIG_FILE", target_root / "conf-files" / "variables.py")
+        or os.environ.get("TARGET_CONFIG_FILE", target_root / "conf-files" / "configuration.conf")
     )
 
     config = merge_config(
         default_config,
-        load_variables_file_if_exists(main_env_file),
-        load_variables_file_if_exists(target_env_file),
+        load_config_file_if_exists(main_env_file),
+        load_config_file_if_exists(target_env_file),
         overwrite=True,
     )
 

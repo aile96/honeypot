@@ -8,7 +8,8 @@ ENV RCE_ENABLED="$RCE_ENABLED" \
     APP_METRIC_PREFIX="pcf_test_service" \
     TEST_SERVICE_LISTEN_PORT="2525" \
     SERVICE_BANNER="220 PCF Test Service Ready" \
-    CRICTL_RUNTIME_PATH="/host/run/containerd/containerd.sock"
+    CRICTL_RUNTIME_PATH="/host/run/containerd/containerd.sock" \
+    ATTACKER_ADDR="attacker"
 
 USER root
 

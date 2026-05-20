@@ -47,22 +47,7 @@ ARG HELM_VERSION=v3.20.2
 ARG SKAFFOLD_SHA256_AMD64=8794026e7f0c2fb04c44ebc6a8f4f446a7a68dde8f8868ac5b701903b7973e19
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
-    HOST_SOCKET=false \
-    DOCKER_SOCKET_PATH=/var/run/docker.sock \
-    DOCKER_DATA_ROOT=/res/cache/images \
-    DOCKER_READY_TIMEOUT=60 \
-    FIRST_SCRIPT=/app/start_lab.py \
-    SECOND_SCRIPT=/start_controller.py \
-    IDLE_SLEEP_SECONDS=3600 \
-    LAB_NAME=honeypotlab \
-    CLUSTER_PROFILE=honeypotlab \
-    ENV_FILE=/workdir/code/conf-files/variables.py \
-    RES_DIR=/res \
-    RUNTIME_DIR=/res/runtime/honeypotlab \
-    RESULTS_DIR=/res/results/honeypotlab \
-    CONTROLLER_PROXY_CONTAINER_PORT=18080 \
-    EXPOSE_TO_HOST=true
+    PYTHONPATH=/app
 
 # Fail early if someone builds this for the wrong architecture.
 RUN if [ -z "${TARGETARCH:-}" ]; then TARGETARCH="$(dpkg --print-architecture)"; fi \
@@ -193,13 +178,12 @@ RUN kubectl version --client=true \
 
 # Application files.
 COPY lab/lab-controller/entrypoint.py /usr/local/bin/entrypoint.py
-COPY lab/lab-controller/start_controller.py /start_controller.py
-COPY lab/lab-controller/proxy_controller.py /app/proxy_controller.py
 COPY lab/lab-controller/app/ /app/
 COPY lab/lab-controller/lib/ /app/lib/
+COPY lab/shared/ /app/shared/
 
 RUN chmod +x /usr/local/bin/entrypoint.py \
-    && chmod +x /start_controller.py \
+    && chmod +x /app/start_lab.py /app/start_caldera.py /app/start_proxy.py \
     && mkdir -p /start \
     && touch /start/run
 

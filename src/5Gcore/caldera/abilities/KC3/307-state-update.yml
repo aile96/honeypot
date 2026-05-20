@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/state-update.py
+          /opt/caldera/KC5/state-update.sh
         timeout: 900
         parsers: []
         cleanup: ""

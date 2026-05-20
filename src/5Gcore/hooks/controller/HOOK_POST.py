@@ -164,6 +164,41 @@ def copy_kc1_results() -> None:
     copy_pod_dir_contents(namespace, pod, "/tmp/KCData/KC1", "/results/KC1")
 
 
+def discover_mongodb_nwdaf_pod(namespace: str) -> str:
+    selectors = [
+        "app=mongodb-nwdaf,honeypot.attack.role=child",
+        "app=mongodb-nwdaf",
+        "kc2-target=true",
+    ]
+    for selector in selectors:
+        rc, out, _ = run_capture(
+            [
+                *kubectl_base(),
+                "-n",
+                namespace,
+                "get",
+                "pod",
+                "-l",
+                selector,
+                "-o",
+                "jsonpath={.items[0].metadata.name}",
+            ],
+            timeout=20,
+        )
+        if rc == 0 and out.strip():
+            return out.strip()
+    return ""
+
+
+def copy_kc2_child_results() -> None:
+    namespace = os.getenv("CORE_NAMESPACE", os.getenv("FREE5GC_NAMESPACE", "free5gc"))
+    pod = os.getenv("KC2_CHILD_POD", "").strip() or discover_mongodb_nwdaf_pod(namespace)
+    if not pod:
+        log("mongodb-nwdaf child pod not found; skipping KC2 child copy")
+        return
+    copy_pod_dir_contents(namespace, pod, "/tmp/KCData/KC2", "/results/KC2/child")
+
+
 def copy_underlay_results(kc_key: str) -> None:
     source_key = KC_DATA_MAP.get(kc_key)
     if not source_key:
@@ -215,6 +250,8 @@ def main() -> None:
         copy_kc1_results()
     else:
         copy_underlay_results(kc_key)
+        if kc_key == "KC2":
+            copy_kc2_child_results()
 
     if kc_key == "KC4":
         copy_caldera_event_logs()

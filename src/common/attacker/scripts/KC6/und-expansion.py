@@ -40,7 +40,7 @@ def copy_stream_to_file(completed: subprocess.CompletedProcess[str], out_file: P
 
 
 def run_remote_scan(ssh_key: Path, control_plane: str, out_file: Path) -> bool:
-    nmap_script = Path("/opt/caldera/KC2/nmap-enum.py")
+    nmap_script = Path("/opt/caldera/KC2/nmap-enum.sh")
     if not nmap_script.is_file():
         print(f"[!] Remote scan skipped: missing {nmap_script}", file=sys.stderr)
         return False
@@ -52,11 +52,11 @@ def run_remote_scan(ssh_key: Path, control_plane: str, out_file: Path) -> bool:
             "-p",
             "122",
             f"root@{control_plane}",
-            "command -v python3 >/dev/null 2>&1",
+            "command -v bash >/dev/null 2>&1 && command -v nmap >/dev/null 2>&1",
         ]
     )
     if probe.returncode != 0:
-        print("[i] control-plane has no python3; falling back to local scan")
+        print("[i] control-plane has no bash/nmap; falling back to local scan")
         return False
 
     with nmap_script.open("r", encoding="utf-8") as stdin:
@@ -66,7 +66,7 @@ def run_remote_scan(ssh_key: Path, control_plane: str, out_file: Path) -> bool:
                 "-p",
                 "122",
                 f"root@{control_plane}",
-                '/usr/bin/env python3 - "/tmp/data" 1',
+                '/usr/bin/env bash -s -- "/tmp/data" 1',
             ],
             stdin=stdin,
             capture_output=True,
@@ -83,7 +83,7 @@ def run_remote_scan(ssh_key: Path, control_plane: str, out_file: Path) -> bool:
 
 
 def run_local_scan(data_path: Path, out_file: Path) -> bool:
-    nmap_script = Path("/opt/caldera/KC2/nmap-enum.py")
+    nmap_script = Path("/opt/caldera/KC2/nmap-enum.sh")
     if not nmap_script.is_file():
         print(f"[-] missing {nmap_script}", file=sys.stderr)
         return False

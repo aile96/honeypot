@@ -29,7 +29,6 @@ from lib import (
 DEFAULT_RELATIVE_DIRS = {
     "RESULTS_DIR": "results",
     "STATE_DIR": "state",
-    "CACHE_DIR": "cache",
 }
 
 ATTACKER_ENV_PREFIXES = (
@@ -280,11 +279,8 @@ def install_registry_ca_in_controller(ca_file: Path) -> None:
 def prepare_registry_assets() -> dict[str, object]:
     """Prepare per-run local registry auth/TLS files and Compose bind paths.
 
-    Registry image storage is intentionally not bind-mounted: the registry keeps
-    its image blobs only inside the current container filesystem, so run N+1
-    cannot see blobs pushed during run N. Auth/TLS assets are written under
-    /res/runtime/registry and are removed by entrypoint.py when the controller
-    exits cleanly.
+    Registry auth/TLS assets and storage are written under the per-lab runtime
+    directory. The shared cross-lab cache is handled by registry-lab.
     """
     username, password = require_registry_credentials()
     scheme = registry_scheme()
@@ -296,7 +292,7 @@ def prepare_registry_assets() -> dict[str, object]:
     CONFIG["REGISTRY_AUTH_DIR"] = str(auth_dir)
     certs_dir = auth_dir / "certs"
 
-    for path in (auth_dir, certs_dir):
+    for path in (auth_dir, certs_dir, auth_dir / "storage"):
         path.mkdir(parents=True, exist_ok=True)
 
     htpasswd_path = generate_registry_htpasswd(auth_dir, username, password)
@@ -308,6 +304,7 @@ def prepare_registry_assets() -> dict[str, object]:
 
     CONFIG["COMPOSE_REGISTRY_AUTH_DIR"] = str(docker_bind_source(auth_dir, CONFIG))
     CONFIG["COMPOSE_REGISTRY_CERTS_DIR"] = str(docker_bind_source(certs_dir, CONFIG))
+    CONFIG["COMPOSE_REGISTRY_STORAGE_DIR"] = str(docker_bind_source(auth_dir / "storage", CONFIG))
     CONFIG["COMPOSE_REGISTRY_TLS_CERTIFICATE"] = "/auth/certs/domain.crt" if scheme == "https" else ""
     CONFIG["COMPOSE_REGISTRY_TLS_KEY"] = "/auth/certs/domain.key" if scheme == "https" else ""
     return {
@@ -317,7 +314,7 @@ def prepare_registry_assets() -> dict[str, object]:
         "scheme": scheme,
         "endpoint": registry_endpoint(CONFIG),
         "tls": tls_assets,
-        "image_storage": "container-ephemeral",
+        "image_storage": CONFIG["COMPOSE_REGISTRY_STORAGE_DIR"],
     }
 
 
@@ -430,7 +427,7 @@ def main() -> None:
 
     configure_compose_port_binding()
 
-    # 02_build_and_start_compose_underlay.py now uses only config_to_env(CONFIG),
+    # 03_compose.py now uses only config_to_env(CONFIG),
     # so values formerly added by compose_environment() must be prepared here.
     CONFIG["IMAGE_VERSION"] = image_version(CONFIG)
 

@@ -104,6 +104,7 @@ def start_internal_dockerd(
     exec_root: str | Path = DEFAULT_DOCKER_EXEC_ROOT,
     pidfile: str | Path = DEFAULT_DOCKER_PIDFILE,
     log_file: str | Path = DEFAULT_DOCKERD_LOG_FILE,
+    insecure_registries: list[str] | None = None,
 ) -> subprocess.Popen:
     """Start an internal Docker daemon listening on socket_path."""
     ensure_socket_absent(socket_path)
@@ -126,6 +127,10 @@ def start_internal_dockerd(
         f"--exec-root={exec_root}",
         f"--pidfile={pidfile}",
     ]
+    for registry in insecure_registries or []:
+        registry = registry.strip()
+        if registry:
+            cmd.append(f"--insecure-registry={registry}")
 
     log("Starting internal dockerd.")
     log(f"dockerd socket: {socket_path}")
@@ -133,6 +138,8 @@ def start_internal_dockerd(
     log(f"dockerd exec-root: {exec_root}")
     log(f"dockerd pidfile: {pidfile}")
     log(f"dockerd logs: {log_file}")
+    if insecure_registries:
+        log(f"dockerd insecure registries: {', '.join(insecure_registries)}")
 
     try:
         handle = log_file.open("ab", buffering=0)

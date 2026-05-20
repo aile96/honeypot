@@ -1,6 +1,6 @@
 - id: 20000000-0000-0000-0000-000000000005
   name: Data collection from containers
-  description: Using container administrator commands to collect data from containers.
+  description: Using container administrator commands from the child pod to collect data from containers.
   tactic: collection
   technique: { attack_id: T1005, name: "Data from Local System" }
   repeatable: false
@@ -8,8 +8,17 @@
   platforms:
     linux:
       sh:
-        command: |-
-          mkdir -p "$DATA_PATH/KC2" && ssh -p 4222 root@$(cat $DATA_PATH/KC2/attackaddr) '/usr/bin/env python3 -' < /opt/caldera/KC4/container-collection.py > $DATA_PATH/KC2/cri-analysis.log 2>&1 && echo 'Analysis completed'
+        command: >-
+          CHILD='#{host.kc2.child}';
+          PREV='#{kc2.24.done}';
+          mkdir -p "$DATA_PATH/KC2";
+          /opt/caldera/KC4/container-collection.sh configure-crictl > "$DATA_PATH/KC2/cri-analysis.log" 2>&1;
+          echo kc2-25-done
         timeout: 900
-        parsers: []
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+            - source: kc2.25.done
         cleanup: ""
+  requirements:
+    - plugins.stockpile.app.requirements.paw_provenance:
+      - source: host.kc2.child

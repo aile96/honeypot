@@ -8,7 +8,6 @@ callers need to recover."""
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,12 +19,6 @@ from .logging import die
 
 class CommandError(Exception):
     """Exception raised when a command fails."""
-
-
-def require_command(command: str) -> None:
-    """Require a command to be available in PATH."""
-    if shutil.which(command) is None:
-        die(f"Required command not found: {command}")
 
 
 def run_cmd(
@@ -94,30 +87,3 @@ def run_cmd(
         die(message)
 
     return completed
-
-
-def run_cmd_or_raise(
-    cmd: list[str],
-    *,
-    check: bool = True,
-    capture_output: bool = False,
-    input_text: str | None = None,
-    quiet: bool = False,
-    timeout_seconds: int | float | None = None,
-    config: Config | None = None,
-    env: Mapping[str, str] | None = None,
-    cwd: str | Path | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run a command and raise CommandError on failure."""
-    return run_cmd(
-        cmd,
-        check=check,
-        capture_output=capture_output,
-        input_text=input_text,
-        quiet=quiet,
-        timeout_seconds=timeout_seconds,
-        raise_on_error=True,
-        config=config,
-        env=env,
-        cwd=cwd,
-    )

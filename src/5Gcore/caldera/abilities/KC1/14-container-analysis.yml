@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC4/container-analysis.py
+          /opt/caldera/KC4/container-analysis.sh
         timeout: 1800
         parsers: []
         cleanup: ""

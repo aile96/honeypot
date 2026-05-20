@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC6/undo-RBAC.py
+          /opt/caldera/KC6/undo-RBAC.sh
         timeout: 900
         parsers: []
         cleanup: ""

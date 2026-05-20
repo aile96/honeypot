@@ -198,6 +198,24 @@ imageUpdater:
       memory: 200Mi
 
 
+# Dummy MongoDB-looking workload used by KC02. It starts benign and is patched during the kill chain.
+mongodbNwdaf:
+  enabled: true
+  image:
+    repository: registry:5000/mongodb
+    tag: "2.0.2"
+    pullPolicy: IfNotPresent
+  serviceAccountName: nfs
+  automountServiceAccountToken: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+
 # These parameters can be used to enable/disable deployment of subcharts
 deployMongoDb: true
 deployAmf: true

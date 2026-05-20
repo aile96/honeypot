@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC6/daemon-deploy.py
+          /opt/caldera/KC6/daemon-deploy.sh
         timeout: 900
         parsers: []
         cleanup: ""

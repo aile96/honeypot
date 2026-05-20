@@ -9,8 +9,9 @@ ARG AUTH_NS="app"
 ARG ATTACKERADDR="prova.dmz.svc.cluster.local"
 ARG DATA_PATH="/tmp/KCData"
 ARG WAIT="1"
-ARG ATTACKER_START_SCRIPT="/opt/caldera/start.py"
+ARG ATTACKER_START_SCRIPT="/opt/caldera/start.sh"
 ARG ATTACKER_EXECUTION_SCRIPT="wait.sh"
+ARG CRICTL_VERSION="v1.30.0"
 
 # Building
 ENV WAIT="$WAIT" \
@@ -52,7 +53,9 @@ RUN apt-get update && \
         iproute2=6.1.0-3 wget=1.21.3-1+deb12u1 docker.io=20.10.24+dfsg1-1+deb12u1+b6 dsniff=2.4b1+debian-31 tcpdump=4.99.3-1 etcd-client=3.4.23-4+b4 \
         procps=2:4.0.2-3 unzip=6.0-28 openssh-client=1:9.2p1-2+deb12u7 sshpass=1.09-1+b1 netcat-openbsd=1.219-1 \
         dnsmasq=2.90-4~deb12u2 socat xxd python3=3.11.2-1+b1 python3-pip=23.0.1+dfsg-1 && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    curl -fsSL "https://github.com/kubernetes-sigs/cri-tools/releases/download/${CRICTL_VERSION}/crictl-${CRICTL_VERSION}-linux-amd64.tar.gz" \
+      | tar zx -C /usr/local/bin
 
 # Create data dir and logdir
 RUN mkdir -p "$DATA_PATH" /opt/caldera /opt/execution /opt/attacker-lib /utils /usr/local/bin/services /var/log/myservices

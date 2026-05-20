@@ -36,10 +36,8 @@ def docker_bind_source(path: Path, config: Mapping[str, Any] | None = None) -> P
         return source
 
     dynamic_mappings = [
-        ("DOCKER_DATA_ROOT", "HOST_CONTROLLER_DOCKER_DATA_DIR"),
-        ("BUILD_HELPER_CACHE_DIR", "HOST_BUILD_HELPER_CACHE_DIR"),
         ("RUNTIME_DIR", "HOST_RUNTIME_DIR"),
-        ("RESULTS_DIR", "HOST_CONTROLLER_RESULTS_DIR"),
+        ("RESULTS_DIR", "HOST_RESULTS_DIR"),
     ]
     for container_config_name, host_config_name in dynamic_mappings:
         container_prefix_raw = config_str(config, container_config_name, "").strip()
@@ -57,12 +55,9 @@ def docker_bind_source(path: Path, config: Mapping[str, Any] | None = None) -> P
         return (host_prefix / relative).resolve()
 
     mount_mappings = [
-        ("/res/cache/images", "HOST_CONTROLLER_DOCKER_DATA_DIR"),
-        ("/res/cache/build-helper", "HOST_BUILD_HELPER_CACHE_DIR"),
-        ("/res/cache/controller", "HOST_CONTROLLER_DOCKER_DATA_DIR"),
         ("/res/runtime", "HOST_RUNTIME_DIR"),
         ("/res", "HOST_RES_DIR"),
-        ("/results", "HOST_CONTROLLER_RESULTS_DIR"),
+        ("/results", "HOST_RESULTS_DIR"),
     ]
 
     for container_prefix_raw, host_config_name in mount_mappings:
@@ -118,13 +113,7 @@ def ensure_docker_network(network_name: str, config: Config | None = None) -> No
     """Create a Docker network when missing."""
     if docker_network_exists(network_name, config):
         return
-    command = ["docker", "network", "create"]
-    if config is not None:
-        lab_name = config_str(config, "LAB_NAME", config_str(config, "CLUSTER_PROFILE", ""), allow_empty=True).strip()
-        if lab_name:
-            command.extend(["--label", f"honeypot.lab={lab_name}"])
-    command.append(network_name)
-    run_cmd(command, config=config)
+    run_cmd(["docker", "network", "create", network_name], config=config)
     log(f"Created Docker network {network_name}.")
 
 
@@ -228,32 +217,6 @@ def docker_image_exists(
         env=env,
     )
     return completed.returncode == 0
-
-
-def docker_build_image(
-    image_ref: str,
-    context: Path,
-    *,
-    dockerfile: Path | None = None,
-    build_args: Mapping[str, str] | None = None,
-    force: bool = False,
-    timeout_seconds: int | float | None = None,
-    config: Config | None = None,
-    env: Mapping[str, str] | None = None,
-) -> None:
-    """Build a Docker image if missing or forced."""
-    if not force and docker_image_exists(image_ref, config, env=env):
-        log(f"Image already exists locally, skipping build: {image_ref}")
-        return
-
-    command = ["docker", "build", "-t", image_ref]
-    if dockerfile is not None:
-        command.extend(["-f", str(dockerfile)])
-    for key, value in (build_args or {}).items():
-        command.extend(["--build-arg", f"{key}={value}"])
-    command.append(str(context))
-
-    run_cmd(command, timeout_seconds=timeout_seconds, config=config, env=env)
 
 
 def refresh_docker_ip_cache(config: Config | None = None) -> None:

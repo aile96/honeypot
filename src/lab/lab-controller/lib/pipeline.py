@@ -14,7 +14,7 @@ from typing import Any, Iterable, Mapping
 from .config import config_int
 from .logging import die
 
-DEFAULT_STEP_RETRY_ATTEMPTS = 0
+DEFAULT_STEP_RETRY_ATTEMPTS = 3
 DEFAULT_STEP_RETRY_DELAY_SECONDS = 0
 
 
@@ -100,12 +100,8 @@ def resolve_step_retry_policy(
     attempts_name = f"STEP_RETRY_ATTEMPTS_{step_key}"
     delay_name = f"STEP_RETRY_DELAY_SECONDS_{step_key}"
 
-    retries = config_int(
-        config,
-        attempts_name,
-        DEFAULT_STEP_RETRY_ATTEMPTS,
-        minimum=0,
-    )
+    default_retries = config_int(config, "PIPELINE_STEP_RETRIES", DEFAULT_STEP_RETRY_ATTEMPTS, minimum=0)
+    retries = config_int(config, attempts_name, default_retries, minimum=0)
 
     delay = config_int(
         config,
@@ -126,9 +122,9 @@ def resolve_hook_candidates(
 
     Supported names:
         HOOK_PRE_01.py
-        HOOK_PRE_01_render_and_create_kind_cluster.py
+        HOOK_PRE_01_kind.py
         HOOK_POST_01.py
-        HOOK_POST_01_render_and_create_kind_cluster.py
+        HOOK_POST_01_kind.py
     """
     step_index = step_index_from_script(step_script)
     if step_index is None:

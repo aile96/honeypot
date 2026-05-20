@@ -29,7 +29,6 @@ DEFAULT_RELATIVE_DIRS = {
     "RESULTS_DIR": "results",
     "STATE_DIR": "state",
     "GENERATED_DIR": "generated",
-    "CACHE_DIR": "cache",
 }
 
 
@@ -142,7 +141,7 @@ def install_registry_ca_in_controller(ca_file: Path) -> None:
 
 
 def prepare_registry_assets() -> dict[str, object]:
-    """Prepare per-run registry auth/TLS files without persistent registry image cache."""
+    """Prepare per-run registry auth/TLS files and per-lab registry storage."""
     username, password = require_registry_credentials()
     scheme = registry_scheme()
 
@@ -153,6 +152,7 @@ def prepare_registry_assets() -> dict[str, object]:
     CONFIG["REGISTRY_AUTH_DIR"] = str(auth_dir)
     certs_dir = auth_dir / "certs"
     certs_dir.mkdir(parents=True, exist_ok=True)
+    (auth_dir / "storage").mkdir(parents=True, exist_ok=True)
 
     htpasswd_path = generate_registry_htpasswd(auth_dir, username, password)
     tls_assets = generate_registry_tls(certs_dir)
@@ -160,6 +160,7 @@ def prepare_registry_assets() -> dict[str, object]:
 
     CONFIG["COMPOSE_REGISTRY_AUTH_DIR"] = str(docker_bind_source(auth_dir, CONFIG))
     CONFIG["COMPOSE_REGISTRY_CERTS_DIR"] = str(docker_bind_source(certs_dir, CONFIG))
+    CONFIG["COMPOSE_REGISTRY_STORAGE_DIR"] = str(docker_bind_source(auth_dir / "storage", CONFIG))
     CONFIG["COMPOSE_REGISTRY_TLS_CERTIFICATE"] = "/auth/certs/domain.crt"
     CONFIG["COMPOSE_REGISTRY_TLS_KEY"] = "/auth/certs/domain.key"
 
@@ -170,7 +171,7 @@ def prepare_registry_assets() -> dict[str, object]:
         "endpoint": registry_endpoint(CONFIG),
         "scheme": scheme,
         "tls": tls_assets,
-        "image_storage": "container-ephemeral",
+        "image_storage": CONFIG["COMPOSE_REGISTRY_STORAGE_DIR"],
     }
 
 

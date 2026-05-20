@@ -23,11 +23,13 @@ from .config import (
     config_path,
     config_str,
     config_to_env,
-    is_true as config_is_true,
+    load_config_file,
+    load_config_file_if_exists,
     load_default_config,
+    load_runtime_config,
+    load_toml_config_file,
     load_variables_file,
     load_variables_file_if_exists,
-    load_variables_file_if_exists as load_config_file_if_exists,
     merge_config,
     normalize_bool_config,
     parse_bool_value,
@@ -35,24 +37,16 @@ from .config import (
     python_value_to_env,
     require_config,
     require_port_config,
+    runtime_config_file,
+    save_config_file,
     set_config_default,
     validate_config_name,
 )
 
-from .env import (
-    bool_env_value,
-    is_true,
-    load_default_variables,
-    load_variables_file_if_exists as load_env_variables_file_if_exists,
-    normalize_bool_env,
-    require_env,
-)
 
 from .command import (
     CommandError,
-    require_command,
     run_cmd,
-    run_cmd_or_raise,
 )
 
 from .validation import (
@@ -69,7 +63,6 @@ from .retry import (
 from .docker import (
     HONEYPOT_DOCKER_IP_CACHE,
     HONEYPOT_DOCKER_IP_CACHE_READY,
-    docker_build_image,
     docker_bind_source,
     docker_container_exists,
     docker_container_networks,
@@ -97,10 +90,7 @@ from .docker_runtime import (
 from .cleanup import (
     cleanup_docker_compose_stack,
     cleanup_kind_cluster,
-    cleanup_lab_labeled_containers,
-    cleanup_lab_network,
     cleanup_underlay_containers,
-    verify_no_lab_leftovers,
 )
 
 from .hosts import (
@@ -135,11 +125,13 @@ from .registry import (
     registry_endpoint,
 )
 
-from .build_helper import (
-    docker_host_env,
-    start_cluster_build_helper,
-    stop_cluster_build_helper,
-    wait_docker_host_ready,
+from .images import (
+    build_cache_image,
+    cache_image_ref,
+    docker_login_internal_registry,
+    load_image_definitions,
+    parallel_map,
+    push_cache_image,
 )
 
 from .skaffold_config import (
@@ -153,7 +145,6 @@ from .skaffold_config import (
 )
 
 from .compose import (
-    compose_build,
     compose_down,
     compose_environment,
     compose_file_path,
@@ -231,10 +222,12 @@ __all__ = [
     "config_path",
     "config_str",
     "config_to_env",
-    "config_is_true",
     "load_default_config",
+    "load_config_file",
     "load_variables_file",
     "load_config_file_if_exists",
+    "load_runtime_config",
+    "load_toml_config_file",
     "merge_config",
     "normalize_bool_config",
     "parse_bool_value",
@@ -242,19 +235,13 @@ __all__ = [
     "python_value_to_env",
     "require_config",
     "require_port_config",
+    "runtime_config_file",
+    "save_config_file",
     "set_config_default",
     "validate_config_name",
-    "bool_env_value",
-    "is_true",
-    "load_default_variables",
-    "load_env_variables_file_if_exists",
     "load_variables_file_if_exists",
-    "normalize_bool_env",
-    "require_env",
     "CommandError",
-    "require_command",
     "run_cmd",
-    "run_cmd_or_raise",
     "require_non_negative_int",
     "require_int_at_least",
     "require_port_env",
@@ -262,7 +249,6 @@ __all__ = [
     "retry_operation_or_raise",
     "HONEYPOT_DOCKER_IP_CACHE",
     "HONEYPOT_DOCKER_IP_CACHE_READY",
-    "docker_build_image",
     "docker_bind_source",
     "docker_container_exists",
     "docker_container_networks",
@@ -305,10 +291,12 @@ __all__ = [
     "node_internal_ip",
     "image_version",
     "registry_endpoint",
-    "docker_host_env",
-    "start_cluster_build_helper",
-    "stop_cluster_build_helper",
-    "wait_docker_host_ready",
+    "build_cache_image",
+    "cache_image_ref",
+    "docker_login_internal_registry",
+    "load_image_definitions",
+    "parallel_map",
+    "push_cache_image",
     "render_skaffold_config",
     "skaffold_artifacts_path",
     "skaffold_config_path",
@@ -316,7 +304,6 @@ __all__ = [
     "skaffold_runtime_env",
     "skaffold_template_path",
     "skaffold_workdir",
-    "compose_build",
     "compose_down",
     "compose_environment",
     "compose_file_path",

@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC4/rce-attack.py
+          /opt/caldera/KC4/rce-attack.sh
         timeout: 900
         parsers: []
         cleanup: ""

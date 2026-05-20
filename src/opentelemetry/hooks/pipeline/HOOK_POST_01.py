@@ -753,7 +753,7 @@ def update_runtime_template_values(crictl_runtime_path: str) -> None:
 
 def main() -> None:
     configure_controller_kubeconfig_endpoint()
-    wait_kubernetes_api()
+    log("Skipping explicit Kubernetes API wait; Kind handles cluster creation readiness.")
     all_nodes, control_planes, workers = discover_nodes()
     control_plane_node = control_planes[0]
     cp_ip, cp_container, cp_networks, cp_network = resolve_control_plane(control_plane_node)
@@ -763,7 +763,7 @@ def main() -> None:
     kubeserver_port = discover_kubeserver_port()
     CONFIG["KUBESERVER_PORT"] = kubeserver_port
     CONFIG["CONTROL_PLANE_PORT"] = kubeserver_port
-    CONFIG["K8S_IMAGE"] = discover_kube_apiserver_image()
+    CONFIG["KUBE_APISERVER_IMAGE"] = discover_kube_apiserver_image()
     CONFIG["CP_CONTAINER"] = cp_container
     CONFIG["CP_NETWORK"] = cp_network
     CONFIG["CP_NETWORKS"] = cp_networks
@@ -774,7 +774,7 @@ def main() -> None:
     set_state_value(STATE, "CONTROL_PLANE_NODE", control_plane_node)
     set_state_value(STATE, "CONTROL_PLANE_PORT", CONFIG["CONTROL_PLANE_PORT"])
     set_state_value(STATE, "KUBESERVER_PORT", CONFIG["KUBESERVER_PORT"])
-    set_state_value(STATE, "K8S_IMAGE", CONFIG["K8S_IMAGE"])
+    set_state_value(STATE, "KUBE_APISERVER_IMAGE", CONFIG["KUBE_APISERVER_IMAGE"])
     set_state_value(STATE, "control_plane_ip", cp_ip)
     set_state_value(STATE, "control_plane_container", cp_container)
     set_state_value(STATE, "CP_NETWORK", cp_network)

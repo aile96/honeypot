@@ -10,6 +10,7 @@ src/opentelemetry/containers/fraud-detection/build/
 # Python bytecode/cache
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Ignore all cache, results, and generated files in the res directory
 /res/*

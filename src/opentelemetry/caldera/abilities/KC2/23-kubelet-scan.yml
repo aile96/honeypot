@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC2/kubelet-scan.py
+          /opt/caldera/KC2/kubelet-scan.sh
         timeout: 900
         parsers: []
         cleanup: ""

@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC6/registry-attack.py
+          /opt/caldera/KC6/registry-attack.sh
         timeout: 900
         parsers: []
         cleanup: ""

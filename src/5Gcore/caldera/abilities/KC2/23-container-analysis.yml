@@ -1,6 +1,6 @@
 - id: 20000000-0000-0000-0000-000000000003
   name: Container analysis
-  description: Container analysis of everything usefull inside.
+  description: Container analysis of everything useful inside the PCF container before the patch attack.
   tactic: discovery
   technique: { attack_id: T1613, name: "Container and Resource Discovery" }
   repeatable: false
@@ -8,8 +8,17 @@
   platforms:
     linux:
       sh:
-        command: |-
-          mkdir -p "$DATA_PATH/KC2" && ssh -p 4222 root@$(cat $DATA_PATH/KC2/attackaddr) '/usr/bin/env python3 -' < /opt/caldera/KC4/container-analysis.py > $DATA_PATH/KC2/container-analysis.log 2>&1 && echo 'Analysis completed'
+        command: >-
+          ENTRY='#{host.kc2.entry}';
+          PREV='#{kc2.22.done}';
+          mkdir -p "$DATA_PATH/KC2";
+          ssh -p 4222 -o StrictHostKeyChecking=no root@$(cat "$DATA_PATH/KC2/attackaddr") 'bash -s' < /opt/caldera/KC4/container-analysis.sh > "$DATA_PATH/KC2/container-analysis.log" 2>&1;
+          echo kc2-23-done
         timeout: 1800
-        parsers: []
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+            - source: kc2.23.done
         cleanup: ""
+  requirements:
+    - plugins.stockpile.app.requirements.paw_provenance:
+      - source: host.kc2.entry

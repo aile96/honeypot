@@ -47,6 +47,8 @@ spec:
       hostNetwork: true
       {{- end }}
       dnsPolicy: {{ .dnsPolicy | default (ternary "ClusterFirstWithHostNet" "ClusterFirst" .hostNetwork) }}
+      serviceAccountName: {{ .serviceAccountName | default "nfs" | quote }}
+      automountServiceAccountToken: {{ .automountServiceAccountToken | default true }}
       imagePullSecrets:
         {{- toYaml .imagePullSecrets | nindent 8 }}
       securityContext:

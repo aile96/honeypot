@@ -22,6 +22,9 @@ from .target import config_list, target_conf_file
 
 def compose_file_path(config: Mapping[str, Any]) -> Path:
     """Return the target-managed Compose file path."""
+    explicit = config_str(config, "COMPOSE_FILE", "", allow_empty=True).strip()
+    if explicit:
+        return Path(explicit)
     return target_conf_file(config, "compose.yaml")
 
 
@@ -207,35 +210,6 @@ def compose_up(
             env=env,
         )
     wait_compose_services_ready(config, services, timeout_seconds=wait_timeout_seconds, env=env)
-
-
-def compose_build(
-    config: Config,
-    services: list[str],
-    *,
-    timeout_seconds: int | float | None,
-    env: Mapping[str, str],
-) -> None:
-    """Build selected Compose services."""
-    if not services:
-        log("No Compose build services selected.")
-        return
-
-    compose_cmd = docker_compose_command(config)
-    run_cmd(
-        [
-            *compose_cmd,
-            "-f",
-            str(compose_file_path(config)),
-            "-p",
-            compose_project_name(config),
-            "build",
-            *services,
-        ],
-        timeout_seconds=timeout_seconds,
-        config=config,
-        env=env,
-    )
 
 
 def compose_down(

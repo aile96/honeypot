@@ -5,6 +5,9 @@ metadata:
   name: free5gc-ueransim-kind
 
 build:
+  insecureRegistries:
+    - ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+    - ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}
   tagPolicy:
     envTemplate:
       template: "{{.IMAGE_VERSION}}"
@@ -13,54 +16,152 @@ build:
     useDockerCLI: true
   artifacts:
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/amf
-      context: containers/amf
-    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ausf
-      context: containers/ausf
-    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/chf
-      context: containers/chf
-    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/dbpython
-      context: containers/dbpython
-    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/n3iwf
-      context: containers/n3iwf
-    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nef
-      context: containers/nef
-    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nrf
-      context: containers/nrf
-    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nssf
-      context: containers/nssf
-    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nwdaf
-      context: /workdir/common/attacker
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
       docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
         buildArgs:
-          GROUP: cluster
-          CALDERA_URL: "${CALDERA_URL:-http://caldera:8888}"
-          WAIT: "0"
-          ATTACKER_EXECUTION_SCRIPT: /opt/attacker-lib/nwdaf/nwdaf_server.py
-          ATTACKERADDR: ${ATTACKER:-attacker}
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/amf:1.0.1
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ausf
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/ausf:1.0.1
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/chf
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/chf:1.0.1
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/dbpython
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/dbpython:1.0.1
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/n3iwf
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/n3iwf:1.0.1
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nef
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/nef:1.0.1
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nrf
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/nrf:1.0.1
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nssf
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/nssf:1.0.1
+    - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nwdaf
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/nwdaf:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/controller
-      context: /workdir/common/controller
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/controller:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/pcf
-      context: containers/pcf
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/pcf:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/smf
-      context: containers/smf
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/smf:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/udm
-      context: containers/udm
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/udm:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/udr
-      context: containers/udr
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/udr:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/upf
-      context: containers/upf
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/upf:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/webui
-      context: containers/webui
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/webui:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ueransim
-      context: containers/ueransim
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/ueransim:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/mongodb
-      context: containers/mongodb
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/mongodb:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/curl
-      context: containers/curl
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/curl:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/busybox
-      context: containers/busybox
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/busybox:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sctp-test
-      context: containers/sctp-test
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/sctp-test:1.0.1
 
 deploy:
   statusCheck: true
@@ -139,6 +240,24 @@ deploy:
           free5gc-nssf.nssf.image.tag: "${IMAGE_VERSION:-2.0.2}"
           free5gc-nwdaf.nwdaf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nwdaf
           free5gc-nwdaf.nwdaf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          mongodbNwdaf.image.repository: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/mongodb
+          mongodbNwdaf.image.tag: "${IMAGE_VERSION:-2.0.2}"
+          free5gc-nwdaf.nwdaf.extraEnv[0].name: GROUP
+          free5gc-nwdaf.nwdaf.extraEnv[0].value: cluster
+          free5gc-nwdaf.nwdaf.extraEnv[1].name: CALDERA_URL
+          free5gc-nwdaf.nwdaf.extraEnv[1].value: "${CALDERA_URL:-http://caldera:8888}"
+          free5gc-nwdaf.nwdaf.extraEnv[2].name: LOG_NS
+          free5gc-nwdaf.nwdaf.extraEnv[2].value: "${MEM_NAMESPACE:-mem}"
+          free5gc-nwdaf.nwdaf.extraEnv[3].name: ATTACKED_NS
+          free5gc-nwdaf.nwdaf.extraEnv[3].value: "${DMZ_NAMESPACE:-dmz}"
+          free5gc-nwdaf.nwdaf.extraEnv[4].name: AUTH_NS
+          free5gc-nwdaf.nwdaf.extraEnv[4].value: "${APP_NAMESPACE:-app}"
+          free5gc-nwdaf.nwdaf.extraEnv[5].name: ATTACKERADDR
+          free5gc-nwdaf.nwdaf.extraEnv[5].value: "${ATTACKER:-attacker}"
+          free5gc-nwdaf.nwdaf.extraEnv[6].name: WAIT
+          free5gc-nwdaf.nwdaf.extraEnv[6].value: "0"
+          free5gc-nwdaf.nwdaf.extraEnv[7].name: ATTACKER_EXECUTION_SCRIPT
+          free5gc-nwdaf.nwdaf.extraEnv[7].value: /opt/attacker-lib/nwdaf/nwdaf_server.py
           # The test NWDAF registers itself in NRF and can be exercised with the Helm test Job.
           free5gc-nwdaf.nwdaf.registration.enabled: ${NWDAF_REGISTER_ON_START:-true}
           free5gc-nwdaf.nwdaf.registrationTest.enabled: ${NWDAF_REGISTRATION_TEST_ENABLED:-true}
@@ -150,6 +269,8 @@ deploy:
           free5gc-pcf.pcf.image.tag: "${IMAGE_VERSION:-2.0.2}"
           free5gc-pcf.pcf.hostNetwork: "${PCF_HOST_NETWORK:-true}"
           free5gc-pcf.pcf.dnsPolicy: ClusterFirstWithHostNet
+          free5gc-pcf.pcf.serviceAccountName: nfs
+          free5gc-pcf.pcf.automountServiceAccountToken: true
           free5gc-pcf.pcf.podSecurityContext.runAsUser: 0
           free5gc-pcf.pcf.podSecurityContext.runAsGroup: 0
           free5gc-pcf.pcf.podSecurityContext.runAsNonRoot: false
@@ -168,14 +289,8 @@ deploy:
           free5gc-pcf.pcf.extraEnv[3].value: "${PCF_TEST_SERVICE_PORT:-2525}"
           free5gc-pcf.pcf.extraEnv[4].name: SERVICE_BANNER
           free5gc-pcf.pcf.extraEnv[4].value: "220 PCF Test Service Ready"
-          free5gc-pcf.pcf.extraEnv[5].name: CRICTL_RUNTIME_PATH
-          free5gc-pcf.pcf.extraEnv[5].value: /host/run/containerd/containerd.sock
-          free5gc-pcf.pcf.extraVolumeMounts[0].name: socket
-          free5gc-pcf.pcf.extraVolumeMounts[0].mountPath: /host/run/containerd/containerd.sock
-          free5gc-pcf.pcf.extraVolumeMounts[0].mountPropagation: HostToContainer
-          free5gc-pcf.pcf.extraVolumes[0].name: socket
-          free5gc-pcf.pcf.extraVolumes[0].hostPath.path: "${PCF_SOCKET_PATH:-/run/containerd/containerd.sock}"
-          free5gc-pcf.pcf.extraVolumes[0].hostPath.type: "${PCF_SOCKET_TYPE:-Socket}"
+          free5gc-pcf.pcf.extraEnv[5].name: ATTACKERADDR
+          free5gc-pcf.pcf.extraEnv[5].value: "${ATTACKER:-attacker}"
           free5gc-pcf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
           free5gc-pcf.initcontainers.curl.image: curl
           free5gc-pcf.initcontainers.curl.tag: "${IMAGE_VERSION:-2.0.2}"

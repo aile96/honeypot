@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC5/node-collection.py
+          /opt/caldera/KC5/node-collection.sh
         timeout: 1800
         parsers: []
         cleanup: ""

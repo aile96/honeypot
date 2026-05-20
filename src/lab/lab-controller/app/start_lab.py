@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Run the CONFIG/STATE-driven lab pipeline inside the controller container.
 
-This runner loads the selected target variables.py file, overlays only approved
-environment values, installs derived paths, validates pipeline-owned settings, and
-executes each pipeline step with matching PRE/POST hooks. CONFIG stores desired
-configuration, while STATE stores runtime discoveries and resumable progress."""
+This runner loads the persisted runtime CONFIG written by start.py from the fixed
+/runtime/config.toml mount, saves CONFIG back to disk, and executes each pipeline
+step with matching PRE/POST hooks. CONFIG stores desired configuration, while
+STATE stores runtime discoveries and resumable progress."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from lib import (
     discover_pipeline_scripts,
     err,
     load_or_create_state,
-    load_variables_file,
+    load_runtime_config,
     log,
     mark_pipeline_failed,
     mark_pipeline_ready,
@@ -39,6 +39,7 @@ from lib import (
     require_port_config,
     resolve_hook_candidates,
     resolve_step_retry_policy,
+    save_config_file,
     save_state_file,
     set_config_default,
     state_values,
@@ -49,7 +50,7 @@ from lib import (
 
 SCRIPT_START_EPOCH = int(time.time())
 
-DEFAULT_ENV_FILE = "/workdir/code/conf-files/variables.py"
+DEFAULT_ENV_FILE = "/runtime/config.toml"
 DEFAULT_CODE_ROOT = "/workdir/code"
 DEFAULT_RES_DIR = "/res"
 DEFAULT_PIPELINE_ROOT = "/app/pipeline"
@@ -77,9 +78,11 @@ DOCKERFILE_PIPELINE_ENV_KEYS = (
 )
 
 
-# Environment values passed by start.sh through docker run -e and still useful to the pipeline.
-START_SH_PIPELINE_ENV_KEYS = (
+# Environment values passed by start.py through docker run -e and still useful to the pipeline.
+START_PY_PIPELINE_ENV_KEYS = (
     "CODE_ROOT",
+    "COMMON_CODE_ROOT",
+    "CONFIG_FILE",
     "ENV_FILE",
     "LAB_NAME",
     "CLUSTER_PROFILE",
@@ -95,18 +98,15 @@ START_SH_PIPELINE_ENV_KEYS = (
     "EXPOSE_TO_HOST",
     "HOST_SOCKET",
     "PROXY_BIND_ALL",
-    "BUILD_HELPER_CACHE_DIR",
     "HOST_CODE_ROOT",
     "HOST_RES_DIR",
     "HOST_RUNTIME_DIR",
-    "HOST_CONTROLLER_RESULTS_DIR",
-    "HOST_CONTROLLER_DOCKER_DATA_DIR",
-    "HOST_BUILD_HELPER_CACHE_DIR",
+    "HOST_RESULTS_DIR",
 )
 
 
 PIPELINE_ALLOWED_ENV_KEYS = tuple(
-    dict.fromkeys((*DOCKERFILE_PIPELINE_ENV_KEYS, *START_SH_PIPELINE_ENV_KEYS))
+    dict.fromkeys((*DOCKERFILE_PIPELINE_ENV_KEYS, *START_PY_PIPELINE_ENV_KEYS))
 )
 
 
@@ -116,13 +116,10 @@ PIPELINE_REQUIRED_CONFIG_KEYS = (
     "RES_DIR",
     "LAB_NAME",
     "EXPOSE_TO_HOST",
-    "BUILD_HELPER_CACHE_DIR",
     "HOST_CODE_ROOT",
     "HOST_RES_DIR",
     "HOST_RUNTIME_DIR",
-    "HOST_CONTROLLER_RESULTS_DIR",
-    "HOST_CONTROLLER_DOCKER_DATA_DIR",
-    "HOST_BUILD_HELPER_CACHE_DIR",
+    "HOST_RESULTS_DIR",
 )
 
 
@@ -139,15 +136,13 @@ PIPELINE_OPTIONAL_BOOL_CONFIG_KEYS = (
 
 PIPELINE_ABSOLUTE_PATH_KEYS = (
     "CODE_ROOT",
+    "CONFIG_FILE",
     "ENV_FILE",
     "RES_DIR",
-    "BUILD_HELPER_CACHE_DIR",
     "HOST_CODE_ROOT",
     "HOST_RES_DIR",
     "HOST_RUNTIME_DIR",
-    "HOST_CONTROLLER_RESULTS_DIR",
-    "HOST_CONTROLLER_DOCKER_DATA_DIR",
-    "HOST_BUILD_HELPER_CACHE_DIR",
+    "HOST_RESULTS_DIR",
     "PIPELINE_ROOT",
     "HOOKS_DIR",
     "CONTROLLER_HOOKS_DIR",
@@ -160,7 +155,6 @@ PIPELINE_ABSOLUTE_PATH_KEYS = (
     "STATE_DIR",
     "RUNTIME_DIR",
     "GENERATED_DIR",
-    "CACHE_DIR",
 )
 
 
@@ -282,6 +276,7 @@ def run_unit_once(
     save_state_file(state)
 
     rc = run_python_file_once(script_path, init_globals=init_globals)
+    save_config_snapshot(config)
 
     if unit_type == "step":
         record_step_finish(state, name, exit_code=rc)
@@ -296,6 +291,12 @@ def run_unit_once(
     )
     save_state_file(state)
     return rc
+
+
+def save_config_snapshot(config: Config) -> None:
+    """Persist CONFIG mutations made by a step or hook."""
+    config_path = str(config.get("CONFIG_FILE") or config.get("ENV_FILE") or DEFAULT_ENV_FILE)
+    save_config_file(config, config_path)
 
 
 def run_unit_with_retry(
@@ -451,7 +452,7 @@ def discover_steps(config: Config) -> list[Path]:
 
 
 def overlay_allowed_environment(config: Config) -> None:
-    """Overlay only Dockerfile/start.sh env vars allowed for the pipeline."""
+    """Overlay only Dockerfile/start.py env vars allowed for the pipeline."""
     for name in PIPELINE_ALLOWED_ENV_KEYS:
         value = os.environ.get(name)
         if value is not None and value != "":
@@ -468,7 +469,7 @@ def install_pipeline_defaults(config: Config) -> None:
     # Compatibility for target code that still reads CLUSTER_PROFILE.
     config["CLUSTER_PROFILE"] = lab_name
     set_config_default(config, "COMPOSE_PROJECT_NAME", f"honeypot-{lab_name}")
-    set_config_default(config, "CP_NETWORK", f"kind-{lab_name}")
+    set_config_default(config, "CP_NETWORK", "lab")
     set_config_default(config, "KUBE_CONTEXT", f"kind-{lab_name}")
 
     set_config_default(config, "PIPELINE_ROOT", DEFAULT_PIPELINE_ROOT)
@@ -493,7 +494,6 @@ def install_pipeline_defaults(config: Config) -> None:
     set_config_default(config, "RESULTS_DIR", str(results_dir))
     set_config_default(config, "STATE_FILE", str(config.get("STATE_FILE") or generated_dir / "lab-state.json"))
     set_config_default(config, "STATE_DIR", str(generated_dir))
-    set_config_default(config, "CACHE_DIR", str(Path(res_dir) / "cache" / "images" / lab_name))
 
     if str(config.get("REGISTRY_AUTH_DIR", "")).strip() in {"", "/res/runtime/registry"}:
         config["REGISTRY_AUTH_DIR"] = str(runtime_dir / "registry")
@@ -501,6 +501,7 @@ def install_pipeline_defaults(config: Config) -> None:
         config["REGISTRY_CA_FILE"] = str(runtime_dir / "registry" / "certs" / "rootca.crt")
     config.setdefault("COMPOSE_REGISTRY_AUTH_DIR", str(runtime_dir / "registry"))
     config.setdefault("COMPOSE_REGISTRY_CERTS_DIR", str(runtime_dir / "registry" / "certs"))
+    config.setdefault("COMPOSE_REGISTRY_STORAGE_DIR", str(runtime_dir / "registry" / "storage"))
     config.setdefault("COMPOSE_ATTACKER_ENV_FILE", str(runtime_dir / "attacker" / "attacker.env"))
     config.setdefault("COMPOSE_ATTACKER_IPHOST_FILE", str(runtime_dir / "attacker" / "iphost"))
     config.setdefault("COMPOSE_ATTACKER_APISERVER_DIR", str(runtime_dir / "attacker" / "apiserver"))
@@ -561,15 +562,15 @@ def validate_pipeline_config(config: Config) -> None:
 
 
 def load_controller_config() -> Config:
-    """Load CONFIG from variables.py and allowed controller env overrides."""
-    env_file = os.environ.get("ENV_FILE", DEFAULT_ENV_FILE)
-
-    config = load_variables_file(env_file)
+    """Load persisted runtime CONFIG from /runtime/config.toml."""
+    config = load_runtime_config()
+    env_file = str(config.get("CONFIG_FILE") or DEFAULT_ENV_FILE)
+    config["CONFIG_FILE"] = env_file
     config["ENV_FILE"] = env_file
 
-    overlay_allowed_environment(config)
     install_pipeline_defaults(config)
     validate_pipeline_config(config)
+    save_config_file(config, env_file)
 
     return config
 

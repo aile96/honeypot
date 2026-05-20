@@ -1,0 +1,18 @@
+- id: 20000000-0000-0000-0000-0000000000c1
+  name: KC2 mark child agent
+  description: Mark the patched mongodb-nwdaf pod once it reconnects to CALDERA as the KC02 child agent.
+  tactic: discovery
+  technique: { attack_id: T1082, name: "System Information Discovery" }
+  repeatable: false
+  singleton: false
+  platforms:
+    linux:
+      sh:
+        command: >-
+          PREV='#{kc2.24.done}';
+          if [ "${KC_AGENT_ROLE:-}" = "child" ]; then echo child; fi
+        timeout: 60
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+            - source: host.kc2.child
+        cleanup: ""

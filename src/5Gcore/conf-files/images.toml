@@ -1,0 +1,125 @@
+[[images]]
+name = "caldera"
+tag = "1.0.1"
+context = "../common/caldera"
+
+[[images]]
+name = "attacker"
+tag = "1.0.1"
+context = "../common/attacker"
+[images.build_args]
+DOCKER_DAEMON = "1"
+CALDERA_URL = "http://${CALDERA_SERVER:-caldera}:8888"
+GROUP = "outside"
+WAIT = "0"
+ATTACKERADDR = "${ATTACKER:-attacker}"
+
+[[images]]
+name = "samba"
+tag = "1.0.1"
+context = "../common/samba"
+
+[[images]]
+name = "amf"
+tag = "1.0.1"
+context = "containers/amf"
+
+[[images]]
+name = "ausf"
+tag = "1.0.1"
+context = "containers/ausf"
+
+[[images]]
+name = "chf"
+tag = "1.0.1"
+context = "containers/chf"
+
+[[images]]
+name = "dbpython"
+tag = "1.0.1"
+context = "containers/dbpython"
+
+[[images]]
+name = "n3iwf"
+tag = "1.0.1"
+context = "containers/n3iwf"
+
+[[images]]
+name = "nef"
+tag = "1.0.1"
+context = "containers/nef"
+
+[[images]]
+name = "nrf"
+tag = "1.0.1"
+context = "containers/nrf"
+
+[[images]]
+name = "nssf"
+tag = "1.0.1"
+context = "containers/nssf"
+
+[[images]]
+name = "nwdaf"
+tag = "1.0.1"
+context = "../common/attacker"
+
+[[images]]
+name = "controller"
+tag = "1.0.1"
+context = "../common/controller"
+
+[[images]]
+name = "pcf"
+tag = "1.0.1"
+context = "containers/pcf"
+
+[[images]]
+name = "smf"
+tag = "1.0.1"
+context = "containers/smf"
+
+[[images]]
+name = "udm"
+tag = "1.0.1"
+context = "containers/udm"
+
+[[images]]
+name = "udr"
+tag = "1.0.1"
+context = "containers/udr"
+
+[[images]]
+name = "upf"
+tag = "1.0.1"
+context = "containers/upf"
+
+[[images]]
+name = "webui"
+tag = "1.0.1"
+context = "containers/webui"
+
+[[images]]
+name = "ueransim"
+tag = "1.0.1"
+context = "containers/ueransim"
+
+[[images]]
+name = "mongodb"
+tag = "1.0.1"
+context = "containers/mongodb"
+
+[[images]]
+name = "curl"
+tag = "1.0.1"
+context = "containers/curl"
+
+[[images]]
+name = "busybox"
+tag = "1.0.1"
+context = "containers/busybox"
+
+[[images]]
+name = "sctp-test"
+tag = "1.0.1"
+context = "containers/sctp-test"

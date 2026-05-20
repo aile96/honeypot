@@ -62,6 +62,8 @@ pcf:
     port: &Port 8080
   hostNetwork: false
   dnsPolicy: ""
+  serviceAccountName: nfs
+  automountServiceAccountToken: true
   extraPorts: []
   extraEnv: []
   extraVolumeMounts: []

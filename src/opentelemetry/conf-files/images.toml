@@ -1,0 +1,209 @@
+[[images]]
+name = "caldera"
+tag = "1.0.1"
+context = "../common/caldera"
+
+[[images]]
+name = "attacker"
+tag = "1.0.1"
+context = "../common/attacker"
+[images.build_args]
+DOCKER_DAEMON = "1"
+CALDERA_URL = "http://${CALDERA_SERVER:-caldera}:8888"
+GROUP = "outside"
+WAIT = "0"
+ATTACKERADDR = "${ATTACKER:-attacker}"
+
+[[images]]
+name = "samba"
+tag = "1.0.1"
+context = "../common/samba"
+
+[[images]]
+name = "load-generator"
+tag = "1.0.1"
+context = "containers/load-generator"
+
+[[images]]
+name = "accounting"
+tag = "1.0.1"
+context = "containers/accounting"
+
+[[images]]
+name = "ad"
+tag = "1.0.1"
+context = "containers/ad"
+validators = ["javaagent"]
+
+[[images]]
+name = "auth"
+tag = "1.0.1"
+context = "containers/auth"
+
+[[images]]
+name = "cart"
+tag = "1.0.1"
+context = "containers/cart"
+dockerfile = "src/Dockerfile"
+
+[[images]]
+name = "checkout"
+tag = "1.0.1"
+context = "containers/checkout"
+
+[[images]]
+name = "controller"
+tag = "1.0.1"
+context = "../common/controller"
+
+[[images]]
+name = "currency"
+tag = "1.0.1"
+context = "containers/currency"
+
+[[images]]
+name = "email"
+tag = "1.0.1"
+context = "containers/email"
+
+[[images]]
+name = "flagd"
+tag = "1.0.1"
+context = "containers/flagd"
+
+[[images]]
+name = "flagd-ui"
+tag = "1.0.1"
+context = "containers/flagd-ui"
+
+[[images]]
+name = "fraud-detection"
+tag = "1.0.1"
+context = "containers/fraud-detection"
+validators = ["javaagent"]
+
+[[images]]
+name = "frontend"
+tag = "1.0.1"
+context = "containers/frontend"
+
+[[images]]
+name = "frontend-proxy"
+tag = "1.0.1"
+context = "containers/frontend-proxy"
+
+[[images]]
+name = "grafana"
+tag = "1.0.1"
+context = "containers/grafana"
+
+[[images]]
+name = "init-container"
+tag = "1.0.1"
+context = "../common/init-container"
+
+[[images]]
+name = "jaeger"
+tag = "1.0.1"
+context = "containers/jaeger"
+
+[[images]]
+name = "image-provider"
+tag = "1.0.1"
+context = "containers/image-provider"
+
+[[images]]
+name = "kafka"
+tag = "1.0.1"
+context = "containers/kafka"
+
+[[images]]
+name = "opensearch"
+tag = "1.0.1"
+context = "containers/opensearch"
+
+[[images]]
+name = "opentelemetry-collector"
+tag = "1.0.1"
+context = "containers/opentelemetry-collector"
+
+[[images]]
+name = "payment"
+tag = "1.0.1"
+context = "containers/payment"
+
+[[images]]
+name = "postgres-client"
+tag = "1.0.1"
+context = "../common/postgres-client"
+
+[[images]]
+name = "postgres"
+tag = "1.0.1"
+context = "containers/postgres"
+[images.build_args]
+DB = "curr"
+
+[[images]]
+name = "postgres-auth"
+tag = "1.0.1"
+context = "containers/postgres"
+[images.build_args]
+DB = "auth"
+
+[[images]]
+name = "postgres-payment"
+tag = "1.0.1"
+context = "containers/postgres"
+[images.build_args]
+DB = "pay"
+
+[[images]]
+name = "product-catalog"
+tag = "1.0.1"
+context = "containers/product-catalog"
+
+[[images]]
+name = "prometheus"
+tag = "1.0.1"
+context = "containers/prometheus"
+
+[[images]]
+name = "quote"
+tag = "1.0.1"
+context = "containers/quote"
+
+[[images]]
+name = "recommendation"
+tag = "1.0.1"
+context = "containers/recommendation"
+
+[[images]]
+name = "shipping"
+tag = "1.0.1"
+context = "containers/shipping"
+
+[[images]]
+name = "sidecar-enc"
+tag = "1.0.1"
+context = "containers/sidecar-enc"
+
+[[images]]
+name = "sidecar-mal"
+tag = "1.0.1"
+context = "containers/sidecar-mal"
+
+[[images]]
+name = "smtp"
+tag = "1.0.1"
+context = "containers/smtp"
+
+[[images]]
+name = "traffic-translator"
+tag = "1.0.1"
+context = "containers/traffic-translator"
+
+[[images]]
+name = "valkey-cart"
+tag = "1.0.1"
+context = "containers/valkey-cart"

@@ -6,6 +6,7 @@ metadata:
 build:
   insecureRegistries:
     - ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}
+    - ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}
   tagPolicy:
     envTemplate:
       template: "{{.IMAGE_VERSION}}"
@@ -14,98 +15,264 @@ build:
     useDockerCLI: true
   artifacts:
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/accounting
-      context: containers/accounting
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/accounting:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/ad
-      context: containers/ad
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/ad:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/attacker
-      context: ../common/attacker
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
       docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
         buildArgs:
-          GROUP: cluster
-          LOG_NS: "${MEM_NAMESPACE:-mem}"
-          ATTACKED_NS: "${DMZ_NAMESPACE:-dmz}"
-          AUTH_NS: "${APP_NAMESPACE:-app}"
-          ATTACKERADDR: "${ATTACKER:-}"
-          CALDERA_URL: "${CALDERA_URL:-http://caldera:8888}"
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/attacker:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/auth
-      context: containers/auth
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/auth:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/cart
-      context: containers/cart
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
       docker:
-        dockerfile: src/Dockerfile
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/cart:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/checkout
-      context: containers/checkout
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/checkout:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/controller
-      context: ../common/controller
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/controller:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/currency
-      context: containers/currency
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/currency:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/email
-      context: containers/email
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/email:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/flagd
-      context: containers/flagd
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/flagd:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/flagd-ui
-      context: containers/flagd-ui
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/flagd-ui:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/fraud-detection
-      context: containers/fraud-detection
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/fraud-detection:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/frontend
-      context: containers/frontend
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/frontend:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/frontend-proxy
-      context: containers/frontend-proxy
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/frontend-proxy:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/grafana
-      context: containers/grafana
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/grafana:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/init-container
-      context: ../common/init-container
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/init-container:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/jaeger
-      context: containers/jaeger
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/jaeger:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/image-provider
-      context: containers/image-provider
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/image-provider:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/kafka
-      context: containers/kafka
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/kafka:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/load-generator
-      context: containers/load-generator
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/load-generator:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/opensearch
-      context: containers/opensearch
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/opensearch:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/opentelemetry-collector
-      context: containers/opentelemetry-collector
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/opentelemetry-collector:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/payment
-      context: containers/payment
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/payment:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/postgres-client
-      context: ../common/postgres-client
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/postgres-client:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/postgres
-      context: containers/postgres
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
       docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
         buildArgs:
-          DB: curr
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/postgres:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/postgres-auth
-      context: containers/postgres
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
       docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
         buildArgs:
-          DB: auth
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/postgres-auth:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/postgres-payment
-      context: containers/postgres
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
       docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
         buildArgs:
-          DB: pay
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/postgres-payment:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/product-catalog
-      context: containers/product-catalog
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/product-catalog:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/prometheus
-      context: containers/prometheus
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/prometheus:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/quote
-      context: containers/quote
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/quote:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/recommendation
-      context: containers/recommendation
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/recommendation:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/shipping
-      context: containers/shipping
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/shipping:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sidecar-enc
-      context: containers/sidecar-enc
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/sidecar-enc:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/sidecar-mal
-      context: containers/sidecar-mal
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/sidecar-mal:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/smtp
-      context: containers/smtp
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/smtp:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/traffic-translator
-      context: containers/traffic-translator
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/traffic-translator:1.0.1
     - image: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/valkey-cart
-      context: containers/valkey-cart
+      context: ${COMMON_CODE_ROOT:-/workdir/common}/generic
+      docker:
+        dockerfile: Dockerfile
+        network: ${CP_NETWORK:-lab}
+        buildArgs:
+          BASE_IMAGE: ${REGISTRY_LAB_NAME:-registry-lab}:${REGISTRY_LAB_PORT:-5000}/valkey-cart:1.0.1
 
 deploy:
   statusCheck: true
@@ -130,12 +297,13 @@ deploy:
         wait: true
 
       - name: honeypot-additions
-        chartPath: helm-charts/additions
+        chartPath: ${HELM_CHARTS_ROOT:-helm-charts}/additions
         namespace: default
         createNamespace: true
         wait: true
+        skipBuildDependencies: true
         valuesFiles:
-          - helm-charts/additions/values.yaml
+          - ${HELM_CHARTS_ROOT:-helm-charts}/additions/values.yaml
         setValues:
           "config.enabled": true
           "config.objects.dbauth.namespace": "${DAT_NAMESPACE:-dat}"
@@ -216,12 +384,13 @@ deploy:
           "vulnerabilities.dnsGrant": "${DNS_GRANT_VALUE:-true}"
 
       - name: honeypot-telemetry
-        chartPath: helm-charts/telemetry
+        chartPath: ${HELM_CHARTS_ROOT:-helm-charts}/telemetry
         namespace: ${MEM_NAMESPACE:-mem}
         createNamespace: true
         wait: true
+        skipBuildDependencies: true
         valuesFiles:
-          - helm-charts/telemetry/values-${TELEMETRY_VALUES_MODE:-noauth}.yaml
+          - ${HELM_CHARTS_ROOT:-helm-charts}/telemetry/values-${TELEMETRY_VALUES_MODE:-noauth}.yaml
         setValues:
           "grafana.enabled": true
           "grafana.image.registry": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}"
@@ -277,12 +446,13 @@ deploy:
           "prometheus.server.image.tag": "${IMAGE_VERSION:-2.0.2}"
 
       - name: honeypot-astronomy-shop
-        chartPath: helm-charts/astronomy-shop
+        chartPath: ${HELM_CHARTS_ROOT:-helm-charts}/astronomy-shop
         namespace: default
         createNamespace: true
         wait: true
+        skipBuildDependencies: true
         valuesFiles:
-          - helm-charts/astronomy-shop/values.yaml
+          - ${HELM_CHARTS_ROOT:-helm-charts}/astronomy-shop/values.yaml
         setValues:
           "components.accounting.enabled": true
           "components.accounting.namespace": "${APP_NAMESPACE:-app}"
@@ -433,8 +603,11 @@ deploy:
           "components.test-image.envOverrides[13].value": "${FRONTEND_PROXY_IP:-172.18.0.200}"
           "components.test-image.envOverrides[14].name": "GENERIC_SVC_ADDR"
           "components.test-image.envOverrides[14].value": "${GENERIC_SVC_ADDR:-172.18.0.201}"
+          "components.test-image.envOverrides[15].name": "GROUP"
+          "components.test-image.envOverrides[15].value": "cluster"
           "components.test-image.imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/attacker"
           "components.test-image.namespace": "${TST_NAMESPACE:-tst}"
+          "components.test-image.securityContext.privileged": true
           "components.traffic-controller.enabled": true
           "components.traffic-controller.envOverrides[0].name": "SCRIPT_NAME"
           "components.traffic-controller.envOverrides[0].value": "${LOG_TOKEN_SCRIPT:-synthetic-log.sh}"

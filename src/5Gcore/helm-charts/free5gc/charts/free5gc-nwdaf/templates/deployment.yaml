@@ -75,13 +75,17 @@ spec:
                 fieldRef:
                   fieldPath: status.podIP
             - name: ATTACKER_START_SCRIPT
-              value: "/opt/caldera/start.py"
-            - name: GROUP
-              value: "cluster"
-            - name: CALDERA_URL
-              value: "http://caldera:8888"
-            - name: WAIT
-              value: "0"
+              value: "/opt/caldera/start.sh"
+            {{- range .extraEnv }}
+            - name: {{ .name | quote }}
+              {{- if hasKey . "value" }}
+              value: {{ .value | toString | quote }}
+              {{- end }}
+              {{- if hasKey . "valueFrom" }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
           {{- if .readinessProbe.enabled }}
           readinessProbe:
             httpGet:

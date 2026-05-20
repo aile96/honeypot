@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC1/scan-opensearch.py
+          /opt/caldera/KC1/scan-opensearch.sh
         timeout: 900
         parsers: []
         cleanup: ""

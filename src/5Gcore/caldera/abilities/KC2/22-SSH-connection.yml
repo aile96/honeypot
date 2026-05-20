@@ -8,8 +8,16 @@
   platforms:
     linux:
       sh:
-        command: |-
-          ssh -p 4222 -o StrictHostKeyChecking=no root@$(cat $DATA_PATH/KC2/attackaddr) "cat ~/.ssh/authorized_keys"
+        command: >-
+          ENTRY='#{host.kc2.entry}';
+          PREV='#{kc2.21.done}';
+          ssh -p 4222 -o StrictHostKeyChecking=no root@$(cat "$DATA_PATH/KC2/attackaddr") "cat ~/.ssh/authorized_keys";
+          echo kc2-22-done
         timeout: 900
-        parsers: []
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+            - source: kc2.22.done
         cleanup: ""
+  requirements:
+    - plugins.stockpile.app.requirements.paw_provenance:
+      - source: host.kc2.entry

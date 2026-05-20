@@ -1,0 +1,17 @@
+- id: 20000000-0000-0000-0000-0000000000e1
+  name: KC2 mark entry agent
+  description: Mark the original outside CALDERA agent that runs KC02 steps 21-24.
+  tactic: discovery
+  technique: { attack_id: T1082, name: "System Information Discovery" }
+  repeatable: false
+  singleton: false
+  platforms:
+    linux:
+      sh:
+        command: >-
+          if [ "${KC_AGENT_ROLE:-entry}" = "entry" ]; then echo entry; fi
+        timeout: 60
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+            - source: host.kc2.entry
+        cleanup: ""

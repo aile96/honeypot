@@ -1,5 +1,32 @@
 {
-  "00": "cluster",
-  "01": "cluster",
-  "02": "underlay"
+  "00": {
+    "group": "cluster",
+    "planner": "atomic",
+    "autonomous": true,
+    "auto_close": true
+  },
+  "01": {
+    "group": "cluster",
+    "planner": "atomic",
+    "autonomous": true,
+    "auto_close": true
+  },
+  "02": {
+    "group": "outside",
+    "planner": "batch",
+    "autonomous": true,
+    "auto_close": false
+  },
+  "03": {
+    "group": "outside",
+    "planner": "atomic",
+    "autonomous": true,
+    "auto_close": true
+  },
+  "04": {
+    "group": "outside",
+    "planner": "atomic",
+    "autonomous": true,
+    "auto_close": true
+  }
 }

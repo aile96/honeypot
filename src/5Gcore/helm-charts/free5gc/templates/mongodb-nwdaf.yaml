@@ -1,0 +1,67 @@
+{{- if .Values.mongodbNwdaf.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-nwdaf
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mongodb-nwdaf
+    project: {{ .Values.global.name | default "free5gc" }}
+    kc2-target: "true"
+spec:
+  clusterIP: None
+  selector:
+    app: mongodb-nwdaf
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: mongodb
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb-nwdaf
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mongodb-nwdaf
+    project: {{ .Values.global.name | default "free5gc" }}
+    kc2-target: "true"
+spec:
+  serviceName: mongodb-nwdaf
+  replicas: 1
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: mongodb-nwdaf
+  template:
+    metadata:
+      labels:
+        app: mongodb-nwdaf
+        project: {{ .Values.global.name | default "free5gc" }}
+        kc2-target: "true"
+        honeypot.attack.role: benign
+    spec:
+      serviceAccountName: {{ .Values.mongodbNwdaf.serviceAccountName | default "nfs" | quote }}
+      automountServiceAccountToken: {{ .Values.mongodbNwdaf.automountServiceAccountToken | default true }}
+      containers:
+        - name: mongodb
+          image: {{ .Values.mongodbNwdaf.image.repository }}:{{ .Values.mongodbNwdaf.image.tag }}
+          imagePullPolicy: {{ .Values.mongodbNwdaf.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: mongodb
+              containerPort: 27017
+              protocol: TCP
+          env:
+            - name: ALLOW_EMPTY_PASSWORD
+              value: "yes"
+          resources:
+            {{- toYaml .Values.mongodbNwdaf.resources | nindent 12 }}
+          volumeMounts:
+            - name: mongodb-data
+              mountPath: /bitnami/mongodb
+      volumes:
+        - name: mongodb-data
+          emptyDir: {}
+{{- end }}

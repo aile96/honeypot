@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Mapping
-
-from .config import require_port_config
+from typing import Any
 from .logging import die
 
 
@@ -41,11 +39,6 @@ def require_port(name: str, value: Any) -> int:
     if port > 65535:
         die(f"{name} must be between 1 and 65535, got '{value}'.")
     return port
-
-
-def require_port_from_config(config: Mapping[str, Any], name: str) -> int:
-    """Require a valid TCP port from CONFIG."""
-    return require_port_config(config, name)
 
 
 def require_port_env(name: str) -> int:

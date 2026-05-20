@@ -39,6 +39,23 @@ nwdaf:
         - ALL
   service:
     scheme: http
+  extraEnv:
+    - name: GROUP
+      value: cluster
+    - name: CALDERA_URL
+      value: http://caldera:8888
+    - name: LOG_NS
+      value: mem
+    - name: ATTACKED_NS
+      value: dmz
+    - name: AUTH_NS
+      value: app
+    - name: ATTACKERADDR
+      value: attacker
+    - name: WAIT
+      value: "0"
+    - name: ATTACKER_EXECUTION_SCRIPT
+      value: /opt/attacker-lib/nwdaf/nwdaf_server.py
   registration:
     # The pod registers itself as a dedicated NWDAF NF profile at runtime.
     enabled: true

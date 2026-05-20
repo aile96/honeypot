@@ -9,7 +9,7 @@
     linux:
       sh:
         command: |-
-          /opt/caldera/KC2/DOS-frontend.py
+          /opt/caldera/KC2/DOS-frontend.sh
         timeout: 900
         parsers: []
         cleanup: ""

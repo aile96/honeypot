@@ -741,16 +741,6 @@ def create_and_start_operation(adversary_id: str, adversary: Adversary) -> str:
     return create_operation(adversary_id, adversary)
 
 
-def parse_caldera_time(value: Any) -> float:
-    if not isinstance(value, str) or not value:
-        return 0.0
-    try:
-        parsed = time.strptime(value.removesuffix("Z"), "%Y-%m-%dT%H:%M:%S")
-        return time.mktime(parsed)
-    except ValueError:
-        return 0.0
-
-
 def chain_terminal_result(operation: dict[str, Any]) -> tuple[bool, str] | None:
     adversary = operation.get("adversary") if isinstance(operation.get("adversary"), dict) else {}
     expected_order = adversary.get("atomic_ordering") or []
@@ -758,39 +748,80 @@ def chain_terminal_result(operation: dict[str, Any]) -> tuple[bool, str] | None:
 
     if not isinstance(chain, list) or not chain:
         return None
-    if isinstance(expected_order, list) and expected_order and len(chain) < len(expected_order):
-        return None
+
+    complete = bool(operation.get("complete") or operation.get("completed") or operation.get("finished"))
+    state = str(operation.get("state") or "").lower()
+    if state in {"finished", "complete", "completed", "success", "stopped"}:
+        complete = True
+
+    links_by_ability: dict[str, list[dict[str, Any]]] = {}
+    if isinstance(expected_order, list) and expected_order:
+        for link in chain:
+            if not isinstance(link, dict):
+                continue
+            ability = link.get("ability") if isinstance(link.get("ability"), dict) else {}
+            ability_id = str(ability.get("ability_id") or link.get("ability_id") or "")
+            if ability_id:
+                links_by_ability.setdefault(ability_id, []).append(link)
+
+        missing = [str(ability_id) for ability_id in expected_order if str(ability_id) not in links_by_ability]
+        if missing:
+            if complete:
+                return False, "missing expected links: " + ", ".join(missing)
+            return None
+
+        relevant_chain = [link for ability_id in expected_order for link in links_by_ability.get(str(ability_id), [])]
+    else:
+        relevant_chain = [link for link in chain if isinstance(link, dict)]
 
     pending: list[str] = []
     failed: list[str] = []
-    last_activity = 0.0
 
-    for link in chain:
-        if not isinstance(link, dict):
-            continue
-        ability = link.get("ability") if isinstance(link.get("ability"), dict) else {}
-        name = str(ability.get("name") or link.get("id") or "unknown")
-        status = link.get("status")
-        last_activity = max(
-            last_activity,
-            parse_caldera_time(link.get("finish")),
-            parse_caldera_time(link.get("collect")),
-            parse_caldera_time(link.get("decide")),
-        )
+    if isinstance(expected_order, list) and expected_order:
+        for ability_id in expected_order:
+            ability_links = links_by_ability.get(str(ability_id), [])
+            names = [
+                str((link.get("ability") if isinstance(link.get("ability"), dict) else {}).get("name") or ability_id)
+                for link in ability_links
+            ]
+            name = names[0] if names else str(ability_id)
+            statuses = [link.get("status") for link in ability_links]
+            parsed_statuses: list[int] = []
+            unknown_statuses: list[Any] = []
+            for status in statuses:
+                if status is None:
+                    unknown_statuses.append(status)
+                    continue
+                try:
+                    parsed_statuses.append(int(status))
+                except (TypeError, ValueError):
+                    unknown_statuses.append(status)
 
-        if status is None:
-            pending.append(name)
-            continue
-        try:
-            status_int = int(status)
-        except (TypeError, ValueError):
-            failed.append(f"{name}=status:{status}")
-            continue
+            if any(status == 0 for status in parsed_statuses):
+                continue
+            if unknown_statuses or any(status in {-3, -1} for status in parsed_statuses):
+                pending.append(name)
+            else:
+                failed.append(f"{name}=status:{','.join(str(status) for status in statuses)}")
+    else:
+        for link in relevant_chain:
+            ability = link.get("ability") if isinstance(link.get("ability"), dict) else {}
+            name = str(ability.get("name") or link.get("id") or "unknown")
+            status = link.get("status")
 
-        if status_int in {-3, -1}:
-            pending.append(name)
-        elif status_int != 0:
-            failed.append(f"{name}=status:{status_int}")
+            if status is None:
+                pending.append(name)
+                continue
+            try:
+                status_int = int(status)
+            except (TypeError, ValueError):
+                failed.append(f"{name}=status:{status}")
+                continue
+
+            if status_int in {-3, -1}:
+                pending.append(name)
+            elif status_int != 0:
+                failed.append(f"{name}=status:{status_int}")
 
     if pending:
         return None
@@ -822,10 +853,10 @@ def wait_operation_done(op_id: str) -> tuple[bool, str]:
         if state and state != last:
             log(f"controller: operation {op_id} state={state}")
             last = state
-        if done or state in {"finished", "complete", "completed", "success", "stopped"}:
-            return True, state or "finished"
         if terminal is not None:
             return terminal
+        if done or state in {"finished", "complete", "completed", "success", "stopped"}:
+            return False, state or "finished without expected links"
         time.sleep(POLL_INTERVAL)
     return False, last or "timeout"
 

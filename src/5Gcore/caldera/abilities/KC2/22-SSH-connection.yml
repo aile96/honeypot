@@ -11,8 +11,9 @@
         command: >-
           ENTRY='#{host.kc2.entry}';
           PREV='#{kc2.21.done}';
-          ssh -p 4222 -o StrictHostKeyChecking=no root@$(cat "$DATA_PATH/KC2/attackaddr") "cat ~/.ssh/authorized_keys";
-          echo kc2-22-done
+          ssh -p 4222 -o StrictHostKeyChecking=no root@$(cat "$DATA_PATH/KC2/attackaddr")
+          "cat ~/.ssh/authorized_keys" > "$DATA_PATH/KC2/ssh-authorized-keys.log" 2>&1
+          && echo kc2-22-done
         timeout: 900
         parsers:
           plugins.stockpile.app.parsers.basic:

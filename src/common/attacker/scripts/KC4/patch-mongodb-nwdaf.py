@@ -24,11 +24,18 @@ TOKEN_FILE = Path(os.getenv("KUBERNETES_TOKEN_FILE", "/var/run/secrets/kubernete
 CA_FILE = os.getenv("KUBERNETES_CA_FILE", "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
 
 
+def env_float(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        return max(minimum, float(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
 def api_server() -> str:
     host = os.environ.get("KUBERNETES_SERVICE_HOST")
     port = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     if not host:
-        raise RuntimeError("KUBERNETES_SERVICE_HOST is not available; is this running inside a Kubernetes pod?")
+        host = os.environ.get("KUBERNETES_SERVICE_DNS", "kubernetes.default.svc")
     return f"https://{host}:{port}"
 
 
@@ -58,17 +65,47 @@ def k8s_request(method: str, path: str, body: dict[str, Any] | None = None, cont
         raise RuntimeError(f"Kubernetes API {method} {path} failed: HTTP {exc.code}: {error_body}") from exc
 
 
+def wait_for_statefulset_rollout(timeout: float, interval: float = 2.0) -> None:
+    deadline = time.time() + timeout
+    path = f"/apis/apps/v1/namespaces/{NAMESPACE}/statefulsets/{STATEFULSET}"
+    last_status = ""
+
+    while time.time() < deadline:
+        item = k8s_request("GET", path, None)
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        spec = item.get("spec") if isinstance(item.get("spec"), dict) else {}
+        status = item.get("status") if isinstance(item.get("status"), dict) else {}
+
+        generation = int(metadata.get("generation") or 0)
+        observed = int(status.get("observedGeneration") or 0)
+        replicas = int(spec.get("replicas") or 1)
+        ready = int(status.get("readyReplicas") or 0)
+        updated = int(status.get("updatedReplicas") or 0)
+        current = f"observed={observed}/{generation} updated={updated}/{replicas} ready={ready}/{replicas}"
+
+        if observed >= generation and updated >= replicas and ready >= replicas:
+            return
+        if current != last_status:
+            print(f"waiting for StatefulSet {NAMESPACE}/{STATEFULSET}: {current}")
+            last_status = current
+        time.sleep(interval)
+
+    raise RuntimeError(f"timed out waiting for StatefulSet {NAMESPACE}/{STATEFULSET} rollout: {last_status or 'unknown status'}")
+
+
 def main() -> int:
     registry = os.getenv("REGISTRY_NAME", "registry")
     registry_port = os.getenv("REGISTRY_PORT", "5000")
     image_version = os.getenv("IMAGE_VERSION", "2.0.2")
     attacker_addr = os.getenv("ATTACKERADDR", "attacker")
-    attacker_image = os.getenv("KC2_CHILD_IMAGE", f"{registry}:{registry_port}/attacker:{image_version}")
+    attacker_image = os.getenv("KC2_CHILD_IMAGE", f"{registry}:{registry_port}/nwdaf:{image_version}")
     caldera_url = os.getenv("CALDERA_URL", "http://caldera:8888")
     child_group = os.getenv("KC2_CHILD_GROUP", "outside")
     child_role = os.getenv("KC2_CHILD_ROLE", "child")
     socket_host_path = os.getenv("KC2_CONTAINERD_SOCKET", "/run/containerd/containerd.sock")
     socket_mount_path = os.getenv("KC2_CONTAINERD_SOCKET_MOUNT", "/host/run/containerd/containerd.sock")
+    rollout_timeout = env_float("KC2_CHILD_ROLLOUT_TIMEOUT", 180.0, 1.0)
+    agent_grace_seconds = env_float("KC2_CHILD_AGENT_GRACE_SECONDS", 20.0, 0.0)
 
     patch = {
         "spec": {
@@ -137,6 +174,10 @@ def main() -> int:
         patch,
         "application/strategic-merge-patch+json",
     )
+    wait_for_statefulset_rollout(rollout_timeout)
+    if agent_grace_seconds:
+        print(f"waiting {agent_grace_seconds:g}s for KC2 child agent check-in")
+        time.sleep(agent_grace_seconds)
 
     print(f"patched StatefulSet {NAMESPACE}/{STATEFULSET} with image {attacker_image}")
     return 0

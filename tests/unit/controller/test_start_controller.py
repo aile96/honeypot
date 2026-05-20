@@ -73,22 +73,37 @@ def test_chain_terminal_result(controller_importer) -> None:
     operation = {
         "adversary": {"atomic_ordering": ["a", "b"]},
         "chain": [
-            {"ability": {"name": "one"}, "status": 0, "finish": "2025-01-01T00:00:00Z"},
-            {"ability": {"name": "two"}, "status": 0, "finish": "2025-01-01T00:00:01Z"},
+            {"ability": {"ability_id": "a", "name": "one"}, "status": 0, "finish": "2025-01-01T00:00:00Z"},
+            {"ability": {"ability_id": "b", "name": "two"}, "status": 0, "finish": "2025-01-01T00:00:01Z"},
         ],
     }
     failed = {
         "adversary": {"atomic_ordering": ["a"]},
-        "chain": [{"ability": {"name": "one"}, "status": 1}],
+        "chain": [{"ability": {"ability_id": "a", "name": "one"}, "status": 1}],
     }
     pending = {
         "adversary": {"atomic_ordering": ["a", "b"]},
-        "chain": [{"ability": {"name": "one"}, "status": 0}],
+        "chain": [{"ability": {"ability_id": "a", "name": "one"}, "status": 0}],
+    }
+    duplicate_missing = {
+        "adversary": {"atomic_ordering": ["a", "b", "c"]},
+        "chain": [
+            {"ability": {"ability_id": "a", "name": "one"}, "status": 0},
+            {"ability": {"ability_id": "b", "name": "two"}, "status": 0},
+            {"ability": {"ability_id": "b", "name": "two"}, "status": 0},
+        ],
+    }
+    complete_missing = {
+        "state": "finished",
+        "adversary": {"atomic_ordering": ["a", "b"]},
+        "chain": [{"ability": {"ability_id": "a", "name": "one"}, "status": 0}],
     }
 
     assert controller.chain_terminal_result(operation) == (True, "finished")
     assert controller.chain_terminal_result(failed) == (False, "failed links: one=status:1")
     assert controller.chain_terminal_result(pending) is None
+    assert controller.chain_terminal_result(duplicate_missing) is None
+    assert controller.chain_terminal_result(complete_missing) == (False, "missing expected links: b")
 
 
 @pytest.mark.unit

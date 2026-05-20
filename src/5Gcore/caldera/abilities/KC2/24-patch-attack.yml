@@ -12,7 +12,7 @@
           ENTRY='#{host.kc2.entry}';
           PREV='#{kc2.23.done}';
           mkdir -p "$DATA_PATH/KC2";
-          KC2_CHILD_IMAGE="${KC2_CHILD_IMAGE:-${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/attacker:${IMAGE_VERSION:-2.0.2}}";
+          KC2_CHILD_IMAGE="${KC2_CHILD_IMAGE:-${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nwdaf:${IMAGE_VERSION:-2.0.2}}";
           TARGET="$(cat "$DATA_PATH/KC2/attackaddr")";
           ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET"
           "KC2_TARGET_NAMESPACE='${KC2_TARGET_NAMESPACE:-free5gc}'
@@ -25,8 +25,8 @@
           REGISTRY_NAME='${REGISTRY_NAME:-registry}'
           REGISTRY_PORT='${REGISTRY_PORT:-5000}'
           IMAGE_VERSION='${IMAGE_VERSION:-2.0.2}'
-          /usr/bin/env python3 -" < /opt/caldera/KC4/patch-mongodb-nwdaf.py;
-          echo kc2-24-done
+          /usr/bin/env python3 -" < /opt/caldera/KC4/patch-mongodb-nwdaf.py > "$DATA_PATH/KC2/patch-mongodb-nwdaf.log" 2>&1
+          && echo kc2-24-done
         timeout: 900
         parsers:
           plugins.stockpile.app.parsers.basic:

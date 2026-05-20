@@ -242,6 +242,8 @@ free5gc-nrf:
 # This section can be used to override the default values in the MongoDB chart
 mongodb:
   fullnameOverride: "mongodb"
+  podLabels:
+    honeypot.lab/destructive-ok: "true"
   useStatefulSet: true
   auth:
     enabled: true
@@ -254,6 +256,8 @@ mongodb:
   persistence:
     size: 6Gi
     mountPath: /bitnami/mongodb/data/db/
+    labels:
+      honeypot.lab/destructive-ok: "true"
   service:
     name: mongodb
     type: ClusterIP

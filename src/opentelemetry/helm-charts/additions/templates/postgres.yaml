@@ -50,6 +50,7 @@ spec:
   template:
     metadata:
       labels:
+        honeypot.lab/destructive-ok: "true"
         app: {{ $name }}
         {{- if $pg.cohostGroup }}
         appGroup: {{ $pg.cohostGroup | quote }}
@@ -178,6 +179,8 @@ spec:
   volumeClaimTemplates:
     - metadata:
         name: data
+        labels:
+          honeypot.lab/destructive-ok: "true"
       spec:
         accessModes: [ "ReadWriteOnce" ]
         resources:

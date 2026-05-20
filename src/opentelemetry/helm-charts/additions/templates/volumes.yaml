@@ -22,6 +22,8 @@ kind: PersistentVolumeClaim
 metadata:
   name: pvc-smb-dyn
   namespace: {{ .Values.networkPolicies.rules.mem.name }}
+  labels:
+    honeypot.lab/destructive-ok: "true"
 spec:
   accessModes: [ "ReadWriteMany" ]
   storageClassName: smb-dyn
@@ -40,6 +42,7 @@ spec:
   template:
     metadata:
       labels:
+        honeypot.lab/destructive-ok: "true"
         app: write-once-to-pvc
     spec:
       restartPolicy: Never

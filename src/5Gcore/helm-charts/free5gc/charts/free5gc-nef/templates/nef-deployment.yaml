@@ -25,6 +25,8 @@ spec:
         {{- include "free5gc-nef.nefAnnotations" $ | nindent 8 }}
         checksum/config: {{ include (print $.Template.BasePath "/nef-configmap.yaml") $ | sha256sum }}
       labels:
+
+        honeypot.lab/destructive-ok: "true"
         {{- include "free5gc-nef.selectorLabels" $ | nindent 8 }}
         project: {{ $.Values.global.projectName }}
         nf: {{ .name }}

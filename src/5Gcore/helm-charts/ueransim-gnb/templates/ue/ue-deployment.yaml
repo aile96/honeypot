@@ -32,6 +32,8 @@ spec:
       annotations:
         {{- include "ueransim.ueAnnotations" $ | nindent 8 }}
       labels:
+
+        honeypot.lab/destructive-ok: "true"
         {{- include "ueransim.selectorLabels" $ | nindent 8 }}
         app: {{ $.Values.projectName }}
         component: {{ .name }}

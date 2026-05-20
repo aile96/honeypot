@@ -97,6 +97,8 @@ kind: NetworkPolicy
 metadata:
   name: {{ printf "%s-allow" $ns | trunc 63 | trimSuffix "-" }}
   namespace: {{ $ns }}
+  labels:
+    honeypot.lab/destructive-ok: "true"
 spec:
   {{- if $policySelector }}
   podSelector:
@@ -257,6 +259,8 @@ kind: NetworkPolicy
 metadata:
   name: {{ printf "%s-default-deny" $ns | trunc 63 | trimSuffix "-" }}
   namespace: {{ $ns }}
+  labels:
+    honeypot.lab/destructive-ok: "true"
 spec:
   {{- if $policySelector }}
   podSelector:

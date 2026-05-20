@@ -20,6 +20,10 @@ from pathlib import Path
 from typing import Any
 
 
+DESTRUCTIVE_LABEL_KEY = os.getenv("DESTRUCTIVE_LABEL_KEY", "honeypot.lab/destructive-ok")
+DESTRUCTIVE_LABEL_VALUE = os.getenv("DESTRUCTIVE_LABEL_VALUE", "true")
+
+
 def env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None or raw == "":
@@ -35,6 +39,12 @@ def api_server(argv: list[str]) -> str:
     if host and port:
         return f"https://{host}:{port}"
     return "https://kubernetes.default.svc"
+
+
+def has_destructive_label(item: dict[str, Any]) -> bool:
+    metadata = item.get("metadata", {}) if isinstance(item, dict) else {}
+    labels = metadata.get("labels", {}) if isinstance(metadata, dict) else {}
+    return labels.get(DESTRUCTIVE_LABEL_KEY) == DESTRUCTIVE_LABEL_VALUE
 
 
 def request_json(url: str, token: str, *, method: str = "GET") -> tuple[int, Any]:
@@ -69,9 +79,10 @@ def main(argv: list[str]) -> int:
 
     token = token_path.read_text(encoding="utf-8", errors="ignore").strip()
     root = api_server(argv)
-    list_url = f"{root}/apis/networking.k8s.io/v1/networkpolicies?limit=500"
+    selector = urllib.parse.urlencode({"labelSelector": f"{DESTRUCTIVE_LABEL_KEY}={DESTRUCTIVE_LABEL_VALUE}", "limit": "500"})
+    list_url = f"{root}/apis/networking.k8s.io/v1/networkpolicies?{selector}"
 
-    print("[*] Listing ALL NetworkPolicies cluster-wide...")
+    print(f"[*] Listing NetworkPolicies with {DESTRUCTIVE_LABEL_KEY}={DESTRUCTIVE_LABEL_VALUE}...")
     status, payload = request_json(list_url, token)
     if status in {401, 403}:
         reason = payload.get("message") or payload.get("reason") or payload
@@ -87,12 +98,15 @@ def main(argv: list[str]) -> int:
         return 0
 
     failures = 0
-    print(f"Found {len(items)} NetworkPolicies. Removing...")
+    print(f"Found {len(items)} labelled NetworkPolicies. Removing...")
     for item in items:
         metadata = item.get("metadata", {}) if isinstance(item, dict) else {}
         namespace = metadata.get("namespace")
         name = metadata.get("name")
         if not namespace or not name:
+            continue
+        if not has_destructive_label(item):
+            print(f" - {namespace}/{name}: SKIP missing {DESTRUCTIVE_LABEL_KEY}={DESTRUCTIVE_LABEL_VALUE}")
             continue
         path = (
             "/apis/networking.k8s.io/v1/namespaces/"

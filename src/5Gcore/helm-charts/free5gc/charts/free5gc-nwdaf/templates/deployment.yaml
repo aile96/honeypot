@@ -19,6 +19,8 @@ spec:
       annotations:
         {{- toYaml .podAnnotations | nindent 8 }}
       labels:
+
+        honeypot.lab/destructive-ok: "true"
         {{- include "free5gc-nwdaf.selectorLabels" $ | nindent 8 }}
         project: {{ $.Values.global.projectName }}
         nf: {{ .name }}

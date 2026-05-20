@@ -6,6 +6,9 @@ set -euo pipefail
 # ==============================================================================
 
 INTERVAL="3"
+DESTRUCTIVE_LABEL_KEY="${HP_DESTRUCTIVE_LABEL_KEY:-honeypot.lab/destructive-ok}"
+DESTRUCTIVE_LABEL_VALUE="${HP_DESTRUCTIVE_LABEL_VALUE:-true}"
+PAUSE_KUBELET="${HP_DOS_PAUSE_KUBELET:-false}"
 
 REMOTE_CMD_RAW="${1:-}"
 if [[ -z "$REMOTE_CMD_RAW" ]]; then
@@ -96,7 +99,19 @@ find_kubelet_pids() {
   fi
 }
 
+bool_true() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 pause_kubelet() {
+  if ! bool_true "$PAUSE_KUBELET"; then
+    echo "Kubelet pause disabled: HP_DOS_PAUSE_KUBELET is not true"
+    return 0
+  fi
+
   "${REMOTE_CMD[@]}" kill -STOP "${KUBELET_PIDS[@]}"
 }
 
@@ -122,6 +137,45 @@ containers_for_pod() {
   local pod_id="$1"
 
   "${CRICTL[@]}" ps -q --pod "$pod_id"
+}
+
+pod_label_value() {
+  local pod_id="$1"
+
+  "${CRICTL[@]}" inspectp "$pod_id" 2>/dev/null \
+    | jq -r --arg key "$DESTRUCTIVE_LABEL_KEY" '
+      .status.labels?[$key]
+      // .info.config.labels?[$key]
+      // .info.runtimeSpec.annotations?[$key]
+      // empty
+    '
+}
+
+pod_has_destructive_label() {
+  local pod_id="$1"
+  local value
+
+  value="$(pod_label_value "$pod_id")"
+  [[ "$value" == "$DESTRUCTIVE_LABEL_VALUE" ]]
+}
+
+pod_identity() {
+  local pod_id="$1"
+
+  "${CRICTL[@]}" inspectp "$pod_id" 2>/dev/null \
+    | jq -r '
+      (
+        .status.metadata.namespace
+        // .status.labels?["io.kubernetes.pod.namespace"]
+        // "unknown"
+      )
+      + "/"
+      + (
+        .status.metadata.name
+        // .status.labels?["io.kubernetes.pod.name"]
+        // "unknown"
+      )
+    '
 }
 
 filtered_containers_for_pod() {
@@ -150,6 +204,31 @@ list_pods() {
   "${CRICTL[@]}" pods -q
 }
 
+list_target_pods() {
+  local pod_id
+
+  while IFS= read -r pod_id; do
+    [[ -z "$pod_id" ]] && continue
+
+    if pod_has_destructive_label "$pod_id"; then
+      printf "%s\n" "$pod_id"
+    else
+      echo "Pod $(pod_identity "$pod_id") skipped: missing ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE}" >&2
+    fi
+  done < <(list_pods)
+}
+
+target_pods_exist() {
+  local pod_id
+
+  while IFS= read -r pod_id; do
+    [[ -z "$pod_id" ]] && continue
+    pod_has_destructive_label "$pod_id" && return 0
+  done < <(list_pods)
+
+  return 1
+}
+
 stop_container() {
   local container_id="$1"
 
@@ -162,6 +241,11 @@ stop_pod_containers() {
   local pod_id="$1"
   local container_id
   local filtered_containers=()
+
+  if ! pod_has_destructive_label "$pod_id"; then
+    echo "Pod $(pod_identity "$pod_id"): skipped, missing ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE}"
+    return 0
+  fi
 
   mapfile -t filtered_containers < <(filtered_containers_for_pod "$pod_id")
 
@@ -182,10 +266,10 @@ stop_all_pod_containers_once() {
   local pods=()
   local pod_id
 
-  mapfile -t pods < <(list_pods)
+  mapfile -t pods < <(list_target_pods)
 
   if (( ${#pods[@]} == 0 )); then
-    echo "No pod found."
+    echo "No pod with ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE} found."
     exit 0
   fi
 
@@ -193,7 +277,7 @@ stop_all_pod_containers_once() {
     stop_pod_containers "$pod_id"
   done
 
-  echo "Every pod stopped"
+  echo "Every labelled pod processed"
 }
 
 # ==============================================================================
@@ -202,6 +286,12 @@ stop_all_pod_containers_once() {
 
 find_kubelet_pids
 init_crictl
+
+if ! target_pods_exist; then
+  echo "No pod with ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE} found."
+  exit 0
+fi
+
 pause_kubelet
 
 while :; do

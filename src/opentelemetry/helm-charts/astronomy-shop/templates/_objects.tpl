@@ -29,6 +29,7 @@ spec:
   template:
     metadata:
       labels:
+        honeypot.lab/destructive-ok: "true"
         {{- include "otel-demo.selectorLabels" . | nindent 8 }}
         {{- include "otel-demo.workloadLabels" . | nindent 8 }}
       {{- if .podAnnotations }}

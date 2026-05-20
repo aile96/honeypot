@@ -6,6 +6,8 @@ GROUP="${GROUP:-cluster}"
 CALDERA_WAIT_TIMEOUT_SEC="${CALDERA_WAIT_TIMEOUT_SEC:-300}"
 CALDERA_WAIT_INTERVAL_SEC="${CALDERA_WAIT_INTERVAL_SEC:-2}"
 SANDCAT_PATH="${SANDCAT_PATH:-/tmp/sandcat}"
+SANDCAT_PAW="${SANDCAT_PAW:-}"
+SANDCAT_PID_FILE="${SANDCAT_PID_FILE:-/tmp/sandcat.pid}"
 SANDCAT_PID=""
 
 case "${WAIT:-1}" in
@@ -68,7 +70,13 @@ download_sandcat
 chmod +x "${SANDCAT_PATH}"
 
 echo "Starting sandcat agent..."
-"${SANDCAT_PATH}" &
+if [ -n "${SANDCAT_PAW}" ]; then
+  echo "Starting sandcat with fixed PAW: ${SANDCAT_PAW}"
+  "${SANDCAT_PATH}" -paw "${SANDCAT_PAW}" &
+else
+  "${SANDCAT_PATH}" &
+fi
 SANDCAT_PID="$!"
+echo "${SANDCAT_PID}" > "${SANDCAT_PID_FILE}"
 
-echo "Sandcat agent started with PID ${SANDCAT_PID}; start.sh completed."
+echo "Sandcat agent started with PID ${SANDCAT_PID}; pid file: ${SANDCAT_PID_FILE}; start.sh completed."

@@ -755,6 +755,7 @@ def chain_terminal_result(operation: dict[str, Any]) -> tuple[bool, str] | None:
         complete = True
 
     links_by_ability: dict[str, list[dict[str, Any]]] = {}
+    missing: list[str] = []
     if isinstance(expected_order, list) and expected_order:
         for link in chain:
             if not isinstance(link, dict):
@@ -765,11 +766,6 @@ def chain_terminal_result(operation: dict[str, Any]) -> tuple[bool, str] | None:
                 links_by_ability.setdefault(ability_id, []).append(link)
 
         missing = [str(ability_id) for ability_id in expected_order if str(ability_id) not in links_by_ability]
-        if missing:
-            if complete:
-                return False, "missing expected links: " + ", ".join(missing)
-            return None
-
         relevant_chain = [link for ability_id in expected_order for link in links_by_ability.get(str(ability_id), [])]
     else:
         relevant_chain = [link for link in chain if isinstance(link, dict)]
@@ -780,6 +776,8 @@ def chain_terminal_result(operation: dict[str, Any]) -> tuple[bool, str] | None:
     if isinstance(expected_order, list) and expected_order:
         for ability_id in expected_order:
             ability_links = links_by_ability.get(str(ability_id), [])
+            if not ability_links:
+                continue
             names = [
                 str((link.get("ability") if isinstance(link.get("ability"), dict) else {}).get("name") or ability_id)
                 for link in ability_links
@@ -827,6 +825,10 @@ def chain_terminal_result(operation: dict[str, Any]) -> tuple[bool, str] | None:
         return None
     if failed:
         return False, "failed links: " + "; ".join(failed)
+    if missing:
+        if complete:
+            return False, "missing expected links: " + ", ".join(missing)
+        return None
     return True, "finished"
 
 

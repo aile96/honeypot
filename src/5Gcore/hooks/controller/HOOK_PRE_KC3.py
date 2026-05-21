@@ -7,6 +7,7 @@ import json
 import os
 import time
 import urllib.request
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -58,28 +59,46 @@ def agent_paw(agent: dict[str, Any]) -> str:
     return str(agent.get("paw") or agent.get("paw_id") or "")
 
 
-def child_agent_present(child_paw: str) -> bool:
+def agent_last_seen_age_seconds(agent: dict[str, Any]) -> float | None:
+    raw = str(agent.get("last_seen") or "").strip()
+    if not raw:
+        return None
+    try:
+        seen = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - seen.astimezone(timezone.utc)).total_seconds())
+
+
+def child_agent_present(child_paw: str, stale_after_seconds: float) -> bool:
     agents = caldera_rest({"index": "agents"})
 
     if not isinstance(agents, list):
         return False
 
-    return any(
-        isinstance(agent, dict) and agent_paw(agent) == child_paw
-        for agent in agents
-    )
+    for agent in agents:
+        if not isinstance(agent, dict) or agent_paw(agent) != child_paw:
+            continue
+        age = agent_last_seen_age_seconds(agent)
+        if age is not None and age > stale_after_seconds:
+            log(f"Caldera agent {child_paw!r} is stale; last_seen age={age:.0f}s")
+            return False
+        return True
+    return False
 
 
-def wait_child_out_of_caldera(child_paw: str, timeout: float, interval: float) -> bool:
+def wait_child_out_of_caldera(child_paw: str, timeout: float, interval: float, stale_after_seconds: float) -> bool:
     deadline = time.time() + timeout
 
     while time.time() < deadline:
-        if not child_agent_present(child_paw):
+        if not child_agent_present(child_paw, stale_after_seconds):
             return True
 
         time.sleep(interval)
 
-    return not child_agent_present(child_paw)
+    return not child_agent_present(child_paw, stale_after_seconds)
 
 
 def main() -> int:
@@ -89,6 +108,7 @@ def main() -> int:
 
     child_paw = os.getenv("KC2_CHILD_PAW", DEFAULT_CHILD_PAW).strip() or DEFAULT_CHILD_PAW
     timeout = env_float("KC2_CHILD_OUT_OF_CALDERA_TIMEOUT", 300.0, 1.0)
+    stale_after_seconds = env_float("KC2_CHILD_STALE_AFTER_SECONDS", 120.0, 1.0)
     interval = env_float(
         "KC2_CHILD_OUT_OF_CALDERA_POLL_INTERVAL",
         os.getenv("POLL_INTERVAL", "3"),
@@ -97,7 +117,7 @@ def main() -> int:
 
     log(f"waiting before KC3 until Caldera agent {child_paw!r} is gone")
 
-    if wait_child_out_of_caldera(child_paw, timeout, interval):
+    if wait_child_out_of_caldera(child_paw, timeout, interval, stale_after_seconds):
         log(f"Caldera agent {child_paw!r} is gone; KC3 can start")
         return 0
 

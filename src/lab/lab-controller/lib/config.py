@@ -50,7 +50,7 @@ def load_variables_file(path: str | Path) -> Config:
 
         variables = [
             {"name": "PROJECT_ROOT", "value": "/workdir"},
-            {"name": "STEP_RETRY_ATTEMPTS_03_BUILD_AND_DEPLOY_SKAFFOLD_STACK", "value": 1},
+            {"name": "STEP_RETRY_ATTEMPTS_03", "value": 1},
         ]
     """
     variables_path = Path(path)

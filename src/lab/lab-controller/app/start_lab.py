@@ -20,7 +20,6 @@ from typing import Any
 from lib import (
     Config,
     State,
-    config_bool,
     config_to_env,
     die,
     discover_pipeline_scripts,
@@ -129,7 +128,6 @@ PIPELINE_BOOL_CONFIG_KEYS = (
 
 
 PIPELINE_OPTIONAL_BOOL_CONFIG_KEYS = (
-    "PIPELINE_FAIL_ON_POST_HOOK",
     "PROXY_BIND_ALL",
 )
 
@@ -302,6 +300,7 @@ def save_config_snapshot(config: Config) -> None:
 def run_unit_with_retry(
     *,
     script_path: Path,
+    retry_policy_source: Path,
     config: Config,
     state: State,
     unit_id: str,
@@ -309,16 +308,18 @@ def run_unit_with_retry(
     name: str,
     step_name: str | None,
     init_globals: dict[str, Any],
-    fail_on_error: bool,
 ) -> bool:
-    """Run a step or hook with unit-specific retry support and resume skipping."""
+    """Run a step or hook with numbered-step retry support and resume skipping."""
     if unit_completed(state, unit_id):
         log(f"Skipping completed {unit_type}: {name}")
         return True
 
-    retries, delay = resolve_step_retry_policy(script_path, config)
+    retries, delay = resolve_step_retry_policy(retry_policy_source, config)
     total_runs = retries + 1
-    log(f"Retry policy for {unit_type} {name}: retries={retries}, delay={delay}s.")
+    log(
+        f"Retry policy for {unit_type} {name}: "
+        f"step={Path(retry_policy_source).name}, retries={retries}, delay={delay}s."
+    )
 
     last_rc = 0
     for attempt in range(1, total_runs + 1):
@@ -344,11 +345,7 @@ def run_unit_with_retry(
             time.sleep(delay)
 
     message = f"{unit_type.capitalize()} {name} failed after {total_runs} run(s), last exit code={last_rc}."
-    if fail_on_error:
-        die(message)
-
-    err(f"{message} Continuing.")
-    return False
+    die(message)
 
 
 def run_hooks(
@@ -357,7 +354,6 @@ def run_hooks(
     step_script: str | Path,
     config: Config,
     state: State,
-    fail_on_error: bool,
 ) -> None:
     """Run matching Python hooks for a step with retry and resume support.
 
@@ -378,6 +374,7 @@ def run_hooks(
         with scoped_env(config_to_env(config)):
             run_unit_with_retry(
                 script_path=hook_path,
+                retry_policy_source=step_path,
                 config=config,
                 state=state,
                 unit_id=hook_unit_id(kind, step_path, hook_path),
@@ -391,7 +388,6 @@ def run_hooks(
                     hook_path=hook_path,
                     hook_kind=kind.upper(),
                 ),
-                fail_on_error=fail_on_error,
             )
 
 
@@ -424,6 +420,7 @@ def run_step_with_retry(step_script: str | Path, config: Config, state: State) -
 
     run_unit_with_retry(
         script_path=step_path,
+        retry_policy_source=step_path,
         config=config,
         state=state,
         unit_id=step_unit_id(step_path),
@@ -431,7 +428,6 @@ def run_step_with_retry(step_script: str | Path, config: Config, state: State) -
         name=step_path.name,
         step_name=step_path.name,
         init_globals=step_globals(config=config, state=state, step_path=step_path),
-        fail_on_error=True,
     )
 
 
@@ -600,7 +596,6 @@ def main() -> None:
                 step_script=step_script,
                 config=config,
                 state=state,
-                fail_on_error=True,
             )
 
             run_step_with_retry(step_script, config, state)
@@ -610,7 +605,6 @@ def main() -> None:
                 step_script=step_script,
                 config=config,
                 state=state,
-                fail_on_error=config_bool(config, "PIPELINE_FAIL_ON_POST_HOOK", False),
             )
 
         mark_pipeline_ready(state)

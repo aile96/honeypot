@@ -14,9 +14,6 @@ from typing import Any, Iterable, Mapping
 from .config import config_int
 from .logging import die
 
-DEFAULT_STEP_RETRY_ATTEMPTS = 3
-DEFAULT_STEP_RETRY_DELAY_SECONDS = 0
-
 
 def is_pipeline_script(path: str | Path) -> bool:
     """Return True when path is an executable pipeline step file.
@@ -55,11 +52,6 @@ def step_index_from_script(step_script: str | Path) -> str | None:
     return match.group(1) if match else None
 
 
-def step_key_from_script(step_script: str | Path) -> str:
-    """Build the suffix used by step-specific config keys."""
-    step_name = Path(step_script).stem.upper()
-    return re.sub(r"[^A-Z0-9]", "_", step_name)
-
 
 def step_slug_from_script(step_script: str | Path) -> str:
     """Return a stable slug without the numeric prefix."""
@@ -89,26 +81,24 @@ def resolve_step_retry_policy(
     step_script: str | Path,
     config: Mapping[str, Any],
 ) -> tuple[int, int]:
-    """Resolve retry count and delay for one pipeline unit.
+    """Resolve retry count and delay for one numbered pipeline step.
 
-    Only unit-specific variables are honored. For a script whose key is FOO,
-    STEP_RETRY_ATTEMPTS_FOO=0 means run once and do not retry after failure,
-    STEP_RETRY_ATTEMPTS_FOO=1 means retry once after the first failure, and so on.
+    Only step-number-specific variables are honored. For 04_skaffold.py,
+    STEP_RETRY_ATTEMPTS_04=0 means run once and do not retry after failure,
+    STEP_RETRY_ATTEMPTS_04=1 means retry once after the first failure, and so on.
+
+    Generic defaults are intentionally unsupported: a missing retry policy should
+    fail loudly instead of silently falling back to implicit behavior.
     """
-    step_key = step_key_from_script(step_script)
+    step_index = step_index_from_script(step_script)
+    if step_index is None:
+        die(f"Cannot resolve retry policy: missing numeric step prefix in {Path(step_script).name}")
 
-    attempts_name = f"STEP_RETRY_ATTEMPTS_{step_key}"
-    delay_name = f"STEP_RETRY_DELAY_SECONDS_{step_key}"
+    attempts_name = f"STEP_RETRY_ATTEMPTS_{step_index}"
+    delay_name = f"STEP_RETRY_DELAY_SECONDS_{step_index}"
 
-    default_retries = config_int(config, "PIPELINE_STEP_RETRIES", DEFAULT_STEP_RETRY_ATTEMPTS, minimum=0)
-    retries = config_int(config, attempts_name, default_retries, minimum=0)
-
-    delay = config_int(
-        config,
-        delay_name,
-        DEFAULT_STEP_RETRY_DELAY_SECONDS,
-        minimum=0,
-    )
+    retries = config_int(config, attempts_name, minimum=0)
+    delay = config_int(config, delay_name, minimum=0)
 
     return retries, delay
 

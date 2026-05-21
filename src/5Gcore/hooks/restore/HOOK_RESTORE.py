@@ -33,7 +33,11 @@ def docker_exec_attacker(*args: str) -> None:
 
 
 def main() -> None:
-    key = globals().get("KILLCHAIN_KEY") or "KC"
+    key = str(globals().get("KILLCHAIN_KEY") or "KC").upper()
+    if key == "KC0":
+        log("soft restore skipped for KC0")
+        return
+
     log(f"soft restore started for {key}")
     docker_exec_attacker("bash", "/opt/attacker-lib/common/remove-pids.sh")
     kubectl("delete", "deploy,svc,job,pod,daemonset", "-A", "-l", f"honeypot.attack.kc={key}", "--ignore-not-found=true")

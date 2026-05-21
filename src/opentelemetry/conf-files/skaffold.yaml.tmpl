@@ -289,6 +289,8 @@ deploy:
         namespace: metallb-system
         createNamespace: true
         wait: true
+        setValues:
+          "frr-k8s.prometheus.serviceMonitor.enabled": false
 
       - name: csi-driver-smb
         remoteChart: csi-driver-smb

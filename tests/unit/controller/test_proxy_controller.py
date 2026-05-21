@@ -6,16 +6,18 @@ from pathlib import Path
 import pytest
 
 
-def write_proxy_config(tmp_path: Path, state_file: Path) -> Path:
+def write_proxy_config(tmp_path: Path, state_file: Path, *, proxy_logs: bool | None = None) -> Path:
     config_file = tmp_path / "config.toml"
-    config_file.write_text(
+    text = (
         "[config]\n"
         "LAB_NAME = \"honeypotlab\"\n"
         "HOST_SOCKET = false\n"
         "CONTROLLER_PROXY_CONTAINER_PORT = 18080\n"
-        f"STATE_FILE = \"{state_file}\"\n",
-        encoding="utf-8",
+        f"STATE_FILE = \"{state_file}\"\n"
     )
+    if proxy_logs is not None:
+        text += f"CONTROLLER_PROXY_LOGS = {'true' if proxy_logs else 'false'}\n"
+    config_file.write_text(text, encoding="utf-8")
     return config_file
 
 
@@ -39,6 +41,42 @@ def test_state_object_and_kube_api_proxy_target(controller_importer, tmp_path: P
 
     assert proxy.state_object("FRONTEND_PROXY_IP") == "10.1.2.3"
     assert proxy.kube_api_proxy_target() == ("control-plane", 6443)
+
+
+@pytest.mark.unit
+def test_proxy_logs_are_enabled_by_default(
+    controller_importer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_file = tmp_path / "state.json"
+    state_file.write_text('{"values":{}}', encoding="utf-8")
+    monkeypatch.setenv("CONFIG_FILE", str(write_proxy_config(tmp_path, state_file)))
+
+    proxy = controller_importer.module("app.start_proxy")
+    proxy.log("visible")
+
+    captured = capsys.readouterr()
+    assert "proxy: visible" in captured.out
+
+
+@pytest.mark.unit
+def test_proxy_logs_can_be_disabled(
+    controller_importer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_file = tmp_path / "state.json"
+    state_file.write_text('{"values":{}}', encoding="utf-8")
+    monkeypatch.setenv("CONFIG_FILE", str(write_proxy_config(tmp_path, state_file, proxy_logs=False)))
+
+    proxy = controller_importer.module("app.start_proxy")
+    proxy.log("hidden")
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
 
 
 @pytest.mark.unit

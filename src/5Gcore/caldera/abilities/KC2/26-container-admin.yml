@@ -12,8 +12,8 @@
           CHILD='#{host.kc2.child}';
           PREV='#{kc2.25.done}';
           mkdir -p "$DATA_PATH/KC2";
-          OUTDIR="$DATA_PATH/KC2/dbs" /opt/caldera/KC4/container-admin-5gcore.sh configure-crictl > "$DATA_PATH/KC2/container-admin.log" 2>&1;
-          echo kc2-26-done
+          OUTDIR="$DATA_PATH/KC2/dbs" /opt/caldera/KC4/container-admin-5gcore.sh configure-crictl > "$DATA_PATH/KC2/container-admin.log" 2>&1
+          && echo kc2-26-done
         timeout: 900
         parsers:
           plugins.stockpile.app.parsers.basic:

@@ -38,7 +38,6 @@ spec:
   template:
     metadata:
       labels:
-        honeypot.lab/destructive-ok: "true"
         app: mongodb-nwdaf
         project: {{ .Values.global.name | default "free5gc" }}
         kc2-target: "true"

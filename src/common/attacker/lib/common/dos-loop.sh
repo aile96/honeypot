@@ -5,7 +5,7 @@ set -euo pipefail
 # Config
 # ==============================================================================
 
-INTERVAL="3"
+INTERVAL="${HP_DOS_INTERVAL:-3}"
 DESTRUCTIVE_LABEL_KEY="${HP_DESTRUCTIVE_LABEL_KEY:-honeypot.lab/destructive-ok}"
 DESTRUCTIVE_LABEL_VALUE="${HP_DESTRUCTIVE_LABEL_VALUE:-true}"
 PAUSE_KUBELET="${HP_DOS_PAUSE_KUBELET:-false}"
@@ -112,6 +112,7 @@ pause_kubelet() {
     return 0
   fi
 
+  echo "Pausing kubelet PID(s): ${KUBELET_PIDS[*]}"
   "${REMOTE_CMD[@]}" kill -STOP "${KUBELET_PIDS[@]}"
 }
 
@@ -139,26 +140,6 @@ containers_for_pod() {
   "${CRICTL[@]}" ps -q --pod "$pod_id"
 }
 
-pod_label_value() {
-  local pod_id="$1"
-
-  "${CRICTL[@]}" inspectp "$pod_id" 2>/dev/null \
-    | jq -r --arg key "$DESTRUCTIVE_LABEL_KEY" '
-      .status.labels?[$key]
-      // .info.config.labels?[$key]
-      // .info.runtimeSpec.annotations?[$key]
-      // empty
-    '
-}
-
-pod_has_destructive_label() {
-  local pod_id="$1"
-  local value
-
-  value="$(pod_label_value "$pod_id")"
-  [[ "$value" == "$DESTRUCTIVE_LABEL_VALUE" ]]
-}
-
 pod_identity() {
   local pod_id="$1"
 
@@ -167,12 +148,16 @@ pod_identity() {
       (
         .status.metadata.namespace
         // .status.labels?["io.kubernetes.pod.namespace"]
+        // .info.config.metadata.namespace
+        // .info.config.labels?["io.kubernetes.pod.namespace"]
         // "unknown"
       )
       + "/"
       + (
         .status.metadata.name
         // .status.labels?["io.kubernetes.pod.name"]
+        // .info.config.metadata.name
+        // .info.config.labels?["io.kubernetes.pod.name"]
         // "unknown"
       )
     '
@@ -189,6 +174,7 @@ filtered_containers_for_pod() {
     container_name="$(container_name_for_id "$container_id")"
 
     if is_protected_container "$container_name"; then
+      echo "Container $container_id ($container_name) protected: skipping"
       continue
     fi
 
@@ -200,84 +186,134 @@ filtered_containers_for_pod() {
 # Pod handling
 # ==============================================================================
 
-list_pods() {
-  "${CRICTL[@]}" pods -q
+list_target_pods() {
+  "${CRICTL[@]}" pods -o json \
+    | jq -r \
+      --arg key "$DESTRUCTIVE_LABEL_KEY" \
+      --arg value "$DESTRUCTIVE_LABEL_VALUE" '
+        .items[]
+        | select(.state == "SANDBOX_READY")
+        | select(.labels[$key] == $value)
+        | [.id, .metadata.namespace, .metadata.name]
+        | @tsv
+      '
 }
 
-list_target_pods() {
-  local pod_id
-
-  while IFS= read -r pod_id; do
-    [[ -z "$pod_id" ]] && continue
-
-    if pod_has_destructive_label "$pod_id"; then
-      printf "%s\n" "$pod_id"
-    else
-      echo "Pod $(pod_identity "$pod_id") skipped: missing ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE}" >&2
-    fi
-  done < <(list_pods)
+log_skipped_pods() {
+  "${CRICTL[@]}" pods -o json \
+    | jq -r \
+      --arg key "$DESTRUCTIVE_LABEL_KEY" \
+      --arg value "$DESTRUCTIVE_LABEL_VALUE" '
+        .items[]
+        | select(.state == "SANDBOX_READY")
+        | select(.labels[$key] != $value)
+        | [
+            (.metadata.namespace // "unknown"),
+            (.metadata.name // "unknown")
+          ]
+        | @tsv
+      ' \
+    | while IFS="$(printf '\t')" read -r namespace pod_name; do
+        [[ -z "${pod_name:-}" ]] && continue
+        echo "Pod ${namespace}/${pod_name} skipped: missing ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE}" >&2
+      done
 }
 
 target_pods_exist() {
-  local pod_id
+  local first_target
 
-  while IFS= read -r pod_id; do
-    [[ -z "$pod_id" ]] && continue
-    pod_has_destructive_label "$pod_id" && return 0
-  done < <(list_pods)
+  first_target="$(
+    list_target_pods | head -n 1 || true
+  )"
 
-  return 1
+  [[ -n "$first_target" ]]
 }
 
 stop_container() {
   local container_id="$1"
 
-  if ! "${CRICTL[@]}" stop "$container_id"; then
-    echo "WARN: stop failed for container $container_id (continuing)."
+  if "${CRICTL[@]}" stop "$container_id"; then
+    return 0
   fi
+
+  echo "WARN: stop failed for container $container_id"
+  return 1
 }
 
 stop_pod_containers() {
   local pod_id="$1"
+  local namespace="$2"
+  local pod_name="$3"
   local container_id
   local filtered_containers=()
-
-  if ! pod_has_destructive_label "$pod_id"; then
-    echo "Pod $(pod_identity "$pod_id"): skipped, missing ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE}"
-    return 0
-  fi
+  local stopped_count=0
 
   mapfile -t filtered_containers < <(filtered_containers_for_pod "$pod_id")
 
   if (( ${#filtered_containers[@]} == 0 )); then
+    echo "Pod ${namespace}/${pod_name} ($pod_id): no stoppable containers found"
     return 0
   fi
 
-  echo "Pod $pod_id: stopping ${#filtered_containers[@]} container..."
+  echo "Pod ${namespace}/${pod_name} ($pod_id): stopping ${#filtered_containers[@]} container(s)"
 
   for container_id in "${filtered_containers[@]}"; do
-    stop_container "$container_id"
+    if stop_container "$container_id"; then
+      stopped_count=$((stopped_count + 1))
+    fi
   done
 
-  echo "Pod $pod_id: done"
+  echo "Pod ${namespace}/${pod_name} ($pod_id): stopped ${stopped_count}/${#filtered_containers[@]} container(s)"
+
+  if (( stopped_count == 0 )); then
+    return 1
+  fi
+
+  return 0
 }
 
 stop_all_pod_containers_once() {
-  local pods=()
+  local target_pods=()
+  local line
   local pod_id
+  local namespace
+  local pod_name
+  local processed_count=0
+  local stopped_pods_count=0
+  local failed_pods_count=0
 
-  mapfile -t pods < <(list_target_pods)
+  mapfile -t target_pods < <(list_target_pods)
 
-  if (( ${#pods[@]} == 0 )); then
+  if (( ${#target_pods[@]} == 0 )); then
     echo "No pod with ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE} found."
-    exit 0
+    log_skipped_pods
+    return 1
   fi
 
-  for pod_id in "${pods[@]}"; do
-    stop_pod_containers "$pod_id"
+  echo "Found ${#target_pods[@]} target pod(s) with ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE}"
+
+  for line in "${target_pods[@]}"; do
+    IFS="$(printf '\t')" read -r pod_id namespace pod_name <<< "$line"
+
+    [[ -z "${pod_id:-}" ]] && continue
+
+    processed_count=$((processed_count + 1))
+
+    if stop_pod_containers "$pod_id" "$namespace" "$pod_name"; then
+      stopped_pods_count=$((stopped_pods_count + 1))
+    else
+      failed_pods_count=$((failed_pods_count + 1))
+    fi
   done
 
-  echo "Every labelled pod processed"
+  echo "Target pods processed: ${processed_count}; successful pod stop attempts: ${stopped_pods_count}; failed pod stop attempts: ${failed_pods_count}"
+
+  if (( stopped_pods_count == 0 )); then
+    echo "No containers were stopped in any target pod."
+    return 1
+  fi
+
+  return 0
 }
 
 # ==============================================================================
@@ -289,12 +325,17 @@ init_crictl
 
 if ! target_pods_exist; then
   echo "No pod with ${DESTRUCTIVE_LABEL_KEY}=${DESTRUCTIVE_LABEL_VALUE} found."
-  exit 0
+  log_skipped_pods
+  exit 1
 fi
 
 pause_kubelet
 
 while :; do
-  stop_all_pod_containers_once
+  if ! stop_all_pod_containers_once; then
+    echo "DOS loop iteration failed: no effective container stop performed."
+    exit 1
+  fi
+
   sleep "$INTERVAL"
 done

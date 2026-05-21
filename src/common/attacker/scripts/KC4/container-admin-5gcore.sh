@@ -108,7 +108,8 @@ for CID in "${CIDS[@]}"; do
   printf '%s\n' "$ENV_OUTPUT" >"${PREFIX}.env.txt"
   printf '%s\n' "$INSPECT_JSON" >"${PREFIX}.inspect.json"
 
-  MONGO_CMD="$(crictl exec "$CID" sh -c 'command -v mongosh || command -v mongo || true' 2>/dev/null | tail -n1)"
+  MONGO_CMD_OUTPUT="$(crictl exec "$CID" sh -c 'command -v mongosh || command -v mongo || true' 2>/dev/null || true)"
+  MONGO_CMD="$(printf '%s\n' "$MONGO_CMD_OUTPUT" | tail -n1)"
   if [[ -z "$MONGO_CMD" ]]; then
     echo "[SKIP] mongosh/mongo not present in $CID" >&2
     continue

@@ -130,12 +130,18 @@ def deploy_opentelemetry_sidecars() -> bool:
         {
             "name": "sidecar-not-mining",
             "image": f"{registry}/attacker:{image_tag}",
-            "env": [{"name": "GROUP", "value": "mining"}],
+            "env": [
+                    {"name": "GROUP", "value": "mining"},
+                    {"name": "DOCKER_DAEMON", "value": "0"},
+            ],
         },
         {
             "name": "sidecar-not-mining2",
             "image": f"{registry}/attacker:{image_tag}",
-            "env": [{"name": "GROUP", "value": "mining"}],
+            "env": [
+                    {"name": "GROUP", "value": "mining"},
+                    {"name": "DOCKER_DAEMON", "value": "0"},
+            ],
         },
     ]
 

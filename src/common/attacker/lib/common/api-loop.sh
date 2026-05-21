@@ -5,9 +5,9 @@ set -euo pipefail
 # Config
 # ==============================================================================
 
-API_SERVER="${API_SERVER:-https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT}"
+API_SERVER="${API_SERVER:-https://${CONTROL_PLANE_NODE}:${CONTROL_PLANE_PORT}}"
 CERT_PATH="${CERT_PATH:-/tmp/KCData/KC5/kubelet-client-current-kind-cluster-worker.pem}"
-CACERT_OPT="${CACERT_OPT:---insecure}"   # Use: --cacert /path/ca.crt if preferred
+CACERT_OPT="${CACERT_OPT:---insecure}"
 MODE="${MODE:-ready}"                    # ready | notready
 SLEEP_SECS="${SLEEP_SECS:-1}"
 FORCE_CS="${FORCE_CS:-true}"
@@ -17,7 +17,7 @@ FORCE_CS="${FORCE_CS:-true}"
 # ==============================================================================
 
 get_node_name_from_cert() {
-  openssl x509 -in "$CERT_PATH" -noout -subject \
+  openssl x509 -in "$CERT_PATH" -noout -subject 2>/dev/null \
     | sed -n 's/^subject=.*CN *= *system:node:\([^,/]*\).*/\1/p' \
     | head -n1
 }
@@ -29,18 +29,21 @@ if [[ -z "$NODE_NAME" ]]; then
   exit 1
 fi
 
+if ! grep -q "BEGIN .*PRIVATE KEY" "$CERT_PATH"; then
+  echo "ERROR: certificate file does not contain a private key: $CERT_PATH" >&2
+  exit 1
+fi
+
 echo "API: $API_SERVER"
 echo "NODE: $NODE_NAME"
 echo "MODE: $MODE"
+echo "CERT: $CERT_PATH"
 
 # ==============================================================================
 # Helpers
 # ==============================================================================
 
 k8s_curl() {
-  # Usage:
-  #   k8s_curl METHOD PATH [curl-args...]
-
   local method="$1"
   local path="$2"
 
@@ -49,6 +52,7 @@ k8s_curl() {
   curl \
     --silent \
     --show-error \
+    --fail \
     --retry 2 \
     --retry-connrefused \
     -X "$method" \
@@ -58,6 +62,10 @@ k8s_curl() {
     $CACERT_OPT \
     -H "Accept: application/json" \
     "$@"
+}
+
+urlencode() {
+  printf "%s" "$1" | jq -sRr @uri
 }
 
 now_rfc3339_ns() {
@@ -71,17 +79,37 @@ now_rfc3339() {
 current_status_fields() {
   if [[ "$MODE" == "notready" ]]; then
     STATUS_VALUE="False"
+    READY_BOOL="false"
+    PHASE_VALUE="Running"
     STATUS_REASON="ManualNotReady"
-    STATUS_MESSAGE="Marked NotReady by updater"
+    STATUS_MESSAGE="Marked NotReady by false state updater"
+    CONTAINER_STATE_REASON="ManualNotReady"
+    CONTAINER_STATE_MESSAGE="Marked NotReady by false state updater"
   else
     STATUS_VALUE="True"
+    READY_BOOL="true"
+    PHASE_VALUE="Running"
     STATUS_REASON="ManualReady"
-    STATUS_MESSAGE="Marked Ready by updater"
+    STATUS_MESSAGE="Marked Ready by false state updater"
+    CONTAINER_STATE_REASON=""
+    CONTAINER_STATE_MESSAGE=""
   fi
 }
 
 # ==============================================================================
-# Lease: create/update
+# Preflight
+# ==============================================================================
+
+preflight() {
+  echo "Preflight: checking API access"
+
+  k8s_curl GET "/api/v1/nodes/${NODE_NAME}" >/dev/null
+
+  echo "Preflight OK: node ${NODE_NAME} is reachable with provided certificate"
+}
+
+# ==============================================================================
+# Lease handling
 # ==============================================================================
 
 ensure_lease() {
@@ -90,23 +118,22 @@ ensure_lease() {
 
   now="$(now_rfc3339_ns)"
 
-  body="$(
-    k8s_curl GET "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/$NODE_NAME"
-  )" || true
-
-  if echo "$body" | jq -e ".metadata.name" >/dev/null 2>&1; then
-    renew_lease "$now"
-  else
-    create_lease "$now"
+  if body="$(k8s_curl GET "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/${NODE_NAME}" 2>/dev/null)"; then
+    if echo "$body" | jq -e ".metadata.name" >/dev/null 2>&1; then
+      renew_lease "$now"
+      return 0
+    fi
   fi
+
+  create_lease "$now"
 }
 
 renew_lease() {
   local now="$1"
 
-  k8s_curl PATCH "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/$NODE_NAME" \
+  k8s_curl PATCH "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/${NODE_NAME}" \
     -H "Content-Type: application/merge-patch+json" \
-    --data @- >/dev/null 2>&1 <<JSON || true
+    --data @- >/dev/null <<JSON
 {
   "spec": {
     "renewTime": "$now",
@@ -121,7 +148,7 @@ create_lease() {
 
   k8s_curl POST "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases" \
     -H "Content-Type: application/json" \
-    --data @- >/dev/null 2>&1 <<JSON || true
+    --data @- >/dev/null <<JSON
 {
   "apiVersion": "coordination.k8s.io/v1",
   "kind": "Lease",
@@ -140,7 +167,7 @@ JSON
 }
 
 # ==============================================================================
-# Node.status Ready True/False
+# Node status
 # ==============================================================================
 
 patch_node_status() {
@@ -149,9 +176,9 @@ patch_node_status() {
   current_status_fields
   now="$(now_rfc3339)"
 
-  k8s_curl PATCH "/api/v1/nodes/$NODE_NAME/status" \
+  k8s_curl PATCH "/api/v1/nodes/${NODE_NAME}/status" \
     -H "Content-Type: application/strategic-merge-patch+json" \
-    --data @- >/dev/null 2>&1 <<JSON || true
+    --data @- >/dev/null <<JSON
 {
   "status": {
     "conditions": [
@@ -170,111 +197,164 @@ JSON
 }
 
 # ==============================================================================
-# Pods on this node -> Ready True/False
+# Pod status
 # ==============================================================================
 
 pods_on_node() {
-  local field_selector
+  local selector
+  local selector_encoded
 
-  field_selector="$(
-    printf "spec.nodeName=%s" "$NODE_NAME" \
-      | sed "s/:/%3A/g"
-  )"
+  selector="spec.nodeName=${NODE_NAME}"
+  selector_encoded="$(urlencode "$selector")"
 
-  k8s_curl GET "/api/v1/pods?fieldSelector=$field_selector" \
-    | jq -r ".items[] | [.metadata.namespace, .metadata.name] | @tsv" 2>/dev/null || true
+  k8s_curl GET "/api/v1/pods?fieldSelector=${selector_encoded}" \
+    | jq -r ".items[] | [.metadata.namespace, .metadata.name] | @tsv"
+}
+
+build_pod_status_patch() {
+  local pod_json="$1"
+  local now="$2"
+
+  current_status_fields
+
+  jq -nc \
+    --argjson pod "$pod_json" \
+    --arg now "$now" \
+    --arg status_value "$STATUS_VALUE" \
+    --argjson ready_bool "$READY_BOOL" \
+    --arg phase_value "$PHASE_VALUE" \
+    --arg reason "$STATUS_REASON" \
+    --arg message "$STATUS_MESSAGE" '
+      def forced_condition($t):
+        {
+          type: $t,
+          status: $status_value,
+          reason: $reason,
+          message: $message,
+          lastProbeTime: null,
+          lastTransitionTime: $now
+        };
+
+      def normalize_condition:
+        if .type == "Ready" then forced_condition("Ready")
+        elif .type == "ContainersReady" then forced_condition("ContainersReady")
+        elif .type == "Initialized" then
+          .status = "True"
+        elif .type == "PodScheduled" then
+          .status = "True"
+        else
+          .
+        end;
+
+      def fake_container_status:
+        .ready = $ready_bool
+        | .started = $ready_bool
+        | .restartCount = 0
+        | if $ready_bool then
+            .state = {
+              running: {
+                startedAt: $now
+              }
+            }
+          else
+            .state = {
+              waiting: {
+                reason: "ManualNotReady",
+                message: "Marked NotReady by false state updater"
+              }
+            }
+          end
+        | .lastState = {};
+
+      {
+        status: {
+          phase: $phase_value,
+          reason: null,
+          message: null,
+          conditions: (
+            ($pod.status.conditions // [])
+            | map(normalize_condition)
+          ),
+          containerStatuses: (
+            ($pod.status.containerStatuses // [])
+            | map(fake_container_status)
+          ),
+          initContainerStatuses: (
+            ($pod.status.initContainerStatuses // [])
+            | map(fake_container_status)
+          )
+        }
+      }
+    '
+}
+
+patch_pod_status() {
+  local namespace="$1"
+  local pod_name="$2"
+  local pod_json
+  local patch
+  local now
+
+  pod_json="$(k8s_curl GET "/api/v1/namespaces/${namespace}/pods/${pod_name}")"
+  now="$(now_rfc3339)"
+
+  patch="$(build_pod_status_patch "$pod_json" "$now")"
+
+  k8s_curl PATCH "/api/v1/namespaces/${namespace}/pods/${pod_name}/status" \
+    -H "Content-Type: application/merge-patch+json" \
+    --data "$patch" >/dev/null
 }
 
 patch_pods_status_on_node() {
   local pods
+  local namespace
+  local pod_name
+  local patched=0
+  local failed=0
 
-  pods="$(pods_on_node)"
-  [[ -z "$pods" ]] && return 0
+  pods="$(pods_on_node || true)"
 
-  current_status_fields
-
-  while IFS=$'\t' read -r namespace pod_name; do
-    [[ -z "$namespace" || -z "$pod_name" ]] && continue
-
-    patch_pod_ready_condition "$namespace" "$pod_name"
-
-    if [[ "$FORCE_CS" == "true" ]]; then
-      patch_pod_container_statuses "$namespace" "$pod_name"
-    fi
-  done <<< "$pods"
-}
-
-patch_pod_ready_condition() {
-  local namespace="$1"
-  local pod_name="$2"
-
-  k8s_curl PATCH "/api/v1/namespaces/$namespace/pods/$pod_name/status" \
-    -H "Content-Type: application/merge-patch+json" \
-    --data @- >/dev/null 2>&1 <<JSON || true
-{
-  "status": {
-    "conditions": [
-      {
-        "type": "Ready",
-        "status": "$STATUS_VALUE",
-        "reason": "$STATUS_REASON",
-        "message": "$STATUS_MESSAGE"
-      }
-    ]
-  }
-}
-JSON
-}
-
-patch_pod_container_statuses() {
-  local namespace="$1"
-  local pod_name="$2"
-
-  local pod
-  local count
-  local patch
-
-  pod="$(k8s_curl GET "/api/v1/namespaces/$namespace/pods/$pod_name")" || return 0
-  count="$(echo "$pod" | jq "(.status.containerStatuses // []) | length")"
-
-  [[ "$count" -gt 0 ]] || return 0
-
-  patch="$(build_container_status_patch "$count")"
-
-  k8s_curl PATCH "/api/v1/namespaces/$namespace/pods/$pod_name/status" \
-    -H "Content-Type: application/json-patch+json" \
-    --data "$patch" \
-    >/dev/null 2>&1 || true
-}
-
-build_container_status_patch() {
-  local count="$1"
-  local ready_bool="true"
-
-  if [[ "$STATUS_VALUE" != "True" ]]; then
-    ready_bool="false"
+  if [[ -z "$pods" ]]; then
+    echo "No pods found on node ${NODE_NAME}"
+    return 0
   fi
 
-  jq -nc --argjson count "$count" --argjson ready "$ready_bool" '
-    [
-      range(0; $count) as $i
-      | {
-          op: "replace",
-          path: "/status/containerStatuses/\($i)/ready",
-          value: $ready
-        }
-    ]
-  '
+  while IFS=$'\t' read -r namespace pod_name; do
+    [[ -z "${namespace:-}" || -z "${pod_name:-}" ]] && continue
+
+    if patch_pod_status "$namespace" "$pod_name"; then
+      patched=$((patched + 1))
+    else
+      failed=$((failed + 1))
+      echo "WARN: failed to patch pod status ${namespace}/${pod_name}" >&2
+    fi
+  done <<< "$pods"
+
+  echo "Patched pod statuses on ${NODE_NAME}: patched=${patched}, failed=${failed}"
+
+  if [[ "$patched" -eq 0 ]]; then
+    return 1
+  fi
+
+  return 0
 }
 
 # ==============================================================================
 # Main loop
 # ==============================================================================
 
+preflight
+
+iteration=0
+
 while true; do
-  ensure_lease
-  patch_node_status
-  patch_pods_status_on_node
+  iteration=$((iteration + 1))
+
+  echo "Iteration ${iteration}: updating false status for node ${NODE_NAME}"
+
+  ensure_lease || echo "WARN: lease update failed for ${NODE_NAME}" >&2
+  patch_node_status || echo "WARN: node status patch failed for ${NODE_NAME}" >&2
+  patch_pods_status_on_node || echo "WARN: pod status patch failed for ${NODE_NAME}" >&2
 
   sleep "$SLEEP_SECS"
 done

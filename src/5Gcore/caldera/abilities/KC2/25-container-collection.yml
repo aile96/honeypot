@@ -12,8 +12,8 @@
           CHILD='#{host.kc2.child}';
           PREV='#{kc2.24.done}';
           mkdir -p "$DATA_PATH/KC2";
-          /opt/caldera/KC4/container-collection.sh configure-crictl > "$DATA_PATH/KC2/cri-analysis.log" 2>&1;
-          echo kc2-25-done
+          /opt/caldera/KC4/container-collection.sh configure-crictl > "$DATA_PATH/KC2/cri-analysis.log" 2>&1
+          && echo kc2-25-done
         timeout: 900
         parsers:
           plugins.stockpile.app.parsers.basic:

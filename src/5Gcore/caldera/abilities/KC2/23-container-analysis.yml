@@ -12,8 +12,13 @@
           ENTRY='#{host.kc2.entry}';
           PREV='#{kc2.22.done}';
           mkdir -p "$DATA_PATH/KC2";
-          ssh -p 4222 -o StrictHostKeyChecking=no root@$(cat "$DATA_PATH/KC2/attackaddr") 'bash -s' < /opt/caldera/KC4/container-analysis.sh > "$DATA_PATH/KC2/container-analysis.log" 2>&1;
-          echo kc2-23-done
+          TARGET_FILE="$DATA_PATH/KC2/attackaddr";
+          {
+          test -s "$TARGET_FILE" || { echo "Missing KC2 attack address: $TARGET_FILE. Run step 21 and inspect $DATA_PATH/KC2/rce-attack.log."; exit 1; };
+          TARGET="$(cat "$TARGET_FILE")";
+          ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET" 'bash -s' < /opt/caldera/KC4/container-analysis.sh;
+          } > "$DATA_PATH/KC2/container-analysis.log" 2>&1
+          && echo kc2-23-done
         timeout: 1800
         parsers:
           plugins.stockpile.app.parsers.basic:

@@ -58,6 +58,7 @@ HOST_SOCKET = config_bool(config_value(CONFIG, "HOST_SOCKET", False))
 PROXY_TUNNEL_USER = str(config_value(CONFIG, "PROXY_TUNNEL_USER", "lab"))
 PROXY_TUNNEL_PASS = str(config_value(CONFIG, "PROXY_TUNNEL_PASS", "lab"))
 STATE_FILE = str(config_value(CONFIG, "STATE_FILE"))
+PROXY_LOGS = config_bool(config_value(CONFIG, "CONTROLLER_PROXY_LOGS", True))
 
 # Dynamic routes are registered at runtime via authenticated POST requests. The
 # selected tunnel becomes the default HTTP upstream at "/".
@@ -133,6 +134,8 @@ def matching_route(path: str) -> tuple[str, tuple[str, int, bool]] | None:
 
 
 def log(*parts: object) -> None:
+    if not PROXY_LOGS:
+        return
     print(
         time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()),
         "proxy:",

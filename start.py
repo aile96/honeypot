@@ -76,6 +76,18 @@ def fail(message: str) -> None:
     raise SystemExit(f"[ERR ] {message}")
 
 
+def config_bool(config: dict[str, object], name: str, default: bool = False) -> bool:
+    value = config.get(name, default)
+    if isinstance(value, bool):
+        return value
+    raw = str(value).strip().lower()
+    if raw in {"1", "true", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "no", "n", "off", ""}:
+        return False
+    fail(f"{name} must be a boolean value, got: {value!r}")
+
+
 def valid_name(value: str, name: str) -> None:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", value):
         fail(f"Invalid {name}={value!r} for Docker resources")
@@ -112,6 +124,7 @@ def write_info(config: dict[str, object], path: Path, status: str, host_port: in
         "status": status,
         "lab_name": config["LAB_NAME"],
         "cluster_target": config["CLUSTER_TARGET"],
+        "autoremove_lab": config_bool(config, "AUTOREMOVE_LAB", False),
         "host_socket": config["HOST_SOCKET"],
         "expose_to_host": config["EXPOSE_TO_HOST"],
         "controller_container": config["CONTROLLER_CONTAINER_NAME"],
@@ -158,6 +171,7 @@ def start_controller_container(config: dict[str, object]) -> None:
     bind = "0.0.0.0" if bool(config["PROXY_BIND_ALL"]) else "127.0.0.1"
     port = int(config["CONTROLLER_PROXY_CONTAINER_PORT"])
     name = str(config["CONTROLLER_CONTAINER_NAME"])
+    autoremove_lab = config_bool(config, "AUTOREMOVE_LAB", False)
 
     args = [
         "docker",
@@ -169,8 +183,6 @@ def start_controller_container(config: dict[str, object]) -> None:
         name,
         "--label",
         "honeypot.role=controller",
-        "--restart",
-        "unless-stopped",
         "--network",
         str(config["CP_NETWORK"]),
         "--add-host",
@@ -184,6 +196,10 @@ def start_controller_container(config: dict[str, object]) -> None:
         "-v",
         f"{config['HOST_COMMON_CODE_ROOT']}:{config['COMMON_CODE_ROOT']}:ro",
     ]
+    if autoremove_lab:
+        args.append("--rm")
+    else:
+        args.extend(["--restart", "unless-stopped"])
     if not host_socket:
         args.extend(["--privileged", "--cgroupns=host"])
     if host_socket:
@@ -232,6 +248,7 @@ def prepare_config(raw: dict[str, object]) -> dict[str, object]:
     target = str(config["CLUSTER_TARGET"])
     config.update(START_DEFAULTS)
     config.update(derived_start_defaults(lab_name, target))
+    config.setdefault("AUTOREMOVE_LAB", False)
     return config
 
 

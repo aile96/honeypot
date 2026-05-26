@@ -32,6 +32,7 @@ def test_prepare_config_derives_lab_paths_and_names(start_module) -> None:
     assert config["CONFIG_FILE"] == "/runtime/config.toml"
     assert config["STATE_FILE"] == "/res/runtime/honeypotlab/generated/lab-state.json"
     assert config["DOCKER_DATA_ROOT"] == "/res/runtime/honeypotlab/docker-data"
+    assert config["AUTOREMOVE_LAB"] is False
     assert "CACHE_DIR" not in config
 
 
@@ -63,6 +64,7 @@ def test_write_info_records_proxy_exposure(start_module, tmp_path: Path) -> None
     assert info["schema_version"] == 2
     assert info["lab_name"] == "honeypotlab"
     assert info["cluster_target"] == "5Gcore"
+    assert info["autoremove_lab"] is False
     assert info["controller_proxy"] == {
         "container_port": 18080,
         "exposed": True,
@@ -96,3 +98,30 @@ def test_valid_name_rejects_unsafe_docker_resource_names(start_module) -> None:
     start_module.valid_name("demo-5g_01", "LAB_NAME")
     with pytest.raises(SystemExit, match="Invalid LAB_NAME"):
         start_module.valid_name("../bad", "LAB_NAME")
+
+
+@pytest.mark.unit
+def test_autoremove_controller_uses_rm_without_restart_policy(start_module, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+    config = start_module.prepare_config(
+        {
+            "LAB_NAME": "honeypotlab",
+            "CLUSTER_TARGET": "5Gcore",
+            "HOST_SOCKET": False,
+            "EXPOSE_TO_HOST": True,
+            "PROXY_BIND_ALL": False,
+            "CONTROLLER_PROXY_CONTAINER_PORT": 18080,
+            "AUTOREMOVE_LAB": True,
+        }
+    )
+
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(start_module, "run", fake_run)
+    start_module.start_controller_container(config)
+
+    docker_run = calls[0]
+    assert "--rm" in docker_run
+    assert "--restart" not in docker_run

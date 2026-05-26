@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -49,6 +50,7 @@ REQUIRED_ENTRYPOINT_CONFIG_KEYS = (
     "RUNTIME_DIR",
 )
 ENTRYPOINT_BOOL_KEYS = ("HOST_SOCKET",)
+ENTRYPOINT_OPTIONAL_BOOL_KEYS = ("AUTOREMOVE_LAB",)
 ENTRYPOINT_POSITIVE_FLOAT_KEYS = ("DOCKER_READY_TIMEOUT", "IDLE_SLEEP_SECONDS")
 ENTRYPOINT_ABSOLUTE_PATH_KEYS = (
     "DOCKER_SOCKET_PATH",
@@ -119,6 +121,9 @@ def load_entrypoint_runtime() -> dict[str, object]:
     for name in ENTRYPOINT_BOOL_KEYS:
         runtime[name] = parse_bool_value(runtime[name], name=name)
 
+    for name in ENTRYPOINT_OPTIONAL_BOOL_KEYS:
+        runtime[name] = parse_bool_value(runtime.get(name, False), name=name)
+
     for name in ENTRYPOINT_POSITIVE_FLOAT_KEYS:
         runtime[name] = parse_positive_float_value(runtime[name], name=name)
 
@@ -188,9 +193,19 @@ def idle_forever(sleep_seconds: float) -> None:
     raise SystemExit(signal_exit_code or 0)
 
 
-def cleanup_runtime_dir(runtime_dir: Path) -> None:
-    """Leave RUNTIME_DIR in place so restarted controllers reload the same CONFIG."""
-    log(f"Leaving runtime directory in place for restart persistence: {runtime_dir.resolve()}")
+def cleanup_runtime_dir(runtime_dir: Path, *, autoremove_lab: bool = False) -> None:
+    """Remove RUNTIME_DIR only for one-shot autoremove labs."""
+    if not autoremove_lab:
+        log(f"Leaving runtime directory in place for restart persistence: {runtime_dir.resolve()}")
+        return
+
+    try:
+        shutil.rmtree(runtime_dir)
+        log(f"Removed runtime directory after AUTOREMOVE_LAB=true: {runtime_dir.resolve()}")
+    except FileNotFoundError:
+        log(f"Runtime directory already absent after AUTOREMOVE_LAB=true: {runtime_dir.resolve()}")
+    except OSError as exc:
+        warn(f"Could not remove runtime directory {runtime_dir.resolve()} after AUTOREMOVE_LAB=true: {exc}")
 
 
 def cleanup_values(config: dict[str, Any]) -> dict[str, str]:
@@ -270,12 +285,15 @@ def main() -> int:
     first_script = Path(runtime["FIRST_SCRIPT"])
     second_script = Path(runtime["SECOND_SCRIPT"])
     proxy_script = Path(runtime["PROXY_SCRIPT"])
+    autoremove_lab = bool(runtime["AUTOREMOVE_LAB"])
+    remove_runtime_on_exit = False
     dockerd_proc: Optional[subprocess.Popen] = None
     proxy_proc: Optional[subprocess.Popen] = None
 
     log("Entrypoint starting.")
     log(f"Runtime config: {CONFIG_FILE}")
     log(f"HOST_SOCKET mode: {host_socket_mode}")
+    log(f"AUTOREMOVE_LAB: {autoremove_lab}")
     log(f"FIRST_SCRIPT: {first_script}")
     log(f"SECOND_SCRIPT: {second_script}")
 
@@ -312,6 +330,11 @@ def main() -> int:
         run_child_script(first_script, "FIRST_SCRIPT", socket_path)
         run_child_script(second_script, "SECOND_SCRIPT", socket_path)
 
+        if autoremove_lab:
+            remove_runtime_on_exit = True
+            log("AUTOREMOVE_LAB=true; lab scripts completed, shutting down instead of entering idle loop.")
+            return 0
+
         idle_forever(idle_sleep_seconds)
         return 0
 
@@ -327,13 +350,13 @@ def main() -> int:
         except Exception as exc:
             warn(f"Error during Kind cluster cleanup: {exc}")
 
-        cleanup_runtime_dir(runtime_dir)
-
         if proxy_proc is not None and proxy_proc.poll() is None:
             terminate_process(proxy_proc, "controller proxy")
 
         if dockerd_proc is not None and dockerd_proc.poll() is None:
             terminate_process(dockerd_proc, "dockerd")
+
+        cleanup_runtime_dir(runtime_dir, autoremove_lab=remove_runtime_on_exit)
 
 
 if __name__ == "__main__":

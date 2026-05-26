@@ -110,6 +110,8 @@ The pipeline renders target templates, creates or reuses the lab-specific Kind c
 
 After the pipeline is ready, `/app/start_caldera.py` connects to Caldera, discovers adversaries in `src/<CLUSTER_TARGET>/caldera/adversaries`, waits for agents, runs kill chains in filename order, calls target controller hooks, optionally restores lab state, and writes the kill-chain summary.
 
+Set `AUTOREMOVE_LAB=true` in `[lab]` to run the controller as a one-shot lab: after `/app/start_caldera.py` finishes the kill-chain sequence, the controller shuts down, performs its best-effort lab cleanup, removes `res/runtime/<LAB_NAME>`, and Docker removes the controller container. The default is `false`, so labs remain available after the kill chains unless cleanup is requested.
+
 ## Local Endpoints
 
 Read the active proxy endpoint from:
@@ -232,6 +234,8 @@ Clean a specific lab with:
 If no argument is supplied, `remove_all.py` uses `LAB_NAME` from `configuration.conf`.
 
 Cleanup is scoped to the selected lab. The host cleanup script signals the controller, waits for it to stop, removes the matching controller container, removes `res/runtime/<LAB_NAME>`, and removes the shared registry cache only when no active labs use it. Compose stack, Kind cluster, and lab network cleanup are handled best-effort by the controller entrypoint during shutdown. Results under `res/results/<LAB_NAME>` are preserved.
+
+For automatic cleanup at the end of a kill-chain run, set `AUTOREMOVE_LAB=true` before starting the lab. Results under `res/results/<LAB_NAME>` are still preserved.
 
 Example:
 

@@ -6,13 +6,22 @@ finds their runtime addresses, updates controller host mappings, and records the
 registry, proxy, attacker, Caldera, and other underlay endpoints used by later
 pipeline and controller stages."""
 
+from __future__ import annotations
+
+import ipaddress
+import json
+from collections.abc import Iterator
+from typing import Any
+
 from lib import (
     config_str,
     configured_compose_services,
+    die,
     docker_first_container_ip,
     ensure_hosts_mapping,
     get_state_value,
     log,
+    run_cmd,
     set_state_value,
 )
 
@@ -91,9 +100,174 @@ def map_underlay_hostnames(services: list[str]) -> None:
         set_state_value(STATE, "underlay_hosts_mapping", mappings)
 
 
+def docker_network_inspect(network: str) -> dict[str, Any]:
+    completed = run_cmd(
+        ["docker", "network", "inspect", network],
+        check=False,
+        capture_output=True,
+        config=CONFIG,
+    )
+    if completed.returncode != 0 or not completed.stdout.strip():
+        die(f"docker network inspect returned nothing for network {network}. Cannot compute MetalLB IPs.")
+
+    try:
+        data = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        die(f"Could not parse Docker network inspect output for {network}: {exc}")
+
+    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+        die(f"Unexpected Docker network inspect output for {network}. Cannot compute MetalLB IPs.")
+    return data[0]
+
+
+def docker_network_ipv4_subnet(network_data: dict[str, Any], network: str) -> ipaddress.IPv4Network:
+    ipam = network_data.get("IPAM", {})
+    configs = ipam.get("Config", []) if isinstance(ipam, dict) else []
+    if not isinstance(configs, list):
+        configs = []
+
+    for entry in configs:
+        if not isinstance(entry, dict):
+            continue
+        subnet_raw = str(entry.get("Subnet", "")).strip()
+        if "/" not in subnet_raw or ":" in subnet_raw:
+            continue
+        try:
+            subnet = ipaddress.ip_network(subnet_raw, strict=False)
+        except ValueError as exc:
+            die(f"Could not parse Docker network IPv4 subnet {subnet_raw!r} for {network}: {exc}")
+        if isinstance(subnet, ipaddress.IPv4Network):
+            return subnet
+
+    die(f"No IPv4 subnet found on network {network}. Enable IPv4 on the Docker network.")
+
+
+def parse_ipv4_address(value: object) -> ipaddress.IPv4Address | None:
+    raw = str(value or "").strip().split("/", 1)[0]
+    if not raw:
+        return None
+    try:
+        address = ipaddress.ip_address(raw)
+    except ValueError:
+        return None
+    return address if isinstance(address, ipaddress.IPv4Address) else None
+
+
+def docker_network_used_ipv4_addresses(network_data: dict[str, Any]) -> set[ipaddress.IPv4Address]:
+    used: set[ipaddress.IPv4Address] = set()
+
+    containers = network_data.get("Containers", {})
+    if isinstance(containers, dict):
+        for container in containers.values():
+            if not isinstance(container, dict):
+                continue
+            address = parse_ipv4_address(container.get("IPv4Address"))
+            if address is not None:
+                used.add(address)
+
+    ipam = network_data.get("IPAM", {})
+    configs = ipam.get("Config", []) if isinstance(ipam, dict) else []
+    if isinstance(configs, list):
+        for entry in configs:
+            if not isinstance(entry, dict):
+                continue
+            gateway = parse_ipv4_address(entry.get("Gateway"))
+            if gateway is not None:
+                used.add(gateway)
+
+            aux_addresses = entry.get("AuxiliaryAddresses", {})
+            if isinstance(aux_addresses, dict):
+                for value in aux_addresses.values():
+                    address = parse_ipv4_address(value)
+                    if address is not None:
+                        used.add(address)
+
+    return used
+
+
+def preferred_metallb_first_ip(subnet: ipaddress.IPv4Network) -> ipaddress.IPv4Address:
+    octets = str(subnet.network_address).split(".")
+    if len(octets) != 4:
+        die(f"Unexpected IPv4 subnet base: {subnet.network_address}")
+    return ipaddress.IPv4Address(".".join([*octets[:3], "200"]))
+
+
+def usable_ip_bounds(subnet: ipaddress.IPv4Network) -> tuple[int, int]:
+    if subnet.prefixlen >= 31:
+        return int(subnet.network_address), int(subnet.broadcast_address)
+    return int(subnet.network_address) + 1, int(subnet.broadcast_address) - 1
+
+
+def candidate_pair_starts(
+    subnet: ipaddress.IPv4Network,
+    preferred: ipaddress.IPv4Address,
+) -> Iterator[ipaddress.IPv4Address]:
+    first_usable, last_usable = usable_ip_bounds(subnet)
+    max_start = last_usable - 1
+    if max_start < first_usable:
+        die(f"Docker network subnet {subnet} does not have two usable adjacent IPv4 addresses.")
+
+    preferred_start = int(preferred)
+    if preferred_start < first_usable or preferred_start > max_start:
+        preferred_start = first_usable
+
+    for start in range(preferred_start, max_start + 1):
+        yield ipaddress.IPv4Address(start)
+    for start in range(preferred_start - 1, first_usable - 1, -1):
+        yield ipaddress.IPv4Address(start)
+
+
+def choose_metallb_pair(
+    subnet: ipaddress.IPv4Network,
+    used: set[ipaddress.IPv4Address],
+) -> tuple[ipaddress.IPv4Address, ipaddress.IPv4Address]:
+    preferred = preferred_metallb_first_ip(subnet)
+    for first in candidate_pair_starts(subnet, preferred):
+        second = ipaddress.IPv4Address(int(first) + 1)
+        if first not in used and second not in used:
+            return first, second
+    die(f"No free adjacent IPv4 pair found on Docker network subnet {subnet} for MetalLB.")
+
+
+def configure_metallb_addresses() -> tuple[str, str, str]:
+    network = config_str(CONFIG, "CP_NETWORK", "lab", allow_empty=False)
+    network_data = docker_network_inspect(network)
+    subnet = docker_network_ipv4_subnet(network_data, network)
+    used = docker_network_used_ipv4_addresses(network_data)
+    frontend_proxy_ip, generic_svc_addr = choose_metallb_pair(subnet, used)
+
+    frontend_proxy_ip_text = str(frontend_proxy_ip)
+    generic_svc_addr_text = str(generic_svc_addr)
+    pool = f"{frontend_proxy_ip_text}-{generic_svc_addr_text}"
+
+    CONFIG["FRONTEND_PROXY_IP"] = frontend_proxy_ip_text
+    CONFIG["GENERIC_SVC_ADDR"] = generic_svc_addr_text
+    set_state_value(STATE, "FRONTEND_PROXY_IP", frontend_proxy_ip_text)
+    set_state_value(STATE, "GENERIC_SVC_ADDR", generic_svc_addr_text)
+    set_state_value(STATE, "docker_network_ipv4_subnet", str(subnet))
+    set_state_value(
+        STATE,
+        "metallb_ip_selection",
+        {
+            "network": network,
+            "subnet": str(subnet),
+            "pool": pool,
+            "frontend_proxy_ip": frontend_proxy_ip_text,
+            "generic_svc_addr": generic_svc_addr_text,
+            "used_ips": sorted(str(address) for address in used),
+        },
+    )
+    log(
+        f"Selected MetalLB IPs on Docker network {network} ({subnet}): "
+        f"frontend-proxy={frontend_proxy_ip_text}, generic={generic_svc_addr_text}"
+    )
+    return str(subnet), frontend_proxy_ip_text, generic_svc_addr_text
+
+
 def main() -> None:
     map_registry_hostname()
     map_underlay_hostnames(underlay_services())
+    configure_metallb_addresses()
 
 
 if __name__ == "__main__":

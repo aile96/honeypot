@@ -127,3 +127,18 @@ def test_entrypoint_cleanup_values_point_to_generated_compose(controller_importe
 
     assert values["COMPOSE_FILE"] == "/res/runtime/honeypotlab/generated/compose.yaml"
     assert values["COMPOSE_PROJECT_NAME"] == "honeypot-honeypotlab"
+
+
+@pytest.mark.unit
+def test_entrypoint_autoremove_runtime_cleanup(controller_importer, tmp_path: Path) -> None:
+    entrypoint = controller_importer.script(
+        "controller_entrypoint",
+        Path("src/lab/lab-controller/entrypoint.py").resolve(),
+    )
+    runtime_dir = tmp_path / "runtime" / "honeypotlab"
+    runtime_dir.mkdir(parents=True)
+    (runtime_dir / "config.toml").write_text("[config]\nLAB_NAME='honeypotlab'\n", encoding="utf-8")
+
+    entrypoint.cleanup_runtime_dir(runtime_dir, autoremove_lab=True)
+
+    assert not runtime_dir.exists()

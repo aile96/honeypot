@@ -863,6 +863,17 @@ def wait_operation_done(op_id: str) -> tuple[bool, str]:
     return False, last or "timeout"
 
 
+def finish_operation(op_id: str) -> None:
+    """Best-effort close for operations that are terminal by link status."""
+    if not op_id:
+        return
+    try:
+        rest({"index": "operation", "op_id": op_id, "state": "finished"}, method="POST", retries=3, sleep=1.0)
+        log(f"controller: marked operation {op_id} state=finished")
+    except Exception as exc:
+        log(f"controller: could not mark operation {op_id} finished: {exc!r}")
+
+
 def restore_hook_candidates(adversary: Adversary) -> list[Path]:
     """Return target restore scripts for the completed kill chain."""
     base = Path(os.getenv("CODE_ROOT", "/workdir/code")) / "hooks" / "restore"
@@ -1027,6 +1038,8 @@ def run_sequence(adversaries: list[Adversary]) -> int:
             run_hooks("PRE", adversary, fail_on_error=env_bool("CONTROLLER_FAIL_ON_PRE_HOOK", True))
             op_id = create_and_start_operation(adversary_id, adversary)
             ok, state = wait_operation_done(op_id)
+            if ok:
+                finish_operation(op_id)
         except Exception as exc:
             ok, state = False, repr(exc)
             traceback.print_exc()

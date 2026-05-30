@@ -1,0 +1,16 @@
+- id: 40000000-0000-0000-0000-000000000402
+  name: KC4-402 - SSH Connection
+  description: Shell SSH connection.
+  tactic: lateral-movement
+  technique:
+    attack_id: T1021.004
+    name: 'Remote Services: SSH'
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: PUBKEY_FILE="${KEY_PATH:-$HOME/.ssh/id_ed25519}.pub"; test -s "$PUBKEY_FILE"; ssh -p 4222 -o StrictHostKeyChecking=no root@$(cat $DATA_PATH/KC4/attackaddr) "grep -F -f - ~/.ssh/authorized_keys" < "$PUBKEY_FILE"
+        timeout: 900
+        parsers: []
+        cleanup: ''

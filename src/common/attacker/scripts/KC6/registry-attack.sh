@@ -15,4 +15,9 @@ mkdir -p "$(dirname "${OUT_FILE}")"
   "${REGISTRY_PORT:-5000}" \
   > "${OUT_FILE}" 2>&1
 
-cat "${OUT_FILE}"
+if [[ -s /tmp/user && -s /tmp/pass ]]; then
+  echo "[KC6-613] registry credentials validated; detailed log saved in ${OUT_FILE}"
+else
+  echo "[KC6-613] registry credential validation did not produce credential files; see ${OUT_FILE}" >&2
+  exit 1
+fi

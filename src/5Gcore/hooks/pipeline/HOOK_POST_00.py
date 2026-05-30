@@ -8,6 +8,7 @@ and writes the containerd certs.d configuration that Kind nodes will mount for
 authenticated HTTPS image pulls."""
 
 import base64
+import re
 import shutil
 from pathlib import Path
 
@@ -256,6 +257,26 @@ def prepare_attacker_compose_inputs(runtime_dir: Path) -> dict[str, str]:
     }
 
 
+def ability_tactic(path: Path) -> str:
+    """Extract the Caldera tactic from one simple ability YAML file."""
+    match = re.search(r"(?m)^\s*tactic:\s*['\"]?([^'\"\s]+)", path.read_text(encoding="utf-8"))
+    return match.group(1) if match else "uncategorized"
+
+
+def prepare_caldera_abilities_mount(caldera_root: Path, generated_dir: Path) -> Path:
+    """Stage abilities under tactic-named paths to avoid Caldera wrong-tactic noise."""
+    source = caldera_root / "abilities"
+    staged = generated_dir / "caldera-abilities"
+    if staged.exists():
+        shutil.rmtree(staged)
+    for source_file in sorted(source.rglob("*.yml")):
+        tactic = ability_tactic(source_file)
+        destination = staged / tactic / source_file.relative_to(source)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_file, destination)
+    return staged
+
+
 def main() -> None:
     code_root = Path(str(require_config(CONFIG, "CODE_ROOT")))
     runtime_dir = Path(config_str(CONFIG, "RUNTIME_DIR", "/res/runtime"))
@@ -302,8 +323,10 @@ def main() -> None:
     )
 
     caldera_root = code_root / "caldera"
+    generated_dir = Path(str(require_config(CONFIG, "GENERATED_DIR")))
+    abilities_dir = prepare_caldera_abilities_mount(caldera_root, generated_dir)
     CONFIG["COMPOSE_CALDERA_LOCAL_YML"] = str(docker_bind_source(caldera_root / "local.yml", CONFIG))
-    CONFIG["COMPOSE_CALDERA_ABILITIES_DIR"] = str(docker_bind_source(caldera_root / "abilities", CONFIG))
+    CONFIG["COMPOSE_CALDERA_ABILITIES_DIR"] = str(docker_bind_source(abilities_dir, CONFIG))
     CONFIG["COMPOSE_CALDERA_ADVERSARIES_DIR"] = str(docker_bind_source(caldera_root / "adversaries", CONFIG))
 
     set_state_value(STATE, "prepared_directories", created)

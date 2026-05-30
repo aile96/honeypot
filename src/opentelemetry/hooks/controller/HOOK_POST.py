@@ -27,6 +27,29 @@ def run_capture(cmd: list[str], *, timeout: int = 60) -> tuple[int, str, str]:
         return 1, "", repr(exc)
 
 
+def canonical_kc_key(value: str) -> str:
+    raw = str(value or "").strip().upper()
+    if raw.startswith("KC"):
+        suffix = raw[2:]
+        if suffix.isdigit():
+            return f"KC{int(suffix)}"
+    return raw
+
+
+def kubectl_cmd(*args: str) -> list[str]:
+    command = ["kubectl"]
+    kube_ctx = os.getenv("KUBE_CONTEXT", "")
+    if kube_ctx:
+        command.extend(["--context", kube_ctx])
+    command.extend(args)
+    return command
+
+
+def kubectl_container_args() -> list[str]:
+    container = os.getenv("ATT_CONTAINER", "").strip()
+    return ["-c", container] if container else []
+
+
 def copy_docker_tree(container: str, source: str, destination: str, *, timeout: int = 120) -> tuple[int, str, str]:
     source_clean = source.rstrip("/")
     parent = os.path.dirname(source_clean) or "/"
@@ -41,6 +64,62 @@ def copy_docker_tree(container: str, source: str, destination: str, *, timeout: 
     if producer.stdout is None:
         producer.kill()
         return 1, "", "docker tar stdout unavailable"
+
+    consumer = subprocess.Popen(
+        ["tar", "-C", destination, "-xf", "-"],
+        stdin=producer.stdout,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    producer.stdout.close()
+
+    try:
+        out_bytes, err_bytes = consumer.communicate(timeout=timeout)
+        producer_rc = producer.wait(timeout=5)
+        producer_err = producer.stderr.read()
+    except subprocess.TimeoutExpired:
+        producer.kill()
+        consumer.kill()
+        return 1, "", f"copy timeout after {timeout}s"
+
+    output = out_bytes.decode("utf-8", "replace") if out_bytes else ""
+    error = (producer_err + err_bytes).decode("utf-8", "replace") if producer_err or err_bytes else ""
+    rc = producer_rc if producer_rc != 0 else consumer.returncode
+    if rc != 0 and "file changed as we read it" in error:
+        copied_leaf = os.path.join(destination, leaf)
+        if os.path.exists(copied_leaf):
+            return 0, output, error
+    return rc, output, error
+
+
+def copy_k8s_tree(namespace: str, pod: str, source: str, destination: str, *, timeout: int = 120) -> tuple[int, str, str]:
+    source_clean = source.rstrip("/")
+    parent = os.path.dirname(source_clean) or "/"
+    leaf = os.path.basename(source_clean)
+    os.makedirs(destination, exist_ok=True)
+
+    exec_args = [
+        "-n",
+        namespace,
+        "exec",
+        pod,
+        *kubectl_container_args(),
+        "--",
+        "tar",
+        "-C",
+        parent,
+        "-cf",
+        "-",
+        leaf,
+    ]
+    producer = subprocess.Popen(
+        kubectl_cmd(*exec_args),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if producer.stdout is None:
+        producer.kill()
+        return 1, "", "kubectl tar stdout unavailable"
 
     consumer = subprocess.Popen(
         ["tar", "-C", destination, "-xf", "-"],
@@ -119,34 +198,52 @@ def copy_docker_kc_results(kc_key: str) -> None:
         log(f"failed copying {kc_key} results: {(err or out).strip()}")
 
 
-def copy_kc1_pod_results() -> None:
+def copy_kc1_pod_results() -> bool:
     pod = os.getenv("ATT_IN", "")
     namespace = os.getenv("ATT_NS") or os.getenv("TST_NAMESPACE") or "tst"
     if not pod:
         pod = discover_attacker_pod(namespace)
     if not pod:
         log("ATT_IN not found; skipping KC1 pod results")
-        return
+        return False
 
-    rc, out, err = run_capture(["kubectl", "-n", namespace, "exec", pod, "--", "printenv", "DATA_PATH"])
+    rc, out, err = run_capture(
+        kubectl_cmd("-n", namespace, "exec", pod, *kubectl_container_args(), "--", "printenv", "DATA_PATH")
+    )
     if rc != 0:
         log(f"failed reading DATA_PATH from pod {pod}: {(err or out).strip()}")
-        return
+        return False
 
     data_path = out.strip() or "/tmp/KCData"
+    rc, _, _ = run_capture(
+        kubectl_cmd("-n", namespace, "exec", pod, *kubectl_container_args(), "--", "test", "-d", f"{data_path}/KC1")
+    )
+    if rc != 0:
+        log(f"no KC1 results in pod {namespace}/{pod}:{data_path}; skipping pod copy")
+        return False
+
     os.makedirs("/results", exist_ok=True)
-    rc, out, err = run_capture(["kubectl", "-n", namespace, "cp", f"{pod}:{data_path}/KC1", "/results/"], timeout=120)
+    rc, out, err = copy_k8s_tree(namespace, pod, f"{data_path}/KC1", "/results", timeout=120)
     if rc == 0:
-        log(f"copied KC1 pod results from {pod}:{data_path}/KC1")
-    else:
-        log(f"failed copying KC1 pod results: {(err or out).strip()}")
+        log(f"copied KC1 pod results through tar from {pod}:{data_path}/KC1")
+        return True
+
+    log(f"tar copy failed for KC1 pod results; trying kubectl cp fallback: {(err or out).strip()}")
+    os.makedirs("/results/KC1", exist_ok=True)
+    cp_args = ["-n", namespace, "cp", *kubectl_container_args(), f"{pod}:{data_path}/KC1/.", "/results/KC1/"]
+    rc, out, err = run_capture(kubectl_cmd(*cp_args), timeout=120)
+    if rc == 0:
+        log(f"copied KC1 pod results through kubectl cp fallback from {pod}:{data_path}/KC1")
+        return True
+
+    log(f"failed copying KC1 pod results: {(err or out).strip()}")
+    return False
 
 
 def discover_attacker_pod(namespace: str) -> str:
     for selector in ("app.kubernetes.io/name=test-image", "app=test-image"):
         rc, out, _ = run_capture(
-            [
-                "kubectl",
+            kubectl_cmd(
                 "-n",
                 namespace,
                 "get",
@@ -155,14 +252,14 @@ def discover_attacker_pod(namespace: str) -> str:
                 selector,
                 "-o",
                 "jsonpath={.items[0].metadata.name}",
-            ],
+            ),
             timeout=10,
         )
         if rc == 0 and out.strip():
             os.environ["ATT_IN"] = out.strip()
             return out.strip()
 
-    rc, out, _ = run_capture(["kubectl", "-n", namespace, "get", "pods", "--no-headers"], timeout=10)
+    rc, out, _ = run_capture(kubectl_cmd("-n", namespace, "get", "pods", "--no-headers"), timeout=10)
     if rc != 0:
         return ""
     for line in out.splitlines():
@@ -196,12 +293,7 @@ def collect_k8s_events() -> None:
     out_dir = os.getenv("KUBE_EVENTS_DIR", "/results/kube_events")
     os.makedirs(out_dir, exist_ok=True)
     raw_file = os.path.join(out_dir, "kubernetes_events_raw.json")
-    cmd = ["kubectl"]
-    kube_ctx = os.getenv("KUBE_CONTEXT", "")
-    if kube_ctx:
-        cmd.extend(["--context", kube_ctx])
-    cmd.extend(["get", "events", "-A", "-o", "json"])
-    rc, out, err = run_capture(cmd, timeout=120)
+    rc, out, err = run_capture(kubectl_cmd("get", "events", "-A", "-o", "json"), timeout=120)
     if rc == 0:
         with open(raw_file, "w", encoding="utf-8") as handle:
             handle.write(out)
@@ -248,12 +340,13 @@ def delete_registry_tag(image_name: str, image_tag: str) -> None:
 
 
 def main() -> None:
-    kc_key = str(globals().get("KILLCHAIN_KEY") or "")
+    kc_key = canonical_kc_key(str(globals().get("KILLCHAIN_KEY") or ""))
     if not kc_key:
         return
 
     if kc_key == "KC1":
-        copy_kc1_pod_results()
+        if not copy_kc1_pod_results():
+            copy_docker_kc_results(kc_key)
     else:
         copy_docker_kc_results(kc_key)
 

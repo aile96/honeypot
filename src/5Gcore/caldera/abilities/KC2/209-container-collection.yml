@@ -1,0 +1,22 @@
+- id: 20000000-0000-0000-0000-000000000209
+  name: KC2-209 - Container runtime data collection
+  description: Use container runtime administration from the child pod to collect container data.
+  tactic: collection
+  technique:
+    attack_id: T1005
+    name: Data from Local System
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: CHILD='#{host.kc2.child}'; mkdir -p "$DATA_PATH/KC2"; /opt/caldera/KC4/container-collection.sh
+          configure-crictl > "$DATA_PATH/KC2/cri-analysis.log" 2>&1 && echo kc2-209-done
+        timeout: 900
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+          - source: kc2.209.done
+        cleanup: ''
+  requirements:
+  - plugins.stockpile.app.requirements.paw_provenance:
+    - source: host.kc2.child

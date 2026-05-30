@@ -1,0 +1,16 @@
+- id: 30000000-0000-0000-0000-000000000310
+  name: KC3-310 - Pod denial of service
+  description: Use container administration to create a pod-level denial of service.
+  tactic: impact
+  technique:
+    attack_id: T1499
+    name: Endpoint Denial of Service
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC5/pod-dos.sh
+        timeout: 900
+        parsers: []
+        cleanup: ''

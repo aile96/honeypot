@@ -1,0 +1,18 @@
+- id: 40000000-0000-0000-0000-000000000409
+  name: KC4-409 - Stage container data before exfiltration
+  description: Separate staging step for DB and container data before SCP/C2 exfiltration.
+  tactic: collection
+  technique:
+    attack_id: T1074
+    name: Data Staged
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: |
+          mkdir -p "$DATA_PATH/KC4/analysis";
+          echo otel-kc4-409-stage-container-data
+        timeout: 30
+        parsers: []
+        cleanup: ''

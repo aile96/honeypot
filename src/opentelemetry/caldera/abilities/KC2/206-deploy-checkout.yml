@@ -1,0 +1,14 @@
+- id: 20000000-0000-0000-0000-000000000206
+  name: KC2-206 - Deploy modified checkout container
+  description: Build and push a modified checkout container image that proxies sensitive data.
+  tactic: execution
+  technique:
+    attack_id: T1610
+    name: Deploy Container
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: bash /opt/caldera/KC2/deploy-checkout.sh
+        timeout: 900

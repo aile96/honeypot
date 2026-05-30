@@ -307,6 +307,15 @@ class Collector:
         ]
         (self.out_dir / "summary.txt").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
+    def successful_http_calls(self) -> int:
+        return sum(
+            1
+            for item in self.calls
+            if item.get("method") != "LOCAL"
+            and isinstance(item.get("status"), int)
+            and 200 <= int(item["status"]) < 300
+        )
+
     def oauth_headers(self, requester_nf_type: str, target_nf_type: str, scope: str, nrf_root: str) -> dict[str, str]:
         """Return a cached free5GC NRF OAuth header for a protected SBI request."""
         if not env_bool("NRF_OAUTH_ENABLED", True):
@@ -776,6 +785,10 @@ def main() -> int:
         collect_chf(collector, chf_root, nrf_root)
     finally:
         collector.finalize()
+
+    if env_bool("NFS_COLLECTION_REQUIRE_HTTP_SUCCESS", True) and collector.successful_http_calls() == 0:
+        print(f"KC1 collector did not receive any successful NF HTTP response; see {collector.out_dir / 'manifest.json'}", file=sys.stderr)
+        return 1
 
     print(f"KC1 collector output written to {collector.out_dir}", flush=True)
     return 0

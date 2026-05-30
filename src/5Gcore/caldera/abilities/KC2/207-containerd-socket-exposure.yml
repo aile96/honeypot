@@ -1,0 +1,24 @@
+- id: 20000000-0000-0000-0000-000000000207
+  name: KC2-207 - Containerd socket exposure marker
+  description: Separate marker for the containerd socket mount that enables host/container runtime abuse by the child agent.
+  tactic: privilege-escalation
+  technique:
+    attack_id: T1611
+    name: Escape to Host
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: |
+          ENTRY='#{host.kc2.entry}';
+          PREV='#{kc2.206.done}';
+          echo kc2-207-done
+        timeout: 60
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+          - source: kc2.207.done
+        cleanup: ''
+  requirements:
+  - plugins.stockpile.app.requirements.paw_provenance:
+    - source: host.kc2.entry

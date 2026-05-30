@@ -1,0 +1,16 @@
+- id: 40000000-0000-0000-0000-000000000404
+  name: KC4-404 - Undo anonymous RBAC permission
+  description: Remove the anonymous RBAC permission after use to reduce visible evidence of the movement.
+  tactic: defense-evasion
+  technique:
+    attack_id: T1070
+    name: Indicator Removal
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC6/undo-RBAC.sh
+        timeout: 900
+        parsers: []
+        cleanup: ''

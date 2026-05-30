@@ -1,0 +1,27 @@
+- id: 20000000-0000-0000-0000-000000000205
+  name: KC2-205 - Prepare workload patch parameters
+  description: Validate the target address and selected child image before the mongodb-nwdaf workload patch.
+  tactic: discovery
+  technique:
+    attack_id: T1613
+    name: Container and Resource Discovery
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: |
+          set -e;
+          ENTRY='#{host.kc2.entry}';
+          PREV='#{kc2.204.done}';
+          TARGET_FILE="$DATA_PATH/KC2/attackaddr";
+          test -s "$TARGET_FILE";
+          echo kc2-205-done
+        timeout: 60
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+          - source: kc2.205.done
+        cleanup: ''
+  requirements:
+  - plugins.stockpile.app.requirements.paw_provenance:
+    - source: host.kc2.entry

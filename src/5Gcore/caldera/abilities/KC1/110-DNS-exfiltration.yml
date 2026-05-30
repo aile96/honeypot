@@ -1,0 +1,16 @@
+- id: 10000000-0000-0000-0000-000000000110
+  name: KC1-110 - DNS data exfiltration
+  description: Exfiltrate staged NF data over DNS.
+  tactic: exfiltration
+  technique:
+    attack_id: T1048.003
+    name: 'Exfiltration Over Alternative Protocol: Exfiltration Over Unencrypted Non-C2 Protocol'
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC1/dns-exfiltration.py
+        timeout: 1800
+        parsers: []
+        cleanup: ''

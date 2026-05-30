@@ -1,0 +1,16 @@
+- id: 10000000-0000-0000-0000-000000000109
+  name: KC1-109 - DNS redirection marker
+  description: Record the intended DNS redirection immediately before the DNS manipulation step.
+  tactic: collection
+  technique:
+    attack_id: T1557
+    name: Adversary-in-the-Middle
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: echo otel-kc1-109-dns-redirection-marker
+        timeout: 30
+        parsers: []
+        cleanup: ''

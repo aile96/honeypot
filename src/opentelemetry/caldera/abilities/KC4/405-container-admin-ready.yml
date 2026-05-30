@@ -1,0 +1,16 @@
+- id: 40000000-0000-0000-0000-000000000405
+  name: KC4-405 - Container admin readiness marker
+  description: Separate marker for runtime administrator access after container runtime socket abuse.
+  tactic: execution
+  technique:
+    attack_id: T1609
+    name: Container Administration Command
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: echo otel-kc4-405-container-admin-ready
+        timeout: 30
+        parsers: []
+        cleanup: ''

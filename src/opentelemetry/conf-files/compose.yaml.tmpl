@@ -1,6 +1,6 @@
 services:
   registry:
-    image: registry:2
+    image: ${REGISTRY_CACHE_ENDPOINT:-registry-lab:5000}/registry:2
     container_name: ${REGISTRY_NAME:-registry}-${LAB_NAME:-honeypotlab}
     hostname: ${REGISTRY_NAME:-registry}
     restart: unless-stopped

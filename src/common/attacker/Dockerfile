@@ -50,7 +50,7 @@ ENV ATTACKER_LIB_DIR="/opt/attacker-lib" \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         nmap=7.93+dfsg1-1 curl=7.88.1-10+deb12u14 jq=1.6-2.1+deb12u1 dnsutils=1:9.18.47-1~deb12u1 ca-certificates=20230311+deb12u1 openssl=3.0.19-1~deb12u2 \
-        iproute2=6.1.0-3 wget=1.21.3-1+deb12u1 docker.io=20.10.24+dfsg1-1+deb12u1+b6 dsniff=2.4b1+debian-31 tcpdump=4.99.3-1 etcd-client=3.4.23-4+b4 \
+        iproute2=6.1.0-3 wget=1.21.3-1+deb12u1 docker.io=20.10.24+dfsg1-1+deb12u1+b6 dsniff=2.4b1+debian-31 tcpdump=4.99.3-1 etcd-client=3.4.23-4+b4 sslsplit \
         procps=2:4.0.2-3 unzip=6.0-28 openssh-client=1:9.2p1-2+deb12u7 sshpass=1.09-1+b1 netcat-openbsd=1.219-1 \
         dnsmasq=2.90-4~deb12u2 socat xxd python3=3.11.2-1+b1 python3-pip=23.0.1+dfsg-1 && \
     rm -rf /var/lib/apt/lists/* && \

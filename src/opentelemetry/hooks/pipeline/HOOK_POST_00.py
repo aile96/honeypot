@@ -7,6 +7,7 @@ Kind containerd registry configuration. It prepares inputs for the generic Compo
 step without starting services itself."""
 
 import base64
+import re
 import shutil
 from pathlib import Path
 
@@ -117,6 +118,26 @@ def set_skaffold_template_values() -> None:
         )
     }
     set_state_value(STATE, "skaffold_template_values", template_values)
+
+
+def ability_tactic(path: Path) -> str:
+    """Extract the Caldera tactic from one simple ability YAML file."""
+    match = re.search(r"(?m)^\s*tactic:\s*['\"]?([^'\"\s]+)", path.read_text(encoding="utf-8"))
+    return match.group(1) if match else "uncategorized"
+
+
+def prepare_caldera_abilities_mount(caldera_root: Path, generated_dir: Path) -> Path:
+    """Stage abilities under tactic-named paths to avoid Caldera wrong-tactic noise."""
+    source = caldera_root / "abilities"
+    staged = generated_dir / "caldera-abilities"
+    if staged.exists():
+        shutil.rmtree(staged)
+    for source_file in sorted(source.rglob("*.yml")):
+        tactic = ability_tactic(source_file)
+        destination = staged / tactic / source_file.relative_to(source)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_file, destination)
+    return staged
 
 
 def require_registry_credentials() -> tuple[str, str]:
@@ -466,13 +487,14 @@ def main() -> None:
 
     if config_bool(CONFIG, "CALDERA_SERVER_ENABLE", True):
         local_config = caldera_root / "local.yml"
-        abilities_dir = caldera_root / "abilities"
+        source_abilities_dir = caldera_root / "abilities"
         adversaries_dir = caldera_root / "adversaries"
 
-        missing = [path for path in (local_config, abilities_dir, adversaries_dir) if not path.exists()]
+        missing = [path for path in (local_config, source_abilities_dir, adversaries_dir) if not path.exists()]
         if missing:
             raise SystemExit("Missing Caldera assets: " + ", ".join(str(path) for path in missing))
 
+        abilities_dir = prepare_caldera_abilities_mount(caldera_root, generated_dir)
         CONFIG["COMPOSE_CALDERA_LOCAL_YML"] = str(docker_bind_source(local_config, CONFIG))
         CONFIG["COMPOSE_CALDERA_ABILITIES_DIR"] = str(docker_bind_source(abilities_dir, CONFIG))
         CONFIG["COMPOSE_CALDERA_ADVERSARIES_DIR"] = str(docker_bind_source(adversaries_dir, CONFIG))

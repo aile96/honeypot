@@ -29,6 +29,7 @@ if [[ ${#CIDS[@]} -eq 0 ]]; then
 fi
 
 echo "Found ${#CIDS[@]} containers. Running query..."
+success=0
 for CID in "${CIDS[@]}"; do
   # Extract env and metadata from container (protected)
   if ! INSPECT_JSON=$(crictl inspect "$CID"); then
@@ -72,6 +73,14 @@ for CID in "${CIDS[@]}"; do
 
   echo "Remove err file"
   [[ -s "$OUTFILE.err" ]] || rm -f "$OUTFILE.err"
+  if [[ -s "$OUTFILE" ]]; then
+    success=$((success + 1))
+  fi
 done
+
+if [[ "$success" -eq 0 ]]; then
+  echo "No PostgreSQL data was collected." >&2
+  exit 1
+fi
 
 echo "Done. Output in: $OUTDIR"

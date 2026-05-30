@@ -136,3 +136,5 @@ EOF
 echo "[+] Done"
 echo "    KUBECONFIG=${KUBECONFIG_OUT} kubectl auth can-i '*' '*' --all-namespaces"
 echo "    KUBECONFIG=${KUBECONFIG_OUT} kubectl get ns"
+
+kubectl --kubeconfig "$KUBECONFIG_OUT" auth can-i '*' '*' --all-namespaces | grep -qx yes

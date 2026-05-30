@@ -716,6 +716,7 @@ def main() -> None:
     crictl_runtime_path = read_crictl_runtime_path(cp_container)
 
     CONFIG["CONTROL_PLANE_NODE"] = control_plane_node
+    CONFIG["CONTROL_PLANE_IP"] = cp_ip
     kubeserver_port = discover_kubeserver_port()
     CONFIG["KUBESERVER_PORT"] = kubeserver_port
     CONFIG["CONTROL_PLANE_PORT"] = kubeserver_port
@@ -728,6 +729,7 @@ def main() -> None:
     set_state_value(STATE, "control_plane_nodes", control_planes)
     set_state_value(STATE, "worker_nodes", workers)
     set_state_value(STATE, "CONTROL_PLANE_NODE", control_plane_node)
+    set_state_value(STATE, "CONTROL_PLANE_IP", cp_ip)
     set_state_value(STATE, "CONTROL_PLANE_PORT", CONFIG["CONTROL_PLANE_PORT"])
     set_state_value(STATE, "KUBESERVER_PORT", CONFIG["KUBESERVER_PORT"])
     set_state_value(STATE, "KUBE_APISERVER_IMAGE", CONFIG["KUBE_APISERVER_IMAGE"])

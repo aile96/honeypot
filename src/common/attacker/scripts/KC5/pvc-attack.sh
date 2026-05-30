@@ -170,6 +170,7 @@ create_or_patch_cronjob () {
 
   if [[ $rc -eq 0 ]]; then
     echo "   -> created"
+    curl_k8s GET "/apis/batch/v1/namespaces/${ns}/cronjobs/${cj_name}" >/dev/null
     return
   fi
 
@@ -189,6 +190,7 @@ create_or_patch_cronjob () {
     >/dev/null
 
   echo "   -> patch applied"
+  curl_k8s GET "/apis/batch/v1/namespaces/${ns}/cronjobs/${cj_name}" >/dev/null
 }
 
 # === Iterate over explicitly allowed PVCs only ===

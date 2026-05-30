@@ -21,4 +21,5 @@ kubectl --kubeconfig "$KUBECONFIG" get secrets --all-namespaces -o json \
   | @tsv
 ' > "$OUTFILE"
 
+test -s "$OUTFILE" || { echo "No secrets were collected into $OUTFILE" >&2; exit 1; }
 echo "Done: see all the secrets in $OUTFILE"

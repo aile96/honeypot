@@ -1,0 +1,16 @@
+- id: 40000000-0000-0000-0000-000000000401
+  name: KC4-401 - Server SMTP vulnerable RCE
+  description: Server vulnerable to RCE with which is open a SSH shell to the attacker.
+  tactic: initial-access
+  technique:
+    attack_id: T1190
+    name: Exploit Public-Facing Application
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC4/rce-attack.sh
+        timeout: 900
+        parsers: []
+        cleanup: ''

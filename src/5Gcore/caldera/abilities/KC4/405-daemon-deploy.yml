@@ -1,0 +1,16 @@
+- id: 40000000-0000-0000-0000-000000000405
+  name: KC4-405 - Privileged DaemonSet deployment
+  description: Deploy a privileged DaemonSet with SSH access to control cluster nodes.
+  tactic: execution
+  technique:
+    attack_id: T1610
+    name: Deploy Container
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC6/daemon-deploy.sh
+        timeout: 900
+        parsers: []
+        cleanup: ''

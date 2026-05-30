@@ -148,7 +148,7 @@ def main() -> int:
 
     if sent_queries == 0:
         print(f"No non-empty files found in {source_dir}; nothing to exfiltrate.")
-        return 0
+        return 1 if env_bool("DNS_EXFIL_REQUIRE_QUERIES", True) else 0
     if strict and failed_queries:
         return 1
     return 0

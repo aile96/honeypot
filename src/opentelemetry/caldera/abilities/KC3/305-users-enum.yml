@@ -1,0 +1,16 @@
+- id: 30000000-0000-0000-0000-000000000305
+  name: KC3-305 - Users enumeration from DB
+  description: Collect user records from the database before any exfiltration action.
+  tactic: collection
+  technique:
+    attack_id: T1005
+    name: Data from Local System
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC3/users-enum.sh
+        timeout: 900
+        parsers: []
+        cleanup: ''

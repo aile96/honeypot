@@ -1,0 +1,25 @@
+- id: 20000000-0000-0000-0000-000000000211
+  name: KC2-211 - Stage collected container data
+  description: Separate staging step for DB and container data before HTTP/C2 exfiltration.
+  tactic: collection
+  technique:
+    attack_id: T1074
+    name: Data Staged
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: |
+          CHILD='#{host.kc2.child}';
+          PREV='#{kc2.210.done}';
+          mkdir -p "$DATA_PATH/KC2/analysis";
+          echo kc2-211-done
+        timeout: 60
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+          - source: kc2.211.done
+        cleanup: ''
+  requirements:
+  - plugins.stockpile.app.requirements.paw_provenance:
+    - source: host.kc2.child

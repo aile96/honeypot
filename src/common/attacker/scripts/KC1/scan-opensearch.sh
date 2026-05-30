@@ -55,8 +55,7 @@ for i in $(seq 1 "$MAX"); do
     | jq -r '.hits.hits[0]._source.attributes.authorization // empty')"
 
   if [ -n "$TOKEN" ]; then
-    echo "Found in attempt $i:"
-    echo "$TOKEN"
+    echo "Found authorization sample in attempt $i"
     break
   fi
 
@@ -65,8 +64,9 @@ done
 
 if [ -z "$TOKEN" ]; then
   echo "No values after $MAX retries"
+  exit 1
 fi
 
-echo "TOKEN=$TOKEN"
 echo "$TOKEN" > "$OUT_FILE"
+test -s "$OUT_FILE"
 echo "Saved value in: $OUT_FILE"

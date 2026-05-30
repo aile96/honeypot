@@ -81,7 +81,8 @@ docker run --rm -v "$CERT_DIR":/out alpine:3.20 sh -c '
 ### === Static token (admin in system:masters) ===
 TOK="$(head -c16 /dev/urandom | xxd -p)"
 echo "${TOK},admin,uid-admin,system:masters" > "${CERT_DIR}/tokens.csv"
-echo ">> Bearer token (saved also in ${CERT_DIR}/token.txt): ${TOK}" | tee "${CERT_DIR}/token.txt" >/dev/null
+printf '%s\n' "${TOK}" > "${CERT_DIR}/token.txt"
+echo ">> Bearer token generated and saved in ${CERT_DIR}/token.txt"
 
 ### === Running ephemeral kube-apiserver ===
 echo ">> Running ephemeral kube-apiserver..."
@@ -134,17 +135,20 @@ JSON
 echo ">> Creating the ClusterRoleBinding"
 curl -sk -H "Authorization: Bearer ${TOK}" -H "Content-Type: application/json" \
   --data-binary @/tmp/crb.json \
-  "https://127.0.0.1:${HOST_BIND_PORT}/apis/rbac.authorization.k8s.io/v1/clusterrolebindings" | jq .
+  "https://127.0.0.1:${HOST_BIND_PORT}/apis/rbac.authorization.k8s.io/v1/clusterrolebindings" \
+  | jq -r '"   -> " + (.kind // "response") + "/" + (.metadata.name // "unknown")'
 
 ### === Verifying the CRB ===
 echo ">> Verifying creation CRB:"
 curl -sk -H "Authorization: Bearer ${TOK}" \
   "https://127.0.0.1:${HOST_BIND_PORT}/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/unauthenticated-admin" \
+  | tee /tmp/crb-verify.json \
   | jq -r '.metadata.name, .roleRef.name' | sed 's/^/  /'
+jq -e '.metadata.name == "unauthenticated-admin" and .roleRef.name == "cluster-admin"' /tmp/crb-verify.json >/dev/null
 
 echo
 echo ">> DONE"
-echo "   - Token   : $(cat "${CERT_DIR}/token.txt")"
+echo "   - Token   : saved in ${CERT_DIR}/token.txt"
 echo "Removing ephemeral API server"
 docker rm -f ${NAME}
 echo "DONE"

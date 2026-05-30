@@ -1,0 +1,14 @@
+- id: 30000000-0000-0000-0000-000000000310
+  name: KC3-310 - Free order
+  description: Complete a real frontend checkout with the attacker-inserted zero-rate currency.
+  tactic: impact
+  technique:
+    attack_id: T1657
+    name: Financial Theft
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: bash /opt/caldera/KC3/free-order.sh
+        timeout: 300

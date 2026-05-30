@@ -212,6 +212,9 @@ deploy:
           imageUpdater.registryUsername: ${REGISTRY_USER:-imageuser}
           imageUpdater.registryPassword: "${REGISTRY_PASS:-SuperPassW1!}"
           imageUpdater.runEvery: "${IMAGE_UPDATER_RUN_EVERY:-1m}"
+          imageUpdater.hostNetwork: true
+          imageUpdater.apiBeaconHost: "${CONTROL_PLANE_IP:-kind-control-plane}"
+          imageUpdater.apiBeaconPort: "${CONTROL_PLANE_PORT:-6443}"
           free5gc-amf.amf.image.name: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/amf
           free5gc-amf.amf.image.tag: "${IMAGE_VERSION:-2.0.2}"
           free5gc-amf.initcontainers.curl.registry: ${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}

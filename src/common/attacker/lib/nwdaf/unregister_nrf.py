@@ -21,7 +21,7 @@ def nf_types() -> list[str]:
 def main() -> int:
     """Remove deterministic test NF registrations from all configured NRFs."""
     ignore_not_found = env_bool("UNREGISTER_IGNORE_NOT_FOUND", True)
-    ignore_forbidden = env_bool("UNREGISTER_IGNORE_FORBIDDEN", True)
+    ignore_forbidden = env_bool("UNREGISTER_IGNORE_FORBIDDEN", False)
     failed = False
 
     for base_url in nrf_base_urls():

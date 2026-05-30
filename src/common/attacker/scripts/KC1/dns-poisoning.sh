@@ -155,5 +155,11 @@ else
   echo "[=] No patch applied."
 fi
 
-rm -f $TMP_FILE $TMP_FILE.new
+VERIFY_JSON="$(api_get "/api/v1/namespaces/${NS}/configmaps/${CM_NAME}")"
+if ! printf '%s' "$VERIFY_JSON" | jq -e --arg rewrite "$REWRITE_LINE" '.data.Corefile | strings | contains($rewrite)' >/dev/null; then
+  echo "Error: DNS rewrite was not persisted in ConfigMap ${NS}/${CM_NAME}." >&2
+  exit 1
+fi
+
+rm -f "$TMP_FILE" "$TMP_FILE.new"
 echo "[OK] Done."

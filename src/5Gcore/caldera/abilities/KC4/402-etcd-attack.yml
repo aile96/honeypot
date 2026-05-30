@@ -1,0 +1,16 @@
+- id: 40000000-0000-0000-0000-000000000402
+  name: KC4-402 - Etcd RBAC account manipulation
+  description: Modify RBAC data inside etcd to grant cluster role access to the anonymous account.
+  tactic: privilege-escalation
+  technique:
+    attack_id: T1098
+    name: Account Manipulation
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC6/etcd-attack.sh
+        timeout: 900
+        parsers: []
+        cleanup: ''

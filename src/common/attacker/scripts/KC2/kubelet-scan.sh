@@ -133,3 +133,8 @@ done < "${IP_FILE}"
 echo "Summary written to: ${SUMMARY}"
 echo "Human report:       ${REPORT}"
 echo "Tip (needs jq): jq -r '. | select(type==\"object\") | [.host,.endpoint,\"\(.status)\"] | @tsv' ${SUMMARY}"
+
+if ! grep -Eq -- '-> *2[0-9][0-9]' "${REPORT}"; then
+  echo "No successful kubelet read-only endpoint responses were observed." >&2
+  exit 1
+fi

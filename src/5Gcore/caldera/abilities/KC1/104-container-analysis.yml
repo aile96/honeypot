@@ -1,0 +1,16 @@
+- id: 10000000-0000-0000-0000-000000000104
+  name: KC1-104 - Container and credential discovery
+  description: Container, runtime and local credential discovery before NF impersonation.
+  tactic: discovery
+  technique:
+    attack_id: T1613
+    name: Container and Resource Discovery
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC4/container-analysis.sh
+        timeout: 1800
+        parsers: []
+        cleanup: ''

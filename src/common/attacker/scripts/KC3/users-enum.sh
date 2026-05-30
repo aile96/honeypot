@@ -33,7 +33,10 @@ mkdir -p "$(dirname "$PROTO_FILE")"
 PROTO_JSON="$(jq -Rs . < "$PROTO_FILE")"
 
 OUT_FILE="$DATA_PATH/KC3/result_payments"
-echo "Starting requests (user_id 1..15) → saving in $OUT_FILE"
+: > "$OUT_FILE"
+echo "[KC3-305] querying payment service for user_id 1..15"
+saved=0
+missed=0
 
 for uid in $(seq 1 15); do
   BODY="$(
@@ -58,12 +61,12 @@ for uid in $(seq 1 15); do
   # Extracting only .payment (if present) and adding one line NDJSON
   if echo "$RESP" | jq -e '.stdout.payment' >/dev/null 2>&1; then
     echo "$RESP" | jq -c '.stdout.payment' >> "$OUT_FILE"
-    echo "user_id=$uid saved"
+    saved=$((saved + 1))
   else
     # Log error
-    ERR_MSG="$(echo "$RESP" | jq -r '.error // empty' 2>/dev/null || true)"
-    echo "user_id=$uid: no field .payment found${ERR_MSG:+ (errore: $ERR_MSG)}" >&2
+    missed=$((missed + 1))
   fi
 done
 
-echo "Done. File generated: $OUT_FILE"
+echo "[KC3-305] collected ${saved} payment records (${missed} misses); file: $OUT_FILE"
+test -s "$OUT_FILE" || { echo "No payment records collected in $OUT_FILE" >&2; exit 1; }

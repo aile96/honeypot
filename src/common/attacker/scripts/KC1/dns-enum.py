@@ -96,6 +96,13 @@ def unique(values: list[str]) -> list[str]:
     return ordered
 
 
+def env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
 def resolv_conf() -> tuple[str, str, list[str]]:
     dns_ip = ""
     cluster_domain = "cluster.local"
@@ -208,6 +215,9 @@ def main() -> int:
         print(output.read_text(encoding="utf-8"), end="")
     else:
         print("No DNS hits")
+        if env_bool("DNS_ENUM_REQUIRE_HITS", True):
+            print(f"DNS enumeration did not resolve any service names; see {output}")
+            return 1
     if exhausted_budget:
         print(f"DNS enumeration stopped after {budget_seconds:.0f}s budget")
     return 0

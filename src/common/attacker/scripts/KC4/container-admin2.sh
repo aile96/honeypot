@@ -19,6 +19,7 @@ if [[ ${#CIDS[@]} -eq 0 ]]; then
 fi
 
 echo "Found ${#CIDS[@]} containers. Running query..."
+success=0
 # --- DB REMOTE IN CONTAINER 'currency' ---
 mapfile -t CIDC < <(crictl ps -q --name currency)
 if [[ ${#CIDC[@]} -eq 0 ]]; then
@@ -51,5 +52,13 @@ else
     fi
 
     [[ -s "$OUTFILE.err" ]] || rm -f "$OUTFILE.err"
+    if [[ -s "$OUTFILE" ]]; then
+      success=$((success + 1))
+    fi
   done
+fi
+
+if [[ "$success" -eq 0 ]]; then
+  echo "No remote currency DB data was collected." >&2
+  exit 1
 fi

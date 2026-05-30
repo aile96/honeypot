@@ -1,0 +1,16 @@
+- id: 30000000-0000-0000-0000-000000000307
+  name: KC3-307 - Currency DB credential access
+  description: Use the stolen currency service token to read database credentials from the Kubernetes API.
+  tactic: credential-access
+  technique:
+    attack_id: T1552.007
+    name: 'Unsecured Credentials: Container API'
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC3/db-credential-access.sh
+        timeout: 60
+        parsers: []
+        cleanup: ''

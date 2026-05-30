@@ -1,0 +1,16 @@
+- id: 20000000-0000-0000-0000-000000000208
+  name: KC2-208 - Payment data collection marker
+  description: Separate marker for payment data collection performed by the modified checkout path before exfiltration.
+  tactic: collection
+  technique:
+    attack_id: T1119
+    name: Automated Collection
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: echo otel-kc2-208-payment-data-collection
+        timeout: 30
+        parsers: []
+        cleanup: ''

@@ -5,8 +5,8 @@ PIDFILE="${1:-$DATA_PATH/KC5/arp_pids}"
 TERM_WAIT_SECONDS="5"
 
 if [[ ! -f "$PIDFILE" ]]; then
-  echo "PID file not found: $PIDFILE" >&2
-  exit 1
+  echo "[*] PID file not found, nothing to stop: $PIDFILE"
+  exit 0
 fi
 
 # Function that tries to stop a PID cleanly

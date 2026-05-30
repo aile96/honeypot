@@ -1,0 +1,16 @@
+- id: 30000000-0000-0000-0000-000000000305
+  name: KC3-305 - Privileged host access marker
+  description: Separate marker for privileged pod access that permits host-level control.
+  tactic: privilege-escalation
+  technique:
+    attack_id: T1611
+    name: Escape to Host
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: echo kc3-305-privileged-host-access
+        timeout: 30
+        parsers: []
+        cleanup: ''

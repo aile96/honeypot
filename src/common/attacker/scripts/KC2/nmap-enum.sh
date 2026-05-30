@@ -25,7 +25,7 @@ require_tools nmap ip awk getent
 
 # Show the revealed network
 NETWORK=$(ip -o -4 addr show | awk 'NR>1{print $4}' | awk -F. 'NF==4{print $1"."$2"."$3".0/24"; exit}')
-echo "#NETWORK: $NETWORK"
+echo "[KC2-202] scanning local network ${NETWORK}"
 mkdir -p $OUTDIR
 
 # Network scan (/23 to be faster)
@@ -39,7 +39,13 @@ nmap -sn -T4 "$NETWORK" -oG - \
       echo "$ip - $host"
     done > $OUTDIR/iphost
 
-cat $OUTDIR/iphost
+if [ ! -s "$OUTDIR/iphost" ]; then
+  echo "No hosts discovered in $NETWORK" >&2
+  exit 1
+fi
+
+HOST_COUNT="$(wc -l < "$OUTDIR/iphost" | tr -d ' ')"
+echo "[KC2-202] discovered ${HOST_COUNT} hosts; inventory saved in $OUTDIR/iphost"
 
 if [ "${RMFILE}" -eq 1 ]; then
   rm -f "$OUTDIR/iphost"

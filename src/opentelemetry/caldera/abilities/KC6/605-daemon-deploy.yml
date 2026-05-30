@@ -1,15 +1,16 @@
-- id: 60000000-0000-0000-0000-000000000005
-  name: Privileged DaemonSet creation
-  description: Creation of a privileged DaemonSet with SSH that can control every node of the cluster.
-  tactic: lateral-movement
-  technique: { attack_id: T1021.004, name: "Remote Services: SSH" }
+- id: 60000000-0000-0000-0000-000000000605
+  name: KC6-605 - Privileged DaemonSet deployment
+  description: Deploy a privileged DaemonSet with SSH access to control cluster nodes.
+  tactic: execution
+  technique:
+    attack_id: T1610
+    name: Deploy Container
   repeatable: false
   singleton: true
   platforms:
     linux:
       sh:
-        command: |-
-          KC6_DATA="${DATA_PATH:-/tmp/KCData}/KC6"; rm -f "$KC6_DATA/ssh/ssh-key" "$KC6_DATA/ssh/ssh-key.pub"; /opt/caldera/KC6/daemon-deploy.sh
+        command: KC6_DATA="${DATA_PATH:-/tmp/KCData}/KC6"; rm -f "$KC6_DATA/ssh/ssh-key" "$KC6_DATA/ssh/ssh-key.pub"; /opt/caldera/KC6/daemon-deploy.sh
         timeout: 900
         parsers: []
-        cleanup: ""
+        cleanup: ''

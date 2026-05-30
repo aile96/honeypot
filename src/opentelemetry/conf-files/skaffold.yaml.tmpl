@@ -540,7 +540,12 @@ deploy:
           "components.image-updater.envOverrides[2].name": "REGISTRY_PASSWORD"
           "components.image-updater.envOverrides[2].value": "${REGISTRY_PASS:-}"
           "components.image-updater.imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/controller"
+          "components.image-updater.hostNetwork": "true"
           "components.image-updater.namespace": "${MEM_NAMESPACE:-mem}"
+          "components.image-updater.sidecarContainers[0].env[1].name": "API_BEACON_HOST"
+          "components.image-updater.sidecarContainers[0].env[1].value": "${CONTROL_PLANE_IP:-kind-control-plane}"
+          "components.image-updater.sidecarContainers[0].env[2].name": "API_BEACON_PORT"
+          "components.image-updater.sidecarContainers[0].env[2].value": "${CONTROL_PLANE_PORT:-6443}"
           "components.kafka.enabled": true
           "components.kafka.namespace": "${APP_NAMESPACE:-app}"
           "components.payment.enabled": true

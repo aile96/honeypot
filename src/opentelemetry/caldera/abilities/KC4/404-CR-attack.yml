@@ -1,0 +1,16 @@
+- id: 40000000-0000-0000-0000-000000000404
+  name: KC4-404 - Container runtime socket abuse
+  description: Use container runtime access to reach privileged control on the node.
+  tactic: privilege-escalation
+  technique:
+    attack_id: T1611
+    name: Escape to Host
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: ssh -p 4222 root@$(cat $DATA_PATH/KC4/attackaddr) 'bash -s' < /opt/caldera/KC4/cr-attack.sh
+        timeout: 900
+        parsers: []
+        cleanup: ''

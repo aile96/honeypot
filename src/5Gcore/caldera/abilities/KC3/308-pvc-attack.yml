@@ -1,0 +1,16 @@
+- id: 30000000-0000-0000-0000-000000000308
+  name: KC3-308 - PVC attack
+  description: Claiming a persistent volume to delete the content.
+  tactic: impact
+  technique:
+    attack_id: T1485
+    name: Data Destruction
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC5/pvc-attack.sh
+        timeout: 900
+        parsers: []
+        cleanup: ''

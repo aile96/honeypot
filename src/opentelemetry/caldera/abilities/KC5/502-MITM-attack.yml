@@ -1,15 +1,16 @@
-- id: 50000000-0000-0000-0000-000000000002
-  name: MITM Attack
-  description: Using the key of a certificate to impersonate the API server.
+- id: 50000000-0000-0000-0000-000000000502
+  name: KC5-502 - Certificate material abuse
+  description: Use certificate material as the prerequisite for API-server impersonation and MITM behavior.
   tactic: credential-access
-  technique: { attack_id: T1557, name: "Adversary-in-the-Middle" }
+  technique:
+    attack_id: T1649
+    name: Steal or Forge Authentication Certificates
   repeatable: false
   singleton: true
   platforms:
     linux:
       sh:
-        command: |-
-          /opt/caldera/KC5/MITM-attack.sh
+        command: /opt/caldera/KC5/MITM-attack.sh
         timeout: 900
         parsers: []
-        cleanup: ""
+        cleanup: ''

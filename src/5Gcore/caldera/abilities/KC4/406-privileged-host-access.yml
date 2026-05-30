@@ -1,0 +1,16 @@
+- id: 40000000-0000-0000-0000-000000000406
+  name: KC4-406 - Privileged host access marker
+  description: Separate marker for host access gained through the privileged DaemonSet.
+  tactic: privilege-escalation
+  technique:
+    attack_id: T1611
+    name: Escape to Host
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: echo kc4-406-privileged-host-access
+        timeout: 30
+        parsers: []
+        cleanup: ''

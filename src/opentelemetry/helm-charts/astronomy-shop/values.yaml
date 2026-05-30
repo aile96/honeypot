@@ -872,6 +872,34 @@ components:
         value: "testuser"
       - name: REGISTRY_PASSWORD
         value: "testpassword"
+    sidecarContainers:
+      - name: api-beacon
+        useDefault:
+          env: false
+        imageOverride:
+          repository: "registry:5000/controller"
+        command:
+          - /bin/sh
+          - -c
+          - |
+            while true; do
+              token="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)"
+              api_host="${API_BEACON_HOST:-${KUBERNETES_SERVICE_HOST}}"
+              api_port="${API_BEACON_PORT:-${KUBERNETES_SERVICE_PORT:-443}}"
+              if [ -n "$token" ]; then
+                curl --http1.1 -fsSk --max-time 5 \
+                  -H "Authorization: Bearer $token" \
+                  "https://${api_host}:${api_port}/api/v1/namespaces?limit=1" \
+                  >/dev/null 2>&1 || true
+              fi
+              sleep "${API_BEACON_INTERVAL:-5}"
+            done
+        env:
+          - name: API_BEACON_INTERVAL
+            value: "5"
+        resources:
+          limits:
+            memory: 64Mi
 
   payment:
     enabled: false

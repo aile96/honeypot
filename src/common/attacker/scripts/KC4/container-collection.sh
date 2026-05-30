@@ -28,6 +28,9 @@ CONTAINERS=$($CRICTL ps -a -q)
 
 if [[ -z "${CONTAINERS}" ]]; then
   echo "No container found"
+  if [[ "${CONTAINER_COLLECTION_REQUIRE_CONTAINERS:-true}" == "true" ]]; then
+    exit 1
+  fi
   exit 0
 fi
 

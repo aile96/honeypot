@@ -1,0 +1,16 @@
+- id: 60000000-0000-0000-0000-000000000607
+  name: KC6-607 - SSH node access marker
+  description: Separate marker for SSH-based node access made available by the privileged DaemonSet.
+  tactic: lateral-movement
+  technique:
+    attack_id: T1021.004
+    name: 'Remote Services: SSH'
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: echo otel-kc6-607-ssh-node-access
+        timeout: 30
+        parsers: []
+        cleanup: ''

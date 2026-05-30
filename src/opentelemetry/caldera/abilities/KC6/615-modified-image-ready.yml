@@ -1,0 +1,16 @@
+- id: 60000000-0000-0000-0000-000000000615
+  name: KC6-615 - Modified registry image ready marker
+  description: Separate marker for the modified frontend-proxy image being ready in the internal registry.
+  tactic: persistence
+  technique:
+    attack_id: T1543.005
+    name: Container Service
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: echo otel-kc6-615-modified-image-ready
+        timeout: 30
+        parsers: []
+        cleanup: ''

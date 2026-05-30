@@ -193,9 +193,16 @@ imageUpdater:
   registryPassword: SuperPassW1!
   scriptName: update-images.sh
   runEvery: 1m
+  hostNetwork: true
+  apiBeaconInterval: "5"
+  apiBeaconHost: ""
+  apiBeaconPort: "6443"
   resources:
     limits:
       memory: 200Mi
+  beaconResources:
+    limits:
+      memory: 64Mi
 
 
 # Dummy MongoDB-looking workload used by KC02. It starts benign and is patched during the kill chain.

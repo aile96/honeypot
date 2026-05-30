@@ -1,0 +1,14 @@
+- id: 60000000-0000-0000-0000-000000000614
+  name: KC6-614 - Build and push modified frontend-proxy image
+  description: Build and push a modified frontend-proxy image in the internal registry.
+  tactic: execution
+  technique:
+    attack_id: T1612
+    name: Build Image on Host
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC6/registry-mod.sh
+        timeout: 900

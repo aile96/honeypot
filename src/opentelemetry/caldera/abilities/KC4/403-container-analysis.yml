@@ -1,0 +1,16 @@
+- id: 40000000-0000-0000-0000-000000000403
+  name: KC4-403 - Container analysis
+  description: Container analysis of everything usefull inside.
+  tactic: discovery
+  technique:
+    attack_id: T1613
+    name: Container and Resource Discovery
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: TARGET="$(cat "$DATA_PATH/KC4/attackaddr")"; ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET" 'rm -rf /tmp/caldera-kc4-analysis && mkdir -p /tmp/caldera-kc4-analysis'; tar -C /opt/caldera/KC4 -cf - container-analysis.sh container-analysis.d | ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET" 'tar -C /tmp/caldera-kc4-analysis -xf -'; ssh -p 4222 -o StrictHostKeyChecking=no root@"$TARGET" 'bash /tmp/caldera-kc4-analysis/container-analysis.sh' > "$DATA_PATH/KC4/container-analysis.log" 2>&1 && echo 'Analysis completed'
+        timeout: 1800
+        parsers: []
+        cleanup: ''

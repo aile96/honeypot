@@ -1,0 +1,16 @@
+- id: 10000000-0000-0000-0000-000000000106
+  name: KC1-106 - NFR attack
+  description: A fake NF fake to be the real NF.
+  tactic: defense-evasion
+  technique:
+    attack_id: T1036.004
+    name: Masquerade Task or Service
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC1/nfr-attack.py
+        timeout: 1800
+        parsers: []
+        cleanup: ''

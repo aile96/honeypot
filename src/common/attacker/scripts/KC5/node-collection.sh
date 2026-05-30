@@ -55,6 +55,7 @@ if [[ "${#nodes[@]}" -eq 0 ]]; then
 fi
 
 echo ">> Nodes found (${#nodes[@]}): ${nodes[*]}"
+success=0
 
 for n in "${nodes[@]}"; do
   # Wait for SSH to become reachable
@@ -70,8 +71,14 @@ for n in "${nodes[@]}"; do
        > "$DATA_PATH/KC5/container-collection-$n.log" 2>&1
   then
     echo "Analysis completed for $n"
+    success=$((success + 1))
   else
     rc=$?
     echo "$(timestamp) >> ERROR: analysis on $n failed (rc=$rc) — check $DATA_PATH/KC5/container-collection-$n.log" >&2
   fi
 done
+
+if [[ "$success" -eq 0 ]]; then
+  echo "No node collection completed successfully." >&2
+  exit 1
+fi

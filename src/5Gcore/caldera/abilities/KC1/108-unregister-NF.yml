@@ -1,0 +1,16 @@
+- id: 10000000-0000-0000-0000-000000000108
+  name: KC1-108 - Unregister NF from NRF
+  description: Disrupt NRF state by unregistering a Network Function.
+  tactic: impact
+  technique:
+    attack_id: T1489
+    name: Service Stop
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC1/unregister_nrf.py
+        timeout: 1800
+        parsers: []
+        cleanup: ''

@@ -1,0 +1,16 @@
+- id: 30000000-0000-0000-0000-000000000309
+  name: KC3-309 - Currency rate manipulation
+  description: Confirm that the DB update introduced the zero-rate attacker currency used for the fraud step.
+  tactic: impact
+  technique:
+    attack_id: T1565.001
+    name: 'Data Manipulation: Stored Data Manipulation'
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: test -s "$DATA_PATH/KC3/currency-rate-inserted" && echo "[KC3-309] zero-rate NUL currency inserted"
+        timeout: 30
+        parsers: []
+        cleanup: ''

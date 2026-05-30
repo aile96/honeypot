@@ -1,0 +1,16 @@
+- id: 40000000-0000-0000-0000-000000000412
+  name: KC4-412 - Resource hijacking workload deployment
+  description: Deploy workloads that hijack cluster compute resources.
+  tactic: impact
+  technique:
+    attack_id: T1496
+    name: Resource Hijacking
+  repeatable: false
+  singleton: true
+  platforms:
+    linux:
+      sh:
+        command: /opt/caldera/KC1/deploy-containers.py
+        timeout: 900
+        parsers: []
+        cleanup: ''

@@ -595,8 +595,6 @@ def check_caldera_integrity() -> CheckResult:
 
 def classify_deprecated_occurrence(path: Path, line: str) -> str | None:
     stripped = line.strip()
-    if "GENERIC_SVC_PORT" in line:
-        return "deprecated reference"
     if "CLUSTER_PROFILE" in line:
         if "LAB_NAME" in line or "compat" in stripped.lower() or "legacy" in stripped.lower():
             return "compatibility fallback"

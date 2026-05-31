@@ -83,7 +83,6 @@ services:
       KUBE_APISERVER_IMAGE: ${KUBE_APISERVER_IMAGE:-registry.k8s.io/kube-apiserver:v1.30.0}
       K8S_IMAGE: ${KUBE_APISERVER_IMAGE:-registry.k8s.io/kube-apiserver:v1.30.0}
       FRONTEND_PROXY_IP: ${FRONTEND_PROXY_IP:-172.18.0.200}
-      GENERIC_SVC_ADDR: ${GENERIC_SVC_ADDR:-172.18.0.201}
       LOG_NS: ${MEM_NAMESPACE:-mem}
       UPDATER_NAMESPACE: ${MEM_NAMESPACE:-mem}
       ATTACKED_NS: ${DMZ_NAMESPACE:-dmz}

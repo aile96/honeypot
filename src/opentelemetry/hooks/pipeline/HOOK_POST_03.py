@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from lib import (
+    config_int,
     config_str,
     configured_compose_services,
     die,
@@ -198,14 +199,18 @@ def usable_ip_bounds(subnet: ipaddress.IPv4Network) -> tuple[int, int]:
     return int(subnet.network_address) + 1, int(subnet.broadcast_address) - 1
 
 
-def candidate_pair_starts(
+def candidate_pool_starts(
     subnet: ipaddress.IPv4Network,
     preferred: ipaddress.IPv4Address,
+    pool_size: int,
 ) -> Iterator[ipaddress.IPv4Address]:
     first_usable, last_usable = usable_ip_bounds(subnet)
-    max_start = last_usable - 1
+    max_start = last_usable - pool_size + 1
     if max_start < first_usable:
-        die(f"Docker network subnet {subnet} does not have two usable adjacent IPv4 addresses.")
+        die(
+            f"Docker network subnet {subnet} does not have {pool_size} "
+            "usable adjacent IPv4 addresses for MetalLB."
+        )
 
     preferred_start = int(preferred)
     if preferred_start < first_usable or preferred_start > max_start:
@@ -217,33 +222,48 @@ def candidate_pair_starts(
         yield ipaddress.IPv4Address(start)
 
 
-def choose_metallb_pair(
+def choose_metallb_pool(
     subnet: ipaddress.IPv4Network,
     used: set[ipaddress.IPv4Address],
-) -> tuple[ipaddress.IPv4Address, ipaddress.IPv4Address]:
+    pool_size: int,
+) -> list[ipaddress.IPv4Address]:
     preferred = preferred_metallb_first_ip(subnet)
-    for first in candidate_pair_starts(subnet, preferred):
-        second = ipaddress.IPv4Address(int(first) + 1)
-        if first not in used and second not in used:
-            return first, second
-    die(f"No free adjacent IPv4 pair found on Docker network subnet {subnet} for MetalLB.")
+    for first in candidate_pool_starts(subnet, preferred, pool_size):
+        candidate = [
+            ipaddress.IPv4Address(int(first) + offset)
+            for offset in range(pool_size)
+        ]
+        if all(address not in used for address in candidate):
+            return candidate
+    die(
+        f"No free adjacent IPv4 range of {pool_size} addresses found on "
+        f"Docker network subnet {subnet} for MetalLB."
+    )
+
+
+def pool_ips_value(addresses: list[ipaddress.IPv4Address]) -> str:
+    if len(addresses) == 1:
+        return str(addresses[0])
+    return f"{addresses[0]}-{addresses[-1]}"
 
 
 def configure_metallb_addresses() -> tuple[str, str, str]:
     network = config_str(CONFIG, "CP_NETWORK", "lab", allow_empty=False)
+    pool_size = config_int(CONFIG, "POOL_SIZE", 2, minimum=1)
     network_data = docker_network_inspect(network)
     subnet = docker_network_ipv4_subnet(network_data, network)
     used = docker_network_used_ipv4_addresses(network_data)
-    frontend_proxy_ip, generic_svc_addr = choose_metallb_pair(subnet, used)
+    addresses = choose_metallb_pool(subnet, used, pool_size)
 
-    frontend_proxy_ip_text = str(frontend_proxy_ip)
-    generic_svc_addr_text = str(generic_svc_addr)
-    pool = f"{frontend_proxy_ip_text}-{generic_svc_addr_text}"
+    frontend_proxy_ip_text = str(addresses[0])
+    pool = pool_ips_value(addresses)
 
     CONFIG["FRONTEND_PROXY_IP"] = frontend_proxy_ip_text
-    CONFIG["GENERIC_SVC_ADDR"] = generic_svc_addr_text
+    CONFIG["METALLB_POOL_IPS"] = pool
+    CONFIG["POOL_SIZE"] = pool_size
     set_state_value(STATE, "FRONTEND_PROXY_IP", frontend_proxy_ip_text)
-    set_state_value(STATE, "GENERIC_SVC_ADDR", generic_svc_addr_text)
+    set_state_value(STATE, "METALLB_POOL_IPS", pool)
+    set_state_value(STATE, "POOL_SIZE", pool_size)
     set_state_value(STATE, "docker_network_ipv4_subnet", str(subnet))
     set_state_value(
         STATE,
@@ -252,16 +272,17 @@ def configure_metallb_addresses() -> tuple[str, str, str]:
             "network": network,
             "subnet": str(subnet),
             "pool": pool,
+            "pool_size": pool_size,
             "frontend_proxy_ip": frontend_proxy_ip_text,
-            "generic_svc_addr": generic_svc_addr_text,
+            "selected_ips": [str(address) for address in addresses],
             "used_ips": sorted(str(address) for address in used),
         },
     )
     log(
-        f"Selected MetalLB IPs on Docker network {network} ({subnet}): "
-        f"frontend-proxy={frontend_proxy_ip_text}, generic={generic_svc_addr_text}"
+        f"Selected MetalLB IP range on Docker network {network} ({subnet}): "
+        f"pool={pool}, pool_size={pool_size}, frontend-proxy={frontend_proxy_ip_text}"
     )
-    return str(subnet), frontend_proxy_ip_text, generic_svc_addr_text
+    return str(subnet), frontend_proxy_ip_text, pool
 
 
 def main() -> None:

@@ -40,9 +40,14 @@ def load_image_definitions(config: Mapping[str, Any]) -> list[dict[str, Any]]:
     for item in images:
         if not isinstance(item, dict):
             raise SystemExit(f"{path}: invalid image entry {item!r}")
-        for key in ("name", "context"):
-            if not str(item.get(key, "")).strip():
-                raise SystemExit(f"{path}: image entry missing {key}: {item!r}")
+        if not str(item.get("name", "")).strip():
+            raise SystemExit(f"{path}: image entry missing name: {item!r}")
+        has_context = bool(str(item.get("context", "")).strip())
+        has_source = bool(str(item.get("source", "")).strip())
+        if has_context and has_source:
+            raise SystemExit(f"{path}: image entry cannot define both context and source: {item!r}")
+        if not has_context and not has_source:
+            raise SystemExit(f"{path}: image entry missing context or source: {item!r}")
         item.setdefault("dockerfile", "Dockerfile")
         item.setdefault("tag", "${IMAGE_VERSION}")
         item.setdefault("build_args", {})
@@ -150,6 +155,14 @@ def docker_build(
     run_cmd(command, timeout_seconds=config_int(config, "DOCKER_BUILD_TIMEOUT_SECONDS", 0, minimum=0) or None, env=env)
 
 
+def docker_pull(ref: str, config: Config) -> None:
+    run_cmd(["docker", "pull", ref], config=config)
+
+
+def docker_tag(source: str, target: str, config: Config) -> None:
+    run_cmd(["docker", "tag", source, target], config=config)
+
+
 def docker_push(ref: str, config: Config) -> None:
     run_cmd(["docker", "push", ref], config=config)
 
@@ -217,9 +230,18 @@ def build_cache_image(config: Config, image: Mapping[str, Any]) -> str:
             log(f"Image already present in cache registry, skipping build and push: {ref}")
             return ""
         warn(f"Image already present in cache registry but failed validation; rebuilding: {ref}")
-    context = resolve_context(config, image)
-    dockerfile = resolve_dockerfile(config, image, context)
-    docker_build(ref, context, dockerfile, build_args(config, image), config, buildkit=True, network="")
+
+    source = str(image.get("source", "")).strip()
+    if source:
+        source_ref = render_image_value(source, config)
+        log(f"Pulling remote image for cache: {source_ref} -> {ref}")
+        docker_pull(source_ref, config)
+        docker_tag(source_ref, ref, config)
+    else:
+        context = resolve_context(config, image)
+        dockerfile = resolve_dockerfile(config, image, context)
+        docker_build(ref, context, dockerfile, build_args(config, image), config, buildkit=True, network="")
+
     if not validate_cache_image(ref, image, config):
         raise SystemExit(f"Built cache image failed validation: {ref}")
     return ref

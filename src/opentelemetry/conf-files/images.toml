@@ -1,4 +1,9 @@
 [[images]]
+name = "registry"
+tag = "1.0.1"
+source = "registry:2"
+
+[[images]]
 name = "caldera"
 tag = "1.0.1"
 context = "../common/caldera"

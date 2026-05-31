@@ -372,7 +372,7 @@ deploy:
           "networkPolicies.rules.tst.podSelector.matchExpressions[0].operator": "NotIn"
           "networkPolicies.rules.tst.podSelector.matchExpressions[0].values[0]": "test-image"
           "pool.enabled": true
-          "pool.ips": "${FRONTEND_PROXY_IP:-172.18.0.200}-${GENERIC_SVC_ADDR:-172.18.0.201}"
+          "pool.ips": "${METALLB_POOL_IPS:-172.18.0.200-172.18.0.201}"
           "postgres.enabled": true
           "postgres.namespace": "${DAT_NAMESPACE:-dat}"
           "RBAC.enabled": true
@@ -612,10 +612,8 @@ deploy:
           "components.test-image.envOverrides[12].value": "${CONTROL_PLANE_PORT:-6443}"
           "components.test-image.envOverrides[13].name": "FRONTEND_PROXY_IP"
           "components.test-image.envOverrides[13].value": "${FRONTEND_PROXY_IP:-172.18.0.200}"
-          "components.test-image.envOverrides[14].name": "GENERIC_SVC_ADDR"
-          "components.test-image.envOverrides[14].value": "${GENERIC_SVC_ADDR:-172.18.0.201}"
-          "components.test-image.envOverrides[15].name": "GROUP"
-          "components.test-image.envOverrides[15].value": "cluster"
+          "components.test-image.envOverrides[14].name": "GROUP"
+          "components.test-image.envOverrides[14].value": "cluster"
           "components.test-image.imageOverride.repository": "${REGISTRY_NAME:-registry}:${REGISTRY_PORT:-5000}/attacker"
           "components.test-image.namespace": "${TST_NAMESPACE:-tst}"
           "components.test-image.securityContext.privileged": true

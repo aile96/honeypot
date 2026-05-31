@@ -65,7 +65,8 @@ def bool_all_value(name_a: str, default_a: bool, name_b: str, default_b: bool) -
 def set_skaffold_template_values() -> None:
     """Create values that replace the bash template helper functions."""
     CONFIG.setdefault("FRONTEND_PROXY_IP", "172.18.0.200")
-    CONFIG.setdefault("GENERIC_SVC_ADDR", "172.18.0.201")
+    CONFIG.setdefault("POOL_SIZE", 2)
+    CONFIG.setdefault("METALLB_POOL_IPS", "172.18.0.200-172.18.0.201")
     CONFIG.setdefault("SOCKET_SHARED", True)
     CONFIG.setdefault("CRICTL_RUNTIME_PATH", "/run/containerd/containerd.sock")
 
@@ -114,7 +115,8 @@ def set_skaffold_template_values() -> None:
             "SMTP_SOCKET_TYPE",
             "CALDERA_URL",
             "FRONTEND_PROXY_IP",
-            "GENERIC_SVC_ADDR",
+            "METALLB_POOL_IPS",
+            "POOL_SIZE",
         )
     }
     set_state_value(STATE, "skaffold_template_values", template_values)

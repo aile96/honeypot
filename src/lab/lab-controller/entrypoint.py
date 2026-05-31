@@ -193,19 +193,111 @@ def idle_forever(sleep_seconds: float) -> None:
     raise SystemExit(signal_exit_code or 0)
 
 
+def run_cleanup_command(
+    cmd: list[str],
+    *,
+    name: str,
+    ok_returncodes: tuple[int, ...] = (0,),
+) -> None:
+    """Run a best-effort cleanup command and report useful diagnostics."""
+    try:
+        completed = subprocess.run(
+            cmd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except FileNotFoundError:
+        warn(f"{name} unavailable: {cmd[0]} not found")
+        return
+    except OSError as exc:
+        warn(f"{name} failed to start: {exc}")
+        return
+
+    if completed.returncode not in ok_returncodes:
+        details = (completed.stderr or completed.stdout or "").strip()
+        if details:
+            warn(f"{name} failed with exit code {completed.returncode}: {details}")
+        else:
+            warn(f"{name} failed with exit code {completed.returncode}")
+
+
+def terminate_residual_docker_helpers() -> None:
+    """Stop Docker-in-Docker helper processes that can keep overlay mounts busy."""
+    run_cleanup_command(
+        ["pkill", "-TERM", "-f", "containerd|containerd-shim|runc"],
+        name="terminate residual Docker runtime helpers",
+        ok_returncodes=(0, 1),
+    )
+    time.sleep(1)
+    run_cleanup_command(
+        ["pkill", "-KILL", "-f", "containerd|containerd-shim|runc"],
+        name="kill residual Docker runtime helpers",
+        ok_returncodes=(0, 1),
+    )
+
+
+def cleanup_busy_docker_mounts(runtime_dir: Path) -> None:
+    """Best-effort unmount of internal dockerd/containerd mounts."""
+    resolved = runtime_dir.resolve()
+    docker_data_root = resolved / "docker-data"
+
+    # Safety guard: this entrypoint should only clean lab runtime directories.
+    if not str(resolved).startswith("/res/runtime/"):
+        warn(f"Refusing busy-mount cleanup outside /res/runtime: {resolved}")
+        return
+
+    if not docker_data_root.exists():
+        return
+
+    warn(f"Attempting recursive unmount of busy Docker data-root: {docker_data_root}")
+    run_cleanup_command(["sync"], name="sync before runtime cleanup")
+    run_cleanup_command(
+        ["umount", "-R", str(docker_data_root)],
+        name="recursive docker-data unmount",
+        ok_returncodes=(0, 32),
+    )
+    time.sleep(1)
+
+
 def cleanup_runtime_dir(runtime_dir: Path, *, autoremove_lab: bool = False) -> None:
     """Remove RUNTIME_DIR only for one-shot autoremove labs."""
     if not autoremove_lab:
         log(f"Leaving runtime directory in place for restart persistence: {runtime_dir.resolve()}")
         return
 
-    try:
-        shutil.rmtree(runtime_dir)
-        log(f"Removed runtime directory after AUTOREMOVE_LAB=true: {runtime_dir.resolve()}")
-    except FileNotFoundError:
-        log(f"Runtime directory already absent after AUTOREMOVE_LAB=true: {runtime_dir.resolve()}")
-    except OSError as exc:
-        warn(f"Could not remove runtime directory {runtime_dir.resolve()} after AUTOREMOVE_LAB=true: {exc}")
+    resolved = runtime_dir.resolve()
+    max_attempts = 12
+    delay_seconds = 1.0
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            shutil.rmtree(runtime_dir)
+            log(f"Removed runtime directory after AUTOREMOVE_LAB=true: {resolved}")
+            return
+        except FileNotFoundError:
+            log(f"Runtime directory already absent after AUTOREMOVE_LAB=true: {resolved}")
+            return
+        except OSError as exc:
+            if getattr(exc, "errno", None) == 16:
+                cleanup_busy_docker_mounts(runtime_dir)
+
+            if attempt == max_attempts:
+                warn(f"Could not remove runtime directory {resolved} after AUTOREMOVE_LAB=true: {exc}")
+                warn(
+                    "The internal dockerd data-root still has busy overlay/containerd mounts. "
+                    "Run this from the host repository root: "
+                    f"sudo umount -R ./res/runtime/{resolved.name}/docker-data 2>/dev/null || true; "
+                    f"sudo rm -rf ./res/runtime/{resolved.name}"
+                )
+                return
+
+            warn(
+                f"Runtime directory still busy after AUTOREMOVE_LAB=true "
+                f"(attempt {attempt}/{max_attempts}): {exc}; retrying..."
+            )
+            time.sleep(delay_seconds)
 
 
 def cleanup_values(config: dict[str, Any]) -> dict[str, str]:
@@ -355,6 +447,9 @@ def main() -> int:
 
         if dockerd_proc is not None and dockerd_proc.poll() is None:
             terminate_process(dockerd_proc, "dockerd")
+
+        if not host_socket_mode:
+            terminate_residual_docker_helpers()
 
         cleanup_runtime_dir(runtime_dir, autoremove_lab=remove_runtime_on_exit)
 

@@ -12,12 +12,15 @@ from .config_state import (
 )
 from .docker import (
     DockerError,
+    active_lab_controllers,
     check_docker,
     container_exists,
     container_running,
     ensure_network,
     ensure_registry,
     find_free_port,
+    image_id,
+    container_image_id,
     host_socket_labs,
     remove_registry_if_unused,
     remove_network_if_unused,
@@ -30,6 +33,7 @@ from .templates import render_template, substitute_vars
 __all__ = [
     "ConfigError",
     "DockerError",
+    "active_lab_controllers",
     "atomic_write_json",
     "atomic_write_toml",
     "check_docker",
@@ -39,6 +43,8 @@ __all__ = [
     "ensure_network",
     "ensure_registry",
     "find_free_port",
+    "image_id",
+    "container_image_id",
     "host_socket_labs",
     "load_project_config",
     "load_runtime_config",

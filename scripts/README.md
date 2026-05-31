@@ -25,15 +25,18 @@ It is useful for catching configuration, syntax, and repository consistency issu
 
 The script checks things such as:
 
-- Python syntax for relevant project files.
+- tracked generated/runtime artifacts in Git.
+- target directory contract for templates, hooks, and Caldera assets.
+- TOML parsing and basic validation for `configuration.conf`.
+- Python syntax for repository Python files.
 - Shell script syntax with `bash -n`.
-- TOML parsing for `configuration.conf`.
 - YAML parsing for non-template YAML files.
+- Rendered compose template sanity with a sample environment.
+- Skaffold local Helm chart dependency policy.
 - Caldera ability/adversary consistency.
 - Missing Caldera ability references.
 - Duplicate or invalid Caldera IDs.
-- Basic repository integrity issues.
-- Invalid or suspicious lab/controller configuration references.
+- Deprecated lab/controller references surfaced as warnings.
 
 Generated files and heavy runtime artifacts are intentionally excluded, including:
 
@@ -51,6 +54,8 @@ From the repository root:
 
 ```bash
 python3 scripts/static_checks.py
+python3 scripts/static_checks.py --json
+python3 scripts/static_checks.py --check generated
 ```
 
 ---

@@ -520,6 +520,10 @@ deploy:
           "components.frontend-proxy.envOverrides[5].value": "opensearch.${MEM_NAMESPACE:-mem}"
           "components.frontend-proxy.envOverrides[6].name": "OPENSEARCH_PORT"
           "components.frontend-proxy.envOverrides[6].value": "9200"
+          "components.frontend-proxy.envOverrides[7].name": "PROMETHEUS_HOST"
+          "components.frontend-proxy.envOverrides[7].value": "prometheus.${MEM_NAMESPACE:-mem}"
+          "components.frontend-proxy.envOverrides[8].name": "PROMETHEUS_PORT"
+          "components.frontend-proxy.envOverrides[8].value": "9090"
           "components.frontend-proxy.namespace": "${DMZ_NAMESPACE:-dmz}"
           "components.frontend-proxy.service.loadBalancerIP": "${FRONTEND_PROXY_IP:-172.18.0.200}"
           "components.frontend.enabled": true

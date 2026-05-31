@@ -253,50 +253,37 @@ kind get clusters | grep "${LAB_NAME}" || true
 test ! -d "res/runtime/${LAB_NAME}"
 ```
 
-## Development Test Setup
+## Static Checks
 
-The test suite added for this repository focuses only on lab/controller/orchestration code. It intentionally does not test the application services under target `containers/` directories.
-
-Install development dependencies:
+This repository no longer carries a pytest test suite. The lightweight local validation entry point is:
 
 ```bash
 python3 -m pip install -r requirements-dev.txt
-```
-
-Run all offline tests:
-
-```bash
-python3 -m pytest
-```
-
-Run only unit tests:
-
-```bash
-python3 -m pytest -m unit
-```
-
-Run static repository integrity checks:
-
-```bash
-python3 -m pytest -m static
 python3 scripts/static_checks.py
 ```
 
-These tests are intended for local/manual use. They are not wired into a CI pipeline.
+The static checker is offline: it does not start Docker, Kind, Kubernetes, Helm, Skaffold, or Caldera. It validates the repository contract before you attempt a real deployment.
 
-The current test coverage includes:
+Current checks include:
 
-- root TOML parsing and target merge behavior
-- explicit confirmation that environment overrides do not replace `configuration.conf`
-- host bootstrap config derivation and runtime metadata writing
-- template rendering helpers
-- controller config parsing, bool/int validation, and env conversion
-- pipeline script discovery, hook lookup, and retry policy resolution
-- pipeline state lifecycle and resume metadata
-- Kind template helper generation
-- controller proxy health, dynamic-route, and Kubernetes API tunnel helpers
-- Caldera kill-chain controller helper logic
-- static compile/config/Caldera integrity checks for orchestration files
+- generated/runtime artifacts are not tracked in Git
+- target directories contain the required templates, hooks, and Caldera assets
+- `configuration.conf` is valid TOML and points to an existing target
+- Python files compile
+- shell scripts pass `bash -n`
+- non-template YAML files parse correctly
+- compose templates render with a sample environment
+- Skaffold local Helm releases keep `skipBuildDependencies: true`
+- Caldera abilities/adversaries are internally consistent
+- deprecated references are surfaced as warnings
+
+Useful variants:
+
+```bash
+python3 scripts/static_checks.py --json
+python3 scripts/static_checks.py --check generated
+python3 scripts/static_checks.py --check caldera --check skaffold
+```
 
 ## Repository Map
 
@@ -304,8 +291,7 @@ The current test coverage includes:
 start.py                                      host bootstrap entry point
 remove_all.py                                 scoped host cleanup entry point
 configuration.conf                            default lab and target configuration
-requirements-dev.txt                          local pytest/static-check dependencies
-pyproject.toml                                pytest configuration
+requirements-dev.txt                          local static-check dependencies
 scripts/static_checks.py                      manual repository integrity checks
 src/lab/lib/                                  host-side bootstrap helpers
 src/lab/lab-controller/                       controller image entrypoints and libraries
@@ -314,7 +300,6 @@ src/lab/lab-controller/app/pipeline/          built-in orchestration pipeline st
 src/5Gcore/                                   default target assets, templates, hooks, Caldera data
 src/opentelemetry/                            optional target assets, templates, hooks, Caldera data
 src/common/                                   shared controller/proxy/attacker/caldera container assets
-tests/                                        offline pytest suite for lab/controller/orchestration
 res/runtime/                                  generated runtime state, disposable
 res/results/                                  generated results, preserved by cleanup
 res/cache/docker                              local registry image cache

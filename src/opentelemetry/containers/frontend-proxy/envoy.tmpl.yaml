@@ -47,6 +47,10 @@ static_resources:
                           route: { cluster: jaeger }
                         - match: { prefix: "/grafana" }
                           route: { cluster: grafana }
+                        - match: { path: "/prometheus" }
+                          redirect: { path_redirect: "/prometheus/" }
+                        - match: { prefix: "/prometheus/" }
+                          route: { cluster: prometheus, prefix_rewrite: "/" }
                         - match: { prefix: "/images/" }
                           route: { cluster: image-provider, prefix_rewrite: "/" }
                         - match: { prefix: "/flagservice/" }
@@ -222,6 +226,18 @@ static_resources:
                     socket_address:
                       address: ${JAEGER_HOST}
                       port_value: ${JAEGER_PORT}
+    - name: prometheus
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: prometheus
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: ${PROMETHEUS_HOST}
+                      port_value: ${PROMETHEUS_PORT}
     - name: opensearch
       type: STRICT_DNS
       lb_policy: ROUND_ROBIN

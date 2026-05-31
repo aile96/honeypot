@@ -16,5 +16,5 @@ __pycache__/
 /res/*
 
 # Ignore all generated Helm chart packages and the .github directory
-src/opentelemetry/helm-charts/telemetry/charts/*.tgz
+src/**/helm-charts/**/charts/*.tgz
 .github/

@@ -1,5 +1,5 @@
-- id: 10000000-0000-0000-0000-000000000108
-  name: KC1-108 - DNS traffic manipulation
+- id: 10000000-0000-0000-0000-000000000109
+  name: KC1-109 - DNS traffic manipulation
   description: Modify DNS behavior so traffic is redirected through attacker-controlled paths.
   tactic: impact
   technique:

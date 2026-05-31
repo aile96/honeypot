@@ -192,6 +192,8 @@ from .state import (
     mark_pipeline_failed,
     mark_pipeline_ready,
     new_state,
+    prune_completed_units_from_step,
+    record_resume_check,
     record_step_finish,
     record_step_start,
     record_unit_finish,
@@ -201,6 +203,11 @@ from .state import (
     state_values,
     unit_completed,
     utc_timestamp,
+)
+
+from .recovery import (
+    ResumeCheck,
+    validate_resume_state,
 )
 
 from .utils import (
@@ -335,6 +342,8 @@ __all__ = [
     "mark_pipeline_failed",
     "mark_pipeline_ready",
     "new_state",
+    "prune_completed_units_from_step",
+    "record_resume_check",
     "record_step_finish",
     "record_step_start",
     "record_unit_finish",
@@ -344,6 +353,8 @@ __all__ = [
     "state_values",
     "unit_completed",
     "utc_timestamp",
+    "ResumeCheck",
+    "validate_resume_state",
     "resolve_project_path",
     "substitute_vars",
 ]

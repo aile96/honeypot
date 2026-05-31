@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Run repository-local static checks for the cyber-range lab."""
+"""Run offline repository consistency checks for the cyber-range lab."""
 
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import importlib
 import json
 import py_compile
 import re
 import subprocess
 import sys
+import tomllib
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -21,8 +24,39 @@ except ImportError:  # pragma: no cover - exercised only when optional dev deps 
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGETS = ("opentelemetry", "5Gcore")
+IGNORED_DIRS = {".git", "__pycache__", ".pytest_cache", ".venv", "venv", "env", "node_modules", "res", "build", "dist"}
 REQUIRED_ABILITY_FIELDS = ("id", "name", "description", "tactic", "technique", "platforms")
+REQUIRED_ADVERSARY_FIELDS = ("id", "name", "description", "atomic_ordering")
+REQUIRED_TARGET_FILES = (
+    "conf-files/compose.yaml.tmpl",
+    "conf-files/kind-cluster.yaml.tmpl",
+    "conf-files/skaffold.yaml.tmpl",
+    "conf-files/images.toml",
+    "caldera/local.yml",
+    "caldera/id_attackers",
+)
+REQUIRED_TARGET_DIRS = (
+    "caldera/abilities",
+    "caldera/adversaries",
+    "hooks/controller",
+    "hooks/pipeline",
+    "hooks/restore",
+)
+FORBIDDEN_TRACKED_PATTERNS = {
+    "res/**": "runtime/output directory",
+    "**/__pycache__/**": "Python bytecode cache",
+    "**/.pytest_cache/**": "pytest cache",
+    "**/*.pyc": "Python bytecode file",
+    "**/*.pyo": "Python optimized bytecode file",
+    "**/*.log": "runtime log",
+    "**/*.tmp": "temporary file",
+    "**/*.tgz": "generated Helm dependency package",
+    "**/lab-state.json": "runtime lab state",
+    "**/killchain-summary.json": "runtime result summary",
+    "**/kubeconfig": "runtime kubeconfig",
+    ".coverage": "coverage output",
+    "htmlcov/**": "coverage HTML output",
+}
 
 
 @dataclass
@@ -31,19 +65,56 @@ class CheckResult:
     status: str
     details: list[str] = field(default_factory=list)
 
+    @property
+    def failed(self) -> bool:
+        return self.status == "FAIL"
+
+
+CheckFn = Any
+
 
 def rel(path: Path) -> str:
-    return str(path.relative_to(ROOT))
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
 
 
-def run_command(name: str, command: list[str]) -> CheckResult:
+def path_parts(path: Path) -> tuple[str, ...]:
+    try:
+        return path.relative_to(ROOT).parts
+    except ValueError:
+        return path.parts
+
+
+def is_ignored(path: Path) -> bool:
+    return any(part in IGNORED_DIRS for part in path_parts(path))
+
+
+def discover_targets() -> tuple[str, ...]:
+    src_root = ROOT / "src"
+    if not src_root.exists():
+        return ()
+    targets: list[str] = []
+    for path in src_root.iterdir():
+        if not path.is_dir() or path.name in {"common", "lab"}:
+            continue
+        if (path / "conf-files").exists() or (path / "caldera").exists():
+            targets.append(path.name)
+    return tuple(sorted(targets, key=str.lower))
+
+
+TARGETS = discover_targets()
+
+
+def run_command(command: list[str]) -> tuple[int, list[str]]:
     completed = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False)
     details: list[str] = []
     if completed.stdout.strip():
         details.extend(completed.stdout.strip().splitlines())
     if completed.stderr.strip():
         details.extend(completed.stderr.strip().splitlines())
-    return CheckResult(name=name, status="PASS" if completed.returncode == 0 else "FAIL", details=details)
+    return completed.returncode, details
 
 
 def require_yaml(check_name: str) -> CheckResult | None:
@@ -66,9 +137,13 @@ def yaml_documents(path: Path) -> list[Any]:
         return list(yaml.safe_load_all(handle))
 
 
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
 def has_helm_template(path: Path) -> bool:
     try:
-        text = path.read_text(encoding="utf-8")
+        text = read_text(path)
     except UnicodeDecodeError:
         return False
     return "{{" in text or "{%" in text
@@ -76,52 +151,135 @@ def has_helm_template(path: Path) -> bool:
 
 def has_shell_template_placeholder(path: Path) -> bool:
     try:
-        text = path.read_text(encoding="utf-8")
+        text = read_text(path)
     except UnicodeDecodeError:
         return False
     return "${" in text
 
 
+def is_yaml_path(path: Path) -> bool:
+    name = path.name.lower()
+    return name.endswith((".yaml", ".yml", ".yaml.tmpl", ".yml.tmpl"))
+
+
+def git_tracked_files() -> list[str] | None:
+    if not (ROOT / ".git").exists():
+        return None
+    completed = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=False)
+    if completed.returncode != 0:
+        return None
+    return [item.decode("utf-8", errors="replace") for item in completed.stdout.split(b"\0") if item]
+
+
+def forbidden_tracked_reason(path: str) -> str | None:
+    normalized = path.replace("\\", "/")
+    for pattern, reason in FORBIDDEN_TRACKED_PATTERNS.items():
+        if fnmatch.fnmatchcase(normalized, pattern):
+            return reason
+    return None
+
+
+def check_no_generated_artifacts_tracked() -> CheckResult:
+    result = CheckResult("tracked generated artifacts", "PASS")
+    tracked = git_tracked_files()
+    if tracked is None:
+        return CheckResult("tracked generated artifacts", "WARN", ["skipped: no readable Git index"])
+
+    offenders = [(path, forbidden_tracked_reason(path)) for path in tracked if (ROOT / path).exists()]
+    offenders = [(path, reason) for path, reason in offenders if reason]
+    if offenders:
+        result.status = "FAIL"
+        result.details.extend(f"{path}: {reason}" for path, reason in offenders)
+    else:
+        result.details.append(f"checked={len(tracked)}")
+    return result
+
+
+def check_target_contract() -> CheckResult:
+    result = CheckResult("target contract", "PASS")
+    if not TARGETS:
+        return CheckResult("target contract", "FAIL", ["no targets discovered under src/"])
+
+    for target in TARGETS:
+        target_root = ROOT / "src" / target
+        errors: list[str] = []
+        for relative in REQUIRED_TARGET_FILES:
+            if not (target_root / relative).is_file():
+                errors.append(f"missing file {relative}")
+        for relative in REQUIRED_TARGET_DIRS:
+            if not (target_root / relative).is_dir():
+                errors.append(f"missing directory {relative}")
+        result.details.append(f"{target}: errors={len(errors)}")
+        result.details.extend(f"  {item}" for item in errors)
+        if errors:
+            result.status = "FAIL"
+    return result
+
+
+def check_configuration_toml() -> CheckResult:
+    result = CheckResult("configuration TOML", "PASS")
+    path = ROOT / "configuration.conf"
+    try:
+        with path.open("rb") as handle:
+            data = tomllib.load(handle)
+    except FileNotFoundError:
+        return CheckResult("configuration TOML", "FAIL", ["configuration.conf not found"])
+    except tomllib.TOMLDecodeError as exc:
+        return CheckResult("configuration TOML", "FAIL", [f"configuration.conf: {exc}"])
+
+    lab = data.get("lab")
+    targets = data.get("targets")
+    if not isinstance(lab, dict):
+        return CheckResult("configuration TOML", "FAIL", ["configuration.conf: missing [lab] table"])
+    if not isinstance(targets, dict):
+        return CheckResult("configuration TOML", "FAIL", ["configuration.conf: missing [targets] table"])
+
+    errors: list[str] = []
+    configured_target = str(lab.get("CLUSTER_TARGET", "")).strip()
+    lab_name = str(lab.get("LAB_NAME", "")).strip()
+    if configured_target not in targets:
+        errors.append(f"[lab].CLUSTER_TARGET={configured_target!r} has no matching [targets.<name>] table")
+    if configured_target and configured_target not in TARGETS:
+        errors.append(f"[lab].CLUSTER_TARGET={configured_target!r} has no matching src/<target> directory")
+    for target in TARGETS:
+        if target not in targets:
+            errors.append(f"src/{target} has no [targets.{target}] table")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", lab_name):
+        errors.append("[lab].LAB_NAME must contain only letters, digits, dot, underscore, or dash")
+
+    non_negative_prefixes = ("STEP_RETRY_ATTEMPTS_", "STEP_RETRY_DELAY_SECONDS_")
+    for key, value in lab.items():
+        if key.startswith(non_negative_prefixes):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                errors.append(f"[lab].{key} must be a non-negative integer")
+    for key in ("IMAGE_BUILD_PARALLELISM", "IMAGE_PUSH_PARALLELISM"):
+        value = lab.get(key)
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 1):
+            errors.append(f"[lab].{key} must be an integer >= 1")
+
+    result.details.append(f"targets={','.join(TARGETS) or 'none'}")
+    result.details.append(f"configured_target={configured_target or 'none'}")
+    result.details.extend(errors)
+    if errors:
+        result.status = "FAIL"
+    return result
+
+
 def check_bash_syntax() -> CheckResult:
     result = CheckResult("shell syntax", "PASS")
-    scripts = [ROOT / "configure_tunnel.sh"]
-    attacker_root = ROOT / "src" / "common" / "attacker"
-    if attacker_root.exists():
-        scripts.extend(sorted(attacker_root.rglob("*.sh")))
-
-    checked = 0
+    scripts = sorted(path for path in ROOT.rglob("*.sh") if not is_ignored(path))
+    result.details.append(f"checked={len(scripts)}")
     for path in scripts:
-        script = rel(path) if path.is_absolute() else str(path)
-        if not path.exists():
-            result.details.append(f"{script}: SKIP (not present)")
-            continue
-        checked += 1
-        item = run_command(f"bash -n {script}", ["bash", "-n", script])
-        if item.status != "PASS":
+        returncode, details = run_command(["bash", "-n", rel(path)])
+        if returncode != 0:
             result.status = "FAIL"
-        result.details.append(f"{script}: {item.status}")
-        result.details.extend(f"  {line}" for line in item.details)
-    result.details.insert(0, f"checked={checked}")
+            result.details.append(f"{rel(path)}: FAIL")
+            result.details.extend(f"  {line}" for line in details)
     return result
 
 
 def check_python_compile() -> CheckResult:
-    ignored_dirs = {"__pycache__", "node_modules", "res", ".venv", "venv", "env", "build", "bin", "obj"}
-    ignored_service_dirs = {"containers"}
-    files = [path for path in (ROOT / "src" / "lab").rglob("*.py")]
-    for target in TARGETS:
-        for subdir in ("hooks", "conf-files"):
-            base = ROOT / "src" / target / subdir
-            if base.exists():
-                files.extend(base.rglob("*.py"))
-    files.extend(path for path in (ROOT / "scripts" / "static_checks.py", ROOT / "start.py", ROOT / "remove_all.py") if path.exists())
-    files = sorted(
-        {
-            path
-            for path in files
-            if not any(part in ignored_dirs or part in ignored_service_dirs for part in path.relative_to(ROOT).parts)
-        }
-    )
+    files = sorted(path for path in ROOT.rglob("*.py") if not is_ignored(path))
     result = CheckResult("python compile", "PASS", [f"files={len(files)}"])
     for path in files:
         try:
@@ -138,43 +296,17 @@ def check_yaml_parse() -> CheckResult:
     if missing_yaml is not None:
         return missing_yaml
     result = CheckResult("yaml parse", "PASS")
-    paths: set[Path] = set()
-    ignored_dirs = {".git", "__pycache__", "node_modules", "res", ".venv", "venv", "env"}
-
-    for path in (
-        ROOT / "compose.yaml",
-        ROOT / "docker-compose.yaml",
-        ROOT / "docker-compose.yml",
-    ):
-        if path.exists():
-            paths.add(path)
-
-    for pattern in (
-        "src/**/compose.yaml",
-        "src/**/docker-compose*.yaml",
-        "src/**/docker-compose*.yml",
-        "src/*/caldera/abilities/**/*.yml",
-        "src/*/caldera/adversaries/**/*.yml",
-        "src/*/conf-files/*.yaml",
-        "src/*/conf-files/*.yaml.tmpl",
-        "src/*/helm-charts/**/*.yaml",
-        "src/*/helm-charts/**/*.yml",
-    ):
-        paths.update(
-            path
-            for path in ROOT.glob(pattern)
-            if not any(part in ignored_dirs for part in path.relative_to(ROOT).parts)
-        )
+    paths = sorted(path for path in ROOT.rglob("*") if path.is_file() and is_yaml_path(path) and not is_ignored(path))
 
     parsed = 0
     skipped_templates = 0
     skipped_shell_templates = 0
     failed = 0
-    for path in sorted(paths):
+    for path in paths:
         if has_helm_template(path):
             skipped_templates += 1
             continue
-        if path.suffix == ".tmpl" and has_shell_template_placeholder(path):
+        if path.name.endswith(".tmpl") and has_shell_template_placeholder(path):
             skipped_shell_templates += 1
             continue
         try:
@@ -185,10 +317,14 @@ def check_yaml_parse() -> CheckResult:
             result.status = "FAIL"
             result.details.append(f"{rel(path)}: {exc!r}")
 
-    result.details.insert(0, f"parsed={parsed}")
-    result.details.insert(1, f"skipped_templated_yaml={skipped_templates}")
-    result.details.insert(2, f"skipped_shell_templates={skipped_shell_templates}")
-    result.details.insert(3, f"failed={failed}")
+    result.details.extend(
+        [
+            f"parsed={parsed}",
+            f"skipped_templated_yaml={skipped_templates}",
+            f"skipped_shell_templates={skipped_shell_templates}",
+            f"failed={failed}",
+        ]
+    )
     return result
 
 
@@ -239,12 +375,12 @@ def check_rendered_compose_templates() -> CheckResult:
         return CheckResult("rendered compose templates", "FAIL", [repr(exc)])
 
     sample_env = {
-        "LAB_NAME": "honeypotlab",
+        "LAB_NAME": "cyberrange",
         "IMAGE_VERSION": "2.0.2",
         "REGISTRY_CACHE_ENDPOINT": "registry-lab:5000",
         "CP_NETWORK": "lab",
         "COMPOSE_PORT_BIND_ADDR": "127.0.0.1",
-        "RUNTIME_DIR": "/res/runtime/honeypotlab",
+        "RUNTIME_DIR": "/res/runtime/cyberrange",
         "COMPOSE_FREE5GC_CERT_DIR": "/tmp/free5gc-certs",
         "COMPOSE_ATTACKER_IPHOST_FILE": "/tmp/iphost",
         "COMPOSE_ATTACKER_APISERVER_DIR": "/tmp/apiserver",
@@ -260,7 +396,7 @@ def check_rendered_compose_templates() -> CheckResult:
         if not template.exists():
             continue
         checked += 1
-        rendered = substitute_vars(template.read_text(encoding="utf-8"), sample_env)
+        rendered = substitute_vars(read_text(template), sample_env)
         try:
             data = yaml.safe_load(rendered)
         except Exception as exc:
@@ -282,7 +418,7 @@ def check_rendered_compose_templates() -> CheckResult:
 
 def skaffold_local_chart_blocks(template: Path) -> list[tuple[str, int, str]]:
     """Return local Helm release blocks from a Skaffold template."""
-    lines = template.read_text(encoding="utf-8").splitlines()
+    lines = read_text(template).splitlines()
     blocks: list[tuple[str, int, str]] = []
     current_name = ""
     current_start = 0
@@ -327,7 +463,9 @@ def check_opentelemetry_test_image_privileged() -> CheckResult:
     template = ROOT / "src" / "opentelemetry" / "conf-files" / "skaffold.yaml.tmpl"
     needle = '"components.test-image.securityContext.privileged": true'
     result = CheckResult("opentelemetry cluster attacker privileges", "PASS")
-    if needle not in template.read_text(encoding="utf-8"):
+    if not template.exists():
+        return CheckResult("opentelemetry cluster attacker privileges", "WARN", [f"{rel(template)}: skipped because template is missing"])
+    if needle not in read_text(template):
         result.status = "FAIL"
         result.details.append(f"{rel(template)}: test-image must run privileged for its Docker-in-Docker Caldera attacker")
     else:
@@ -337,7 +475,10 @@ def check_opentelemetry_test_image_privileged() -> CheckResult:
 
 def iter_abilities(target: str) -> list[tuple[Path, dict[str, Any]]]:
     abilities: list[tuple[Path, dict[str, Any]]] = []
-    for path in sorted((ROOT / "src" / target / "caldera" / "abilities").rglob("*.yml")):
+    base = ROOT / "src" / target / "caldera" / "abilities"
+    if not base.exists():
+        return abilities
+    for path in sorted(base.rglob("*.yml")):
         data = load_yaml_file(path)
         entries = data if isinstance(data, list) else [data]
         for entry in entries:
@@ -348,11 +489,22 @@ def iter_abilities(target: str) -> list[tuple[Path, dict[str, Any]]]:
 
 def iter_adversaries(target: str) -> list[tuple[Path, dict[str, Any]]]:
     adversaries: list[tuple[Path, dict[str, Any]]] = []
-    for path in sorted((ROOT / "src" / target / "caldera" / "adversaries").glob("*.yml")):
+    base = ROOT / "src" / target / "caldera" / "adversaries"
+    if not base.exists():
+        return adversaries
+    for path in sorted(base.glob("*.yml")):
         data = load_yaml_file(path)
         if isinstance(data, dict):
             adversaries.append((path, data))
     return adversaries
+
+
+def is_uuid_like(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 def ability_commands(entry: dict[str, Any]) -> list[str]:
@@ -381,13 +533,17 @@ def check_caldera_integrity() -> CheckResult:
         adversary_entries = iter_adversaries(target)
         ability_ids: dict[str, Path] = {}
         ability_entries_by_id: dict[str, dict[str, Any]] = {}
+        adversary_ids: dict[str, Path] = {}
         target_errors: list[str] = []
+        target_warnings: list[str] = []
 
         for path, entry in ability_entries:
             ability_id = str(entry.get("id") or "")
             if not ability_id:
                 target_errors.append(f"{rel(path)}: missing id")
                 continue
+            if not is_uuid_like(ability_id):
+                target_errors.append(f"{rel(path)}: ability id {ability_id} is not a UUID")
             if ability_id in ability_ids:
                 target_errors.append(f"{rel(path)}: duplicate ability id {ability_id} also in {rel(ability_ids[ability_id])}")
             ability_ids[ability_id] = path
@@ -404,6 +560,17 @@ def check_caldera_integrity() -> CheckResult:
                 target_errors.append(f"{rel(path)} ability {ability_id}: empty executor command")
 
         for path, adversary in adversary_entries:
+            adversary_id = str(adversary.get("id") or "")
+            for field_name in REQUIRED_ADVERSARY_FIELDS:
+                if field_name not in adversary or adversary.get(field_name) in (None, ""):
+                    target_errors.append(f"{rel(path)}: missing {field_name}")
+            if adversary_id:
+                if not is_uuid_like(adversary_id):
+                    target_warnings.append(f"{rel(path)}: adversary id {adversary_id} is not UUID-like; accepted because existing CALDERA data uses KC-prefixed ids")
+                if adversary_id in adversary_ids:
+                    target_errors.append(f"{rel(path)}: duplicate adversary id {adversary_id} also in {rel(adversary_ids[adversary_id])}")
+                adversary_ids[adversary_id] = path
+
             ordering = adversary.get("atomic_ordering")
             if not isinstance(ordering, list):
                 target_errors.append(f"{rel(path)}: missing atomic_ordering list")
@@ -418,7 +585,7 @@ def check_caldera_integrity() -> CheckResult:
                     target_errors.append(f"{rel(path)}: dns-poisoning.sh ability {ability_id} must be the last step")
 
         result.details.append(
-            f"{target}: abilities={len(ability_entries)} unique_ids={len(ability_ids)} adversaries={len(adversary_entries)} errors={len(target_errors)}"
+            f"{target}: abilities={len(ability_entries)} unique_ids={len(ability_ids)} adversaries={len(adversary_entries)} errors={len(target_errors)} warnings={len(target_warnings)}"
         )
         result.details.extend(f"  {item}" for item in target_errors)
         if target_errors:
@@ -426,27 +593,22 @@ def check_caldera_integrity() -> CheckResult:
     return result
 
 
-def classify_forbidden_occurrence(path: Path, line_no: int, line: str) -> str:
+def classify_deprecated_occurrence(path: Path, line: str) -> str | None:
     stripped = line.strip()
+    if "GENERIC_SVC_PORT" in line:
+        return "deprecated reference"
     if "CLUSTER_PROFILE" in line:
         if "LAB_NAME" in line or "compat" in stripped.lower() or "legacy" in stripped.lower():
             return "compatibility fallback"
-        return "review"
-    if "GENERIC_SVC_PORT" in line:
-        return "deprecated reference"
+        return "legacy cluster-profile reference"
     if re.search(r"\brouter\b", line, re.IGNORECASE):
         if "router" in path.parts or re.search(r"container_name:|service:", line):
-            return "possible removed router/proxy service"
-        return "text/reference"
-    if re.search(r"\bPROXY\b", line):
-        return "proxy variable/reference"
-    return "review"
+            return "possible removed router service"
+    return None
 
 
-def check_forbidden_references() -> CheckResult:
+def check_deprecated_references() -> CheckResult:
     result = CheckResult("deprecated references", "PASS")
-    patterns = ("CLUSTER_PROFILE", "GENERIC_SVC_PORT", "PROXY", "router")
-    ignored_dirs = {".git", "__pycache__", "node_modules", "res", "containers", "tests"}
     occurrences: list[str] = []
     must_review = False
 
@@ -458,48 +620,40 @@ def check_forbidden_references() -> CheckResult:
         ROOT / "README.md",
     ]
     for target in TARGETS:
-        scan_roots.extend(
-            [
-                ROOT / "src" / target / "conf-files",
-                ROOT / "src" / target / "hooks",
-            ]
-        )
+        scan_roots.extend([ROOT / "src" / target / "conf-files", ROOT / "src" / target / "hooks"])
 
     paths: list[Path] = []
     for item in scan_roots:
         if item.is_dir():
-            paths.extend(sorted(item.rglob("*")))
+            paths.extend(sorted(path for path in item.rglob("*") if path.is_file() and not is_ignored(path)))
         elif item.exists():
             paths.append(item)
 
     for path in paths:
         try:
-            is_file = path.is_file()
-        except OSError:
-            continue
-        if not is_file or any(part in ignored_dirs for part in path.parts):
-            continue
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
+            lines = read_text(path).splitlines()
         except (OSError, UnicodeDecodeError):
             continue
         for line_no, line in enumerate(lines, 1):
-            if not any(pattern in line for pattern in patterns) and not re.search(r"\brouter\b", line, re.IGNORECASE):
+            classification = classify_deprecated_occurrence(path, line)
+            if classification is None:
                 continue
-            classification = classify_forbidden_occurrence(path, line_no, line)
             occurrences.append(f"{rel(path)}:{line_no}: {classification}: {line.strip()[:180]}")
-            if classification in {"deprecated reference", "possible removed router/proxy service", "review"}:
+            if classification in {"deprecated reference", "possible removed router service", "legacy cluster-profile reference"}:
                 must_review = True
 
     result.details = occurrences or ["no occurrences"]
     if must_review:
-        result.details.insert(0, "review-only occurrences found; no static failure")
+        result.status = "WARN"
+        result.details.insert(0, "review recommended; warning only")
     return result
 
 
 def check_restore_vars() -> CheckResult:
     result = CheckResult("restore variables placement", "PASS")
-    config_text = (ROOT / "configuration.conf").read_text(encoding="utf-8")
+    config = ROOT / "configuration.conf"
+    controller = ROOT / "src" / "lab" / "lab-controller" / "app" / "start_caldera.py"
+    config_text = read_text(config) if config.exists() else ""
     missing = [name for name in ("RESTORE_LAB", "RESTORE_LAB_MODE") if name not in config_text]
     if missing:
         result.status = "FAIL"
@@ -507,28 +661,37 @@ def check_restore_vars() -> CheckResult:
     else:
         result.details.append("configuration.conf: contains RESTORE_LAB and RESTORE_LAB_MODE")
 
-    controller_text = (ROOT / "src" / "lab" / "lab-controller" / "app" / "start_caldera.py").read_text(encoding="utf-8")
-    if "RESTORE_LAB" in controller_text or "RESTORE_LAB_MODE" in controller_text:
-        result.details.append("src/lab/lab-controller/app/start_caldera.py: runtime usage present")
+    if controller.exists():
+        controller_text = read_text(controller)
+        if "RESTORE_LAB" in controller_text or "RESTORE_LAB_MODE" in controller_text:
+            result.details.append("src/lab/lab-controller/app/start_caldera.py: runtime usage present")
     return result
 
 
+CHECKS: dict[str, CheckFn] = {
+    "generated": check_no_generated_artifacts_tracked,
+    "targets": check_target_contract,
+    "config": check_configuration_toml,
+    "shell": check_bash_syntax,
+    "python": check_python_compile,
+    "yaml": check_yaml_parse,
+    "compose": check_rendered_compose_templates,
+    "skaffold": check_skaffold_local_charts_skip_dependency_build,
+    "otel-privileged": check_opentelemetry_test_image_privileged,
+    "caldera": check_caldera_integrity,
+    "deprecated": check_deprecated_references,
+    "restore": check_restore_vars,
+}
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Run offline repository consistency checks.")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    parser.add_argument("--check", choices=sorted(CHECKS), action="append", help="run only the named check; can be repeated")
     args = parser.parse_args()
 
-    checks = [
-        check_bash_syntax(),
-        check_python_compile(),
-        check_yaml_parse(),
-        check_rendered_compose_templates(),
-        check_skaffold_local_charts_skip_dependency_build(),
-        check_opentelemetry_test_image_privileged(),
-        check_caldera_integrity(),
-        check_forbidden_references(),
-        check_restore_vars(),
-    ]
+    selected_names = args.check or list(CHECKS)
+    checks = [CHECKS[name]() for name in selected_names]
 
     if args.json:
         print(json.dumps([check.__dict__ for check in checks], indent=2))
@@ -538,7 +701,7 @@ def main() -> int:
             for detail in check.details:
                 print(f"  {detail}")
 
-    return 1 if any(check.status == "FAIL" for check in checks) else 0
+    return 1 if any(check.failed for check in checks) else 0
 
 
 if __name__ == "__main__":

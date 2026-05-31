@@ -3,9 +3,17 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import subprocess
+import time
+import urllib.request
+from typing import Any
+
+
+CALDERA_DEFAULT_URL = "http://caldera:8888"
+CALDERA_DEFAULT_API_KEY = "ADMIN123"
 
 
 def log(*parts: object) -> None:
@@ -57,6 +65,109 @@ def kubectl_cmd(*args: str) -> list[str]:
 
 def kubectl(*args: str, timeout: int = 120, log_fail: bool = True) -> bool:
     return run(kubectl_cmd(*args), timeout=timeout, log_fail=log_fail).returncode == 0
+
+
+def caldera_rest(payload: dict[str, Any], *, method: str = "POST", log_fail: bool = True) -> Any:
+    """Call Caldera /api/rest best-effort.
+
+    Restore hooks must keep going even if Caldera is temporarily unavailable.
+    """
+
+    base_url = env("CALDERA_URL", default=CALDERA_DEFAULT_URL).rstrip("/")
+    api_key = env("CALDERA_API_KEY", "API_KEY", default=CALDERA_DEFAULT_API_KEY)
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["KEY"] = api_key
+
+    request = urllib.request.Request(
+        f"{base_url}/api/rest",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method=method,
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            raw = response.read()
+        if not raw:
+            return None
+        return json.loads(raw.decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - cleanup is best-effort.
+        if log_fail:
+            log(f"Caldera REST {method} failed for payload={payload!r}: {exc!r}")
+        return None
+
+
+def caldera_agents() -> list[dict[str, Any]]:
+    payload = caldera_rest({"index": "agents"}, log_fail=False)
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def caldera_agent_matches(agent: dict[str, Any], identifier: str) -> bool:
+    wanted = str(identifier or "").strip()
+    if not wanted:
+        return False
+
+    fields = (
+        "paw",
+        "paw_id",
+        "host",
+        "hostname",
+        "server",
+        "username",
+        "group",
+        "architecture",
+        "platform",
+    )
+
+    for field in fields:
+        value = str(agent.get(field, "") or "").strip()
+        if value == wanted:
+            return True
+
+    return False
+
+
+def caldera_agent_exists(identifier: str) -> bool:
+    return any(caldera_agent_matches(agent, identifier) for agent in caldera_agents())
+
+
+def delete_caldera_agent(identifier: str) -> None:
+    """Delete a Caldera agent by paw/host best-effort.
+
+    For KC2 the child Sandcat should use the deterministic PAW
+    kc2-mongodb-nwdaf. Deleting by paw is the important path. The host fallback
+    makes the cleanup tolerant if the agent registered with hostname only.
+    """
+
+    target = str(identifier or "").strip()
+    if not target:
+        return
+
+    matched_agents = [agent for agent in caldera_agents() if caldera_agent_matches(agent, target)]
+    if not matched_agents:
+        log(f"Caldera agent {target!r} not found; skipping Caldera cleanup")
+        return
+
+    for agent in matched_agents:
+        paw = str(agent.get("paw") or agent.get("paw_id") or target).strip()
+        if not paw:
+            continue
+        caldera_rest({"index": "agents", "paw": paw}, method="DELETE", log_fail=True)
+        log(f"requested Caldera agent deletion for paw={paw!r}")
+
+
+def wait_caldera_agent_gone(identifier: str, *, timeout: float = 60.0, interval: float = 3.0) -> bool:
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        if not caldera_agent_exists(identifier):
+            return True
+        time.sleep(interval)
+
+    return not caldera_agent_exists(identifier)
 
 
 def docker_container_names() -> set[str]:
@@ -198,10 +309,32 @@ def restore_kc1() -> None:
 
 def restore_kc2() -> None:
     namespace = env("CORE_NAMESPACE", "FREE5GC_NAMESPACE", default="free5gc")
+    child_paw = env("KC2_CHILD_PAW", default="kc2-mongodb-nwdaf")
+
     kubectl("-n", namespace, "rollout", "undo", "statefulset/mongodb-nwdaf", log_fail=False)
     kubectl("-n", namespace, "rollout", "restart", "statefulset/mongodb-nwdaf", log_fail=False)
+    kubectl(
+        "-n",
+        namespace,
+        "rollout",
+        "status",
+        "statefulset/mongodb-nwdaf",
+        "--timeout=180s",
+        timeout=240,
+        log_fail=False,
+    )
+
+    # The rollback/restart kills the Sandcat process inside mongodb-nwdaf.
+    # Remove the matching Caldera agent afterwards; deleting it before the pod
+    # restart would let the still-running implant beacon and recreate itself.
+    delete_caldera_agent(child_paw)
+    if wait_caldera_agent_gone(child_paw, timeout=60.0, interval=3.0):
+        log(f"Caldera child agent {child_paw!r} removed")
+    else:
+        log(f"Caldera child agent {child_paw!r} still present after cleanup timeout")
+
     restart_free5gc_workloads()
-    log("restored mongodb-nwdaf rollout and restarted free5GC workloads")
+    log("restored mongodb-nwdaf rollout, removed KC2 Caldera child agent and restarted free5GC workloads")
 
 
 def restore_kc3() -> None:

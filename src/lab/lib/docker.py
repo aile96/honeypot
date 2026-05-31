@@ -84,13 +84,60 @@ def _published_host_port(name: str, container_port: int) -> int | None:
     return None
 
 
+def image_id(image: str) -> str | None:
+    completed = run(["docker", "image", "inspect", "-f", "{{.Id}}", image], check=False, capture=True)
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip() or None
+
+
+def container_image_id(container: str) -> str | None:
+    completed = run(["docker", "container", "inspect", "-f", "{{.Image}}", container], check=False, capture=True)
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip() or None
+
+
+def active_lab_controllers(runtime_root: Path) -> list[str]:
+    active: list[str] = []
+
+    if not runtime_root.is_dir():
+        return active
+
+    for info in runtime_root.glob("*/info"):
+        try:
+            data = json.loads(info.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        controller = str(data.get("controller_container", "")).strip()
+        if controller and container_running(controller):
+            active.append(controller)
+
+    return active
+
+
 def ensure_registry(config: Mapping[str, Any], project_root: Path, network: str) -> dict[str, Any]:
     """Run the shared host cache registry when missing and return its endpoint."""
     name = str(config.get("REGISTRY_CACHE_NAME", "registry-lab"))
+    image = str(config.get("REGISTRY_IMAGE", "lab-registry:latest"))
     port = int(config.get("REGISTRY_CACHE_PORT", 5000))
     host_bind = "127.0.0.1"
     cache_dir = project_root / "res" / "cache"
+    runtime_root = project_root / "res" / "runtime"
     cache_dir.mkdir(parents=True, exist_ok=True)
+
+    if container_exists(name):
+        current_image = container_image_id(name)
+        desired_image = image_id(image)
+
+        if current_image and desired_image and current_image != desired_image:
+            if active_lab_controllers(runtime_root):
+                # Do not disrupt an existing lab that is still using the registry.
+                # The registry will be recreated on the next start with no active controllers.
+                pass
+            else:
+                stop_container(name, timeout=20)
 
     if container_exists(name):
         if not container_running(name):
@@ -113,7 +160,19 @@ def ensure_registry(config: Mapping[str, Any], project_root: Path, network: str)
                 f"{host_bind}:{host_port}:{port}",
                 "-v",
                 f"{cache_dir}:/var/lib/registry",
-                "registry:2",
+                "-v",
+                f"{runtime_root}:/runtime:ro",
+                "-v",
+                f"{config.get('DOCKER_SOCKET_PATH', '/var/run/docker.sock')}:/var/run/docker.sock",
+                "-e",
+                f"REGISTRY_CONTAINER_NAME={name}",
+                "-e",
+                "RUNTIME_ROOT=/runtime",
+                "-e",
+                f"REGISTRY_WATCHDOG_INTERVAL_SECONDS={config.get('REGISTRY_WATCHDOG_INTERVAL_SECONDS', 30)}",
+                "-e",
+                f"REGISTRY_EMPTY_GRACE_SECONDS={config.get('REGISTRY_EMPTY_GRACE_SECONDS', 180)}",
+                image,
             ],
             quiet=True,
         )
@@ -156,17 +215,7 @@ def stop_container(name: str, timeout: int = 60) -> None:
 
 def remove_registry_if_unused(project_root: Path, registry_name: str = "registry-lab") -> None:
     runtime_root = project_root / "res" / "runtime"
-    active = []
-    if runtime_root.is_dir():
-        for info in runtime_root.glob("*/info"):
-            try:
-                data = json.loads(info.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            controller = str(data.get("controller_container", ""))
-            if controller and container_running(controller):
-                active.append(controller)
-    if not active and container_exists(registry_name):
+    if not active_lab_controllers(runtime_root) and container_exists(registry_name):
         stop_container(registry_name, timeout=20)
 
 
@@ -176,15 +225,5 @@ def network_exists(name: str) -> bool:
 
 def remove_network_if_unused(project_root: Path, network_name: str = "lab") -> None:
     runtime_root = project_root / "res" / "runtime"
-    active = []
-    if runtime_root.is_dir():
-        for info in runtime_root.glob("*/info"):
-            try:
-                data = json.loads(info.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            controller = str(data.get("controller_container", ""))
-            if controller and container_running(controller):
-                active.append(controller)
-    if not active and network_exists(network_name):
+    if not active_lab_controllers(runtime_root) and network_exists(network_name):
         run(["docker", "network", "rm", network_name], check=False, quiet=True)

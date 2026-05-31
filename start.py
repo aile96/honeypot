@@ -23,9 +23,12 @@ RUNTIME_CONFIG_FILE = f"{RUNTIME_CONFIG_MOUNT}/config.toml"
 START_DEFAULTS: dict[str, object] = {
     # Shared Docker resources.
     "CONTROLLER_IMAGE": "lab-controller:latest",
+    "REGISTRY_IMAGE": "lab-registry:latest",
     "CONTROLLER_PROXY_CONTAINER_PORT": 18080,
     "CP_NETWORK": "lab",
     "REGISTRY_CACHE_NAME": "registry-lab",
+    "REGISTRY_WATCHDOG_INTERVAL_SECONDS": 30,
+    "REGISTRY_EMPTY_GRACE_SECONDS": 180,
     "UNDERLAY_COMPOSE_WAIT_TIMEOUT_SECONDS": 120,
     # Kind defaults.
     "K8S_IMAGE": "kindest/node:v1.30.0",
@@ -104,6 +107,18 @@ def build_controller(config: dict[str, object]) -> None:
     log(f"Building controller image {image!r}.")
     run(["docker", "build", "--platform", "linux/amd64", "-t", image, "-f", str(dockerfile), str(context)])
 
+
+
+def build_registry(config: dict[str, object]) -> None:
+    image = str(config["REGISTRY_IMAGE"])
+    dockerfile = PROJECT_ROOT / "src" / "lab" / "lab-registry" / "Dockerfile"
+    context = PROJECT_ROOT / "src" / "lab" / "lab-registry"
+    exists = run(["docker", "image", "inspect", image], check=False, quiet=True).returncode == 0
+    if exists and not bool(config.get("BUILD_CONTROLLER", False)):
+        log(f"Registry image {image!r} already exists; skipping build.")
+        return
+    log(f"Building registry image {image!r}.")
+    run(["docker", "build", "--platform", "linux/amd64", "-t", image, "-f", str(dockerfile), str(context)])
 
 def ensure_results_readable(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
@@ -303,6 +318,8 @@ def main() -> int:
             fail(f"Controller container {config['CONTROLLER_CONTAINER_NAME']!r} already exists")
 
         ensure_network(str(config["CP_NETWORK"]))
+        build_controller(config)
+        build_registry(config)
         registry = ensure_registry(config, PROJECT_ROOT, str(config["CP_NETWORK"]))
         config["REGISTRY_CACHE_NAME"] = registry["name"]
         config["REGISTRY_LAB_NAME"] = registry["name"]
@@ -320,7 +337,6 @@ def main() -> int:
         write_runtime_config(config, host_runtime / "config.toml")
         write_info(config, host_runtime / "info", "starting", None)
 
-        build_controller(config)
         start_controller_container(config)
         host_port = extract_published_port(str(config["CONTROLLER_CONTAINER_NAME"]), int(config["CONTROLLER_PROXY_CONTAINER_PORT"]))
         write_info(config, host_runtime / "info", "running", host_port)

@@ -308,3 +308,74 @@ def mark_pipeline_failed(state: MutableMapping[str, Any], *, exit_code: int) -> 
     state["exit_code"] = exit_code
     state["failed_at"] = utc_timestamp()
     state["updated_at"] = utc_timestamp()
+
+
+def record_resume_check(
+    state: MutableMapping[str, Any],
+    step_name: str,
+    *,
+    ok: bool,
+    reason: str,
+) -> None:
+    """Record the outcome of a resume-time validation check."""
+    checks = state.setdefault("resume_checks", [])
+    if not isinstance(checks, list):
+        checks = []
+        state["resume_checks"] = checks
+    checks.append(
+        {
+            "step": step_name,
+            "ok": bool(ok),
+            "reason": str(reason),
+            "checked_at": utc_timestamp(),
+        }
+    )
+    state["updated_at"] = utc_timestamp()
+
+
+def prune_completed_units_from_step(
+    state: MutableMapping[str, Any],
+    step_name: str,
+    *,
+    step_order: list[str],
+    unit_order: list[str],
+    unit_to_step: Mapping[str, str],
+) -> list[str]:
+    """Invalidate completed steps/units from step_name onward.
+
+    Hooks are treated as units owned by their related pipeline step, so invalidating
+    a step also invalidates its PRE/POST hooks and every later step/hook.
+    """
+    if step_name not in step_order:
+        return []
+
+    affected_steps = set(step_order[step_order.index(step_name) :])
+    affected_units = [unit_id for unit_id in unit_order if unit_to_step.get(unit_id) in affected_steps]
+
+    for key, affected in (
+        ("completed_steps", affected_steps),
+        ("failed_steps", affected_steps),
+    ):
+        values = state.get(key, [])
+        if isinstance(values, list):
+            state[key] = [value for value in values if value not in affected]
+
+    for key in ("completed_units", "failed_units"):
+        values = state.get(key, [])
+        if isinstance(values, list):
+            state[key] = [value for value in values if value not in affected_units]
+
+    current_step = state.get("current_step")
+    if isinstance(current_step, str) and current_step in affected_steps:
+        state.pop("current_step", None)
+
+    current_unit = state.get("current_unit")
+    if isinstance(current_unit, str) and current_unit in affected_units:
+        state.pop("current_unit", None)
+        state.pop("current_unit_type", None)
+        state.pop("current_unit_name", None)
+        state.pop("current_hook", None)
+
+    state["status"] = "created"
+    state["updated_at"] = utc_timestamp()
+    return affected_units

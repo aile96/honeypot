@@ -44,6 +44,7 @@ from lib import (
     state_values,
     timestamp,
     unit_completed,
+    validate_resume_state,
     warn,
 )
 
@@ -431,6 +432,38 @@ def run_step_with_retry(step_script: str | Path, config: Config, state: State) -
     )
 
 
+
+def pipeline_unit_order(config: Config, steps: list[Path]) -> tuple[list[str], dict[str, str]]:
+    """Return the actual resumable unit order, including step hooks."""
+    units: list[str] = []
+    unit_to_step: dict[str, str] = {}
+    hooks_dir = config.get("HOOKS_DIR")
+
+    for step_path in steps:
+        step_name = step_path.name
+
+        if hooks_dir:
+            for hook_path in resolve_hook_candidates(hooks_dir, "PRE", step_path):
+                if not hook_path.is_file():
+                    continue
+                unit_id = hook_unit_id("PRE", step_path, hook_path)
+                units.append(unit_id)
+                unit_to_step[unit_id] = step_name
+
+        unit_id = step_unit_id(step_path)
+        units.append(unit_id)
+        unit_to_step[unit_id] = step_name
+
+        if hooks_dir:
+            for hook_path in resolve_hook_candidates(hooks_dir, "POST", step_path):
+                if not hook_path.is_file():
+                    continue
+                unit_id = hook_unit_id("POST", step_path, hook_path)
+                units.append(unit_id)
+                unit_to_step[unit_id] = step_name
+
+    return units, unit_to_step
+
 def discover_steps(config: Config) -> list[Path]:
     """Discover pipeline step scripts from PIPELINE_ROOT."""
     pipeline_root = Path(str(require_config(config, "PIPELINE_ROOT")))
@@ -584,6 +617,15 @@ def main() -> None:
     save_state_file(state)
 
     steps = discover_steps(config)
+    unit_order, unit_to_step = pipeline_unit_order(config, steps)
+    validate_resume_state(
+        config=config,
+        state=state,
+        steps=steps,
+        unit_order=unit_order,
+        unit_to_step=unit_to_step,
+    )
+    save_state_file(state)
 
     log("Discovered pipeline steps:")
     for step in steps:
@@ -608,6 +650,8 @@ def main() -> None:
             )
 
         mark_pipeline_ready(state)
+        cleanup_marker = Path(str(require_config(config, "GENERATED_DIR"))) / "shutdown-cleanup.json"
+        cleanup_marker.unlink(missing_ok=True)
         save_state_file(state)
 
     except BaseException:

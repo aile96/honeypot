@@ -1,7 +1,0 @@
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-ra"
-markers = [
-  "unit: offline unit tests for host bootstrap and lab-controller orchestration code",
-  "static: offline repository integrity checks that exclude service-level tests",
-]
